@@ -119,6 +119,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           mapfile -t assets < <(find dist -type f \( -name "*.tar.gz" -o -name "*.sha256" \) | sort)
           if [ "${#assets[@]}" -eq 0 ]; then
