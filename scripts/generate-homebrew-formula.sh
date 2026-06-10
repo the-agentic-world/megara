@@ -32,10 +32,8 @@ url_for() {
 }
 
 macos_arm_sha="$(sha_for "aarch64-apple-darwin")"
-macos_intel_sha="$(sha_for "x86_64-apple-darwin")"
 linux_x64_sha="$(sha_for "x86_64-unknown-linux-gnu")"
 macos_arm_url="$(url_for "aarch64-apple-darwin")"
-macos_intel_url="$(url_for "x86_64-apple-darwin")"
 linux_x64_url="$(url_for "x86_64-unknown-linux-gnu")"
 
 cat > "${output_file}" <<FORMULA
@@ -45,13 +43,9 @@ class Sisyphus < Formula
   version "${version}"
 
   on_macos do
-    if Hardware::CPU.arm?
-      url "${macos_arm_url}"
-      sha256 "${macos_arm_sha}"
-    else
-      url "${macos_intel_url}"
-      sha256 "${macos_intel_sha}"
-    end
+    depends_on arch: :arm64
+    url "${macos_arm_url}"
+    sha256 "${macos_arm_sha}"
   end
 
   on_linux do

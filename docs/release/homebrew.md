@@ -20,7 +20,6 @@ git push origin v0.1.0
 
 The workflow builds:
 
-- `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 - `x86_64-unknown-linux-gnu`
 
