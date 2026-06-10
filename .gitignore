@@ -127,6 +127,8 @@ Temporary Items
 # will have compiled files and executables
 debug/
 target/
+!.codex/skills/debug/
+!.codex/skills/debug/SKILL.md
 
 # Keep Cargo.lock tracked; this repository builds a release binary.
 
