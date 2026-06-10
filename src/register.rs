@@ -1,6 +1,11 @@
+#[cfg(target_os = "macos")]
 use crate::config::Paths;
-use anyhow::{Context, Result, bail};
+#[cfg(target_os = "macos")]
+use anyhow::Context;
+use anyhow::{Result, bail};
+#[cfg(target_os = "macos")]
 use std::fs;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 const LABEL: &str = "dev.sisyphus.daemon";
