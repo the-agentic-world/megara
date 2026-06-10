@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/readme-banner.svg" alt="Sisyphus: local issue-to-agent broker" width="100%">
+  <img src="docs/assets/readme-banner.png" alt="Sisyphus from Greek mythology pushing a boulder up Mount Olympus" width="100%">
 </p>
 
 <h1 align="center">Sisyphus</h1>
