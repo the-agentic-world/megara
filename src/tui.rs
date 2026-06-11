@@ -1,4 +1,5 @@
 use crate::config::Paths;
+use crate::domain::WorkItem;
 use crate::storage::{AgentSessionRef, QueueItem};
 use anyhow::{Context, Result, bail};
 use crossterm::{
@@ -68,8 +69,12 @@ fn print_dashboard_text(paths: &Paths, state: &DashboardState) {
     println!("queue_items: {}", state.queue_items.len());
     for item in &state.queue_items {
         println!(
-            "queue_item: {}\t{}\t{}\t{}",
-            item.id, item.provider, item.state, item.issue_url
+            "queue_item: {}\t{}\t{}\t{}\t{}",
+            item.id,
+            item.provider,
+            issue_number_label(item),
+            item.state,
+            item.issue_url
         );
     }
     println!("sessions: {}", state.sessions.len());
@@ -356,12 +361,19 @@ fn session_list_items(state: &DashboardState) -> Vec<ListItem<'static>> {
 
 fn queue_item_label(item: &QueueItem) -> String {
     format!(
-        "#{:<4} {:<28} {:<7} {}",
+        "#{:<4} {:<8} {:<28} {:<7} {}",
         item.id,
+        issue_number_label(item),
         truncate(&item.state, 28),
         item.provider,
         truncate(&item.issue_url, 96)
     )
+}
+
+fn issue_number_label(item: &QueueItem) -> String {
+    serde_json::from_str::<WorkItem>(&item.payload)
+        .map(|work_item| format!("#{}", work_item.number))
+        .unwrap_or_else(|_| "-".to_string())
 }
 
 fn session_label(session: &AgentSessionRef) -> String {
@@ -463,12 +475,26 @@ mod tests {
     use super::*;
 
     fn queue_item(id: i64, state: &str) -> QueueItem {
+        let work_item = WorkItem {
+            provider: crate::domain::Provider::GitHub,
+            source_url: "https://github.com/acme/widgets/issues/42".to_string(),
+            instance_url: "https://github.com".to_string(),
+            owner_or_namespace: "acme".to_string(),
+            repo: "widgets".to_string(),
+            number: 42,
+            state: "open".to_string(),
+            title: "Build import flow".to_string(),
+            body: String::new(),
+            labels: Vec::new(),
+            comments: Vec::new(),
+        };
+
         QueueItem {
             id,
             provider: "github".to_string(),
             issue_url: "https://github.com/acme/widgets/issues/42".to_string(),
             state: state.to_string(),
-            payload: "{}".to_string(),
+            payload: serde_json::to_string(&work_item).unwrap(),
         }
     }
 
@@ -499,6 +525,7 @@ mod tests {
     fn formats_queue_item_label_with_state_and_source() {
         let label = queue_item_label(&queue_item(7, "queued"));
         assert!(label.contains("#7"));
+        assert!(label.contains("#42"));
         assert!(label.contains("queued"));
         assert!(label.contains("github"));
         assert!(label.contains("https://github.com/acme/widgets/issues/42"));

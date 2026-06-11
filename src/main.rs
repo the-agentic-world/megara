@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use sisyphus::cli::{Cli, Command, QueueCommand};
+use sisyphus::domain::WorkItem;
 use sisyphus::storage::QueueItem;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -20,7 +21,10 @@ async fn main() -> Result<()> {
             let issue_ref = sisyphus::providers::parse_issue_url(&issue_url)?;
             let work_item = sisyphus::domain::WorkItem::from_issue_ref(issue_ref);
             let id = sisyphus::storage::enqueue_work_item(&paths, &work_item)?;
-            println!("queued work item {id}: {}", work_item.source_url);
+            println!(
+                "queued queue_item_id={id} issue=#{} {}",
+                work_item.number, work_item.source_url
+            );
             Ok(())
         }
         Command::Queue { command } => {
@@ -253,20 +257,31 @@ async fn main() -> Result<()> {
 
 fn print_queue_item_row(item: &QueueItem) {
     println!(
-        "{}\t{}\t{}\t{}",
-        item.id, item.provider, item.state, item.issue_url
+        "{}\t{}\t{}\t{}\t{}",
+        item.id,
+        item.provider,
+        issue_number_label(item),
+        item.state,
+        item.issue_url
     );
 }
 
 fn print_queue_item_detail(item: &QueueItem) -> Result<()> {
     println!("id={}", item.id);
     println!("provider={}", item.provider);
+    println!("issue={}", issue_number_label(item));
     println!("state={}", item.state);
     println!("issue_url={}", item.issue_url);
     let payload: serde_json::Value =
         serde_json::from_str(&item.payload).context("failed to parse queue item payload")?;
     println!("payload={}", serde_json::to_string_pretty(&payload)?);
     Ok(())
+}
+
+fn issue_number_label(item: &QueueItem) -> String {
+    serde_json::from_str::<WorkItem>(&item.payload)
+        .map(|work_item| format!("#{}", work_item.number))
+        .unwrap_or_else(|_| "-".to_string())
 }
 
 fn control_post(paths: &sisyphus::config::Paths, route: &str) -> Result<String> {
