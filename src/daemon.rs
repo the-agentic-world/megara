@@ -341,8 +341,9 @@ fn enqueue_dispatchable_items(paths: &Paths, cfg: &Config, items: Vec<WorkItem>)
     let mut queued = 0;
 
     for item in items {
-        if cfg.dispatch.should_dispatch(&item.state, &item.labels) {
-            storage::enqueue_work_item(paths, &item)?;
+        if cfg.dispatch.should_dispatch(&item.state, &item.labels)
+            && storage::enqueue_work_item_with_result(paths, &item)?.queued
+        {
             queued += 1;
         }
     }
@@ -728,6 +729,40 @@ mod tests {
             queue[0].issue_url,
             "https://github.com/acme/widgets/issues/42"
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn enqueue_dispatchable_items_counts_only_new_or_requeued_items() {
+        let root = std::env::temp_dir().join(format!(
+            "sisyphus-daemon-dispatch-dedupe-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+        storage::initialize(&paths).unwrap();
+
+        let mut work_item = WorkItem::from_issue_ref(
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap(),
+        );
+        work_item.labels = vec!["sisyphus".to_string()];
+
+        let first = enqueue_dispatchable_items(&paths, &Config::default(), vec![work_item.clone()])
+            .unwrap();
+        let second =
+            enqueue_dispatchable_items(&paths, &Config::default(), vec![work_item]).unwrap();
+
+        assert_eq!(first, 1);
+        assert_eq!(second, 0);
 
         let _ = fs::remove_dir_all(root);
     }

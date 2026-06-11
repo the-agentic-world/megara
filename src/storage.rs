@@ -33,6 +33,12 @@ pub struct LoopEvent {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnqueueWorkItemResult {
+    pub id: i64,
+    pub queued: bool,
+}
+
 pub fn initialize(paths: &Paths) -> Result<()> {
     paths.ensure_base_dir()?;
     std::fs::create_dir_all(paths.base_dir.join("artifacts")).with_context(|| {
@@ -99,6 +105,13 @@ pub fn initialize(paths: &Paths) -> Result<()> {
 }
 
 pub fn enqueue_work_item(paths: &Paths, work_item: &WorkItem) -> Result<i64> {
+    Ok(enqueue_work_item_with_result(paths, work_item)?.id)
+}
+
+pub fn enqueue_work_item_with_result(
+    paths: &Paths,
+    work_item: &WorkItem,
+) -> Result<EnqueueWorkItemResult> {
     let conn = Connection::open(&paths.db_path)
         .with_context(|| format!("failed to open {}", paths.db_path.display()))?;
     let payload = serde_json::to_string(work_item).context("failed to serialize work item")?;
@@ -160,27 +173,31 @@ pub fn enqueue_work_item(paths: &Paths, work_item: &WorkItem) -> Result<i64> {
         )
         .context("failed to read work queue item id")?;
 
-    match existing {
-        None => record_loop_event_conn(
-            &conn,
-            Some(&queue_run_id(id)),
-            "queue.enqueued",
-            &json!({
-                "queue_item_id": id,
-                "state": "queued",
-                "provider": work_item.provider.as_str(),
-                "issue_url": work_item.source_url,
-            }),
-        )?,
+    let queued = match existing {
+        None => {
+            record_loop_event_conn(
+                &conn,
+                Some(&queue_run_id(id)),
+                "queue.enqueued",
+                &json!({
+                    "queue_item_id": id,
+                    "state": "queued",
+                    "provider": work_item.provider.as_str(),
+                    "issue_url": work_item.source_url,
+                }),
+            )?;
+            true
+        }
         Some((_, previous_state, previous_payload))
             if previous_payload != payload && should_requeue_on_payload_change(&previous_state) =>
         {
             record_queue_state_change(&conn, id, &previous_state, "queued")?;
+            true
         }
-        _ => {}
-    }
+        _ => false,
+    };
 
-    Ok(id)
+    Ok(EnqueueWorkItemResult { id, queued })
 }
 
 pub fn list_queue_items(paths: &Paths) -> Result<Vec<QueueItem>> {
@@ -542,6 +559,36 @@ mod tests {
         assert_eq!(queue.len(), 1);
         assert_eq!(first_id, second_id);
         assert!(queue[0].payload.contains("Updated title"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn enqueue_result_reports_only_new_or_requeued_items() {
+        let root =
+            std::env::temp_dir().join(format!("sisyphus-queue-result-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+
+        initialize(&paths).unwrap();
+        let issue_ref =
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap();
+        let work_item = WorkItem::from_issue_ref(issue_ref);
+
+        let first = enqueue_work_item_with_result(&paths, &work_item).unwrap();
+        let second = enqueue_work_item_with_result(&paths, &work_item).unwrap();
+
+        assert_eq!(first.id, second.id);
+        assert!(first.queued);
+        assert!(!second.queued);
 
         let _ = fs::remove_dir_all(root);
     }

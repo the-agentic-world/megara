@@ -317,26 +317,29 @@ fn local_dashboard_snapshot(
 }
 
 fn queue_list_items(state: &DashboardState) -> Vec<ListItem<'static>> {
-    if !state.daemon_running {
+    queue_list_labels(state)
+        .into_iter()
+        .map(ListItem::new)
+        .collect()
+}
+
+fn queue_list_labels(state: &DashboardState) -> Vec<String> {
+    if !state.daemon_running && state.queue_items.is_empty() {
         return vec![
-            ListItem::new("daemon stopped"),
-            ListItem::new("start with: sisyphus serve"),
+            "daemon stopped".to_string(),
+            "start with: sisyphus serve".to_string(),
         ];
     }
 
     if state.queue_items.is_empty() {
-        return vec![ListItem::new("no queue items")];
+        return vec!["no queue items".to_string()];
     }
 
-    state
-        .queue_items
-        .iter()
-        .map(|item| ListItem::new(queue_item_label(item)))
-        .collect()
+    state.queue_items.iter().map(queue_item_label).collect()
 }
 
 fn session_list_items(state: &DashboardState) -> Vec<ListItem<'static>> {
-    if !state.daemon_running {
+    if !state.daemon_running && state.sessions.is_empty() {
         return vec![ListItem::new("daemon stopped")];
     }
 
@@ -499,5 +502,21 @@ mod tests {
         assert!(label.contains("queued"));
         assert!(label.contains("github"));
         assert!(label.contains("https://github.com/acme/widgets/issues/42"));
+    }
+
+    #[test]
+    fn offline_dashboard_still_lists_local_queue_items() {
+        let state = DashboardState {
+            daemon_running: false,
+            queue_items: vec![queue_item(7, "queued")],
+            sessions: Vec::new(),
+            error: None,
+        };
+
+        let labels = queue_list_labels(&state);
+
+        assert_eq!(labels.len(), 1);
+        assert!(labels[0].contains("#7"));
+        assert!(labels[0].contains("queued"));
     }
 }
