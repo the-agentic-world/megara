@@ -23,6 +23,8 @@ pub enum Command {
     Events,
     #[command(about = "Open or print a Codex-native session reference")]
     Open { queue_item_id: i64 },
+    #[command(about = "Move a stuck or failed work item back to queued")]
+    Retry { queue_item_id: i64 },
     #[command(about = "Dispatch a queued work item to Codex")]
     Dispatch {
         queue_item_id: i64,
@@ -145,6 +147,12 @@ mod tests {
     fn parses_open() {
         let cli = Cli::parse_from(["sisyphus", "open", "7"]);
         assert_eq!(cli.command, Some(Command::Open { queue_item_id: 7 }));
+    }
+
+    #[test]
+    fn parses_retry() {
+        let cli = Cli::parse_from(["sisyphus", "retry", "7"]);
+        assert_eq!(cli.command, Some(Command::Retry { queue_item_id: 7 }));
     }
 
     #[test]

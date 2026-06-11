@@ -74,6 +74,16 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::Retry { queue_item_id } => {
+            let paths = sisyphus::config::Paths::resolve()?;
+            sisyphus::storage::initialize(&paths)?;
+            let item = sisyphus::storage::retry_queue_item(&paths, queue_item_id)?;
+            println!(
+                "requeued work item {}: {} {}",
+                item.id, item.provider, item.issue_url
+            );
+            Ok(())
+        }
         Command::Dispatch {
             queue_item_id,
             dry_run,

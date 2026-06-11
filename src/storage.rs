@@ -289,6 +289,16 @@ pub fn update_queue_state(paths: &Paths, id: i64, state: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn retry_queue_item(paths: &Paths, id: i64) -> Result<QueueItem> {
+    let item = get_queue_item(paths, id)?;
+    if !is_retryable_state(&item.state) {
+        anyhow::bail!("queue item {id} is not retryable from state {}", item.state);
+    }
+
+    update_queue_state(paths, id, "queued")?;
+    get_queue_item(paths, id)
+}
+
 pub fn upsert_agent_session_ref(paths: &Paths, session_ref: &AgentSessionRef) -> Result<()> {
     let conn = Connection::open(&paths.db_path)
         .with_context(|| format!("failed to open {}", paths.db_path.display()))?;
@@ -463,6 +473,17 @@ fn should_requeue_on_payload_change(state: &str) -> bool {
     matches!(
         state,
         "awaiting_clarification"
+            | "clarification_publish_failed"
+            | "dispatch_failed"
+            | "manual_open_required"
+    )
+}
+
+fn is_retryable_state(state: &str) -> bool {
+    matches!(
+        state,
+        "dispatching"
+            | "awaiting_clarification"
             | "clarification_publish_failed"
             | "dispatch_failed"
             | "manual_open_required"
@@ -704,6 +725,71 @@ mod tests {
                 && event.payload.contains("\"from\":\"queued\"")
                 && event.payload.contains("\"to\":\"dispatched\"")
         }));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn retry_queue_item_moves_retryable_state_back_to_queued() {
+        let root =
+            std::env::temp_dir().join(format!("sisyphus-queue-retry-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+
+        initialize(&paths).unwrap();
+        let issue_ref =
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap();
+        let work_item = WorkItem::from_issue_ref(issue_ref);
+        let id = enqueue_work_item(&paths, &work_item).unwrap();
+        update_queue_state(&paths, id, "dispatching").unwrap();
+
+        let item = retry_queue_item(&paths, id).unwrap();
+
+        assert_eq!(item.state, "queued");
+        let events = list_loop_events(&paths).unwrap();
+        assert!(events.iter().any(|event| {
+            event.kind == "queue.state_changed"
+                && event.payload.contains("\"from\":\"dispatching\"")
+                && event.payload.contains("\"to\":\"queued\"")
+        }));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn retry_queue_item_rejects_non_retryable_state() {
+        let root = std::env::temp_dir().join(format!(
+            "sisyphus-queue-retry-reject-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+
+        initialize(&paths).unwrap();
+        let issue_ref =
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap();
+        let work_item = WorkItem::from_issue_ref(issue_ref);
+        let id = enqueue_work_item(&paths, &work_item).unwrap();
+
+        let error = retry_queue_item(&paths, id).unwrap_err().to_string();
+
+        assert!(error.contains("not retryable"));
 
         let _ = fs::remove_dir_all(root);
     }
