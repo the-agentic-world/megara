@@ -8,6 +8,7 @@ use crate::storage::QueueItem;
 use crate::tasks::{self, AgentTask, AgentWorkspace};
 use crate::worktree;
 use anyhow::{Context, Result, bail};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -251,11 +252,12 @@ async fn run_dispatch_loop(paths: Paths) -> Result<()> {
 }
 
 async fn dispatch_queued_once(paths: &Paths, cfg: &Config) -> Result<usize> {
+    let mut progressed = recover_dispatched_session_refs(paths)?;
+
     if !cfg.dispatch.auto_dispatch {
-        return Ok(0);
+        return Ok(progressed);
     }
 
-    let mut progressed = 0;
     for queue_item in storage::list_queue_items(paths)?
         .into_iter()
         .filter(|queue_item| queue_item.state == "queued")
@@ -266,6 +268,29 @@ async fn dispatch_queued_once(paths: &Paths, cfg: &Config) -> Result<usize> {
     }
 
     Ok(progressed)
+}
+
+fn recover_dispatched_session_refs(paths: &Paths) -> Result<usize> {
+    let session_queue_ids = storage::list_agent_session_refs(paths)?
+        .into_iter()
+        .filter(|session_ref| session_ref.dispatch_path == "app-server")
+        .map(|session_ref| session_ref.queue_item_id)
+        .collect::<HashSet<_>>();
+    let mut recovered = 0;
+
+    for queue_item in storage::list_queue_items(paths)?
+        .into_iter()
+        .filter(|queue_item| {
+            queue_item.state == "dispatching" || queue_item.state == "awaiting_clarification"
+        })
+    {
+        if session_queue_ids.contains(&queue_item.id) {
+            storage::update_queue_state(paths, queue_item.id, "dispatched")?;
+            recovered += 1;
+        }
+    }
+
+    Ok(recovered)
 }
 
 async fn dispatch_queue_item(paths: &Paths, cfg: &Config, queue_item: QueueItem) -> Result<bool> {
@@ -670,6 +695,94 @@ mod tests {
         assert!(is_manually_dispatchable_state("manual_open_required"));
         assert!(!is_manually_dispatchable_state("dispatching"));
         assert!(!is_manually_dispatchable_state("dispatched"));
+    }
+
+    #[test]
+    fn recovers_dispatching_item_with_session_ref() {
+        let root = std::env::temp_dir().join(format!(
+            "sisyphus-dispatch-recovery-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+        storage::initialize(&paths).unwrap();
+        let work_item = WorkItem::from_issue_ref(
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap(),
+        );
+        let id = storage::enqueue_work_item(&paths, &work_item).unwrap();
+        storage::update_queue_state(&paths, id, "dispatching").unwrap();
+        storage::upsert_agent_session_ref(
+            &paths,
+            &storage::AgentSessionRef {
+                queue_item_id: id,
+                agent: "codex".to_string(),
+                dispatch_path: "app-server".to_string(),
+                session_id: Some("thread-1".to_string()),
+                resume_hint: Some("codex resume thread-1".to_string()),
+                app_deep_link: Some("codex://threads/thread-1".to_string()),
+            },
+        )
+        .unwrap();
+
+        let recovered = recover_dispatched_session_refs(&paths).unwrap();
+        let item = storage::get_queue_item(&paths, id).unwrap();
+
+        assert_eq!(recovered, 1);
+        assert_eq!(item.state, "dispatched");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recovers_awaiting_clarification_item_with_app_server_session_ref() {
+        let root = std::env::temp_dir().join(format!(
+            "sisyphus-awaiting-clarification-recovery-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+        storage::initialize(&paths).unwrap();
+        let work_item = WorkItem::from_issue_ref(
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap(),
+        );
+        let id = storage::enqueue_work_item(&paths, &work_item).unwrap();
+        storage::update_queue_state(&paths, id, "awaiting_clarification").unwrap();
+        storage::upsert_agent_session_ref(
+            &paths,
+            &storage::AgentSessionRef {
+                queue_item_id: id,
+                agent: "codex".to_string(),
+                dispatch_path: "app-server".to_string(),
+                session_id: Some("thread-1".to_string()),
+                resume_hint: Some("codex resume thread-1".to_string()),
+                app_deep_link: Some("codex://threads/thread-1".to_string()),
+            },
+        )
+        .unwrap();
+
+        let recovered = recover_dispatched_session_refs(&paths).unwrap();
+        let item = storage::get_queue_item(&paths, id).unwrap();
+
+        assert_eq!(recovered, 1);
+        assert_eq!(item.state, "dispatched");
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]

@@ -21,7 +21,21 @@ pub struct ClarificationQuestion {
 
 impl ClarificationRequest {
     pub fn is_valid_request(&self) -> bool {
-        self.request_type == "clarification_request" && self.blocking && !self.questions.is_empty()
+        self.request_type == "clarification_request"
+            && self.blocking
+            && !self.summary.trim().is_empty()
+            && self.summary != "short reason the task is blocked"
+            && !self.questions.is_empty()
+            && self.questions.iter().all(ClarificationQuestion::is_valid)
+    }
+}
+
+impl ClarificationQuestion {
+    fn is_valid(&self) -> bool {
+        !self.id.trim().is_empty()
+            && self.id != "short_snake_case_id"
+            && !self.question.trim().is_empty()
+            && self.question != "implementation-relevant question"
     }
 }
 
@@ -204,6 +218,27 @@ mod tests {
 
         assert_eq!(parsed.summary, "Missing target flow.");
         assert_eq!(parsed.questions[0].id, "target_flow");
+    }
+
+    #[test]
+    fn ignores_prompt_placeholder_clarification_json() {
+        let parsed = parse_clarification_request(
+            r#"{
+              "type": "clarification_request",
+              "blocking": true,
+              "summary": "short reason the task is blocked",
+              "questions": [
+                {
+                  "id": "short_snake_case_id",
+                  "question": "implementation-relevant question",
+                  "options": ["concrete option A", "concrete option B"]
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(parsed.is_none());
     }
 
     #[test]

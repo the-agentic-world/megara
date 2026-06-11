@@ -93,14 +93,16 @@ fn dispatch_app_server(task: &AgentTask) -> Result<CodexDispatchResult> {
     let thread_id = thread_id_from_thread_start(&thread_start)?;
     let turn_start = rpc.turn_start(&thread_id, task)?;
     let turn_id = turn_id_from_turn_start(&turn_start)?;
-    let transcript = rpc.read_until_turn_completed(&thread_id, &turn_id)?;
-    rpc.shutdown();
+    let drain_thread_id = thread_id.clone();
+    std::thread::spawn(move || {
+        let _ = rpc.read_until_turn_completed(&drain_thread_id, &turn_id);
+        rpc.shutdown();
+    });
 
-    let clarification_request = clarification::parse_clarification_request(&transcript)?;
     Ok(dispatch_result(
         CodexDispatchPath::AppServer,
         Some(thread_id),
-        clarification_request,
+        None,
         task,
     ))
 }
