@@ -10,3 +10,4 @@ pub mod register;
 pub mod storage;
 pub mod tasks;
 pub mod tui;
+pub mod worktree;

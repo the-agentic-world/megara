@@ -5,7 +5,8 @@ use crate::domain::WorkItem;
 use crate::providers;
 use crate::storage;
 use crate::storage::QueueItem;
-use crate::tasks::{self, AgentTask};
+use crate::tasks::{self, AgentTask, AgentWorkspace};
+use crate::worktree;
 use anyhow::{Context, Result, bail};
 use std::fs::{self, OpenOptions};
 use std::process::{Command, Stdio};
@@ -249,7 +250,7 @@ async fn dispatch_queued_once(paths: &Paths, cfg: &Config) -> Result<usize> {
 }
 
 async fn dispatch_queue_item(paths: &Paths, cfg: &Config, queue_item: QueueItem) -> Result<bool> {
-    let Some((work_item, task)) = dispatch_material_for_queue_item(cfg, &queue_item)? else {
+    let Some((work_item, task)) = dispatch_material_for_queue_item(paths, cfg, &queue_item)? else {
         return Ok(false);
     };
 
@@ -324,6 +325,7 @@ async fn publish_clarification_request(
 }
 
 fn dispatch_material_for_queue_item(
+    paths: &Paths,
     cfg: &Config,
     queue_item: &QueueItem,
 ) -> Result<Option<(WorkItem, AgentTask)>> {
@@ -333,7 +335,15 @@ fn dispatch_material_for_queue_item(
         return Ok(None);
     };
 
-    let task = tasks::build_codex_task(queue_item, &repo_path)?;
+    let issue_worktree = worktree::prepare_issue_worktree(paths, &repo_path, &work_item)?;
+    let task = tasks::build_codex_task_in_workspace(
+        queue_item,
+        &AgentWorkspace {
+            path: issue_worktree.path,
+            branch_name: Some(issue_worktree.branch_name),
+            commit_footer: Some(issue_worktree.commit_footer),
+        },
+    )?;
     Ok(Some((work_item, task)))
 }
 
@@ -448,7 +458,7 @@ async fn control_dispatch_queue_item(paths: &Paths, queue_item_id: i64) -> Resul
         );
     }
 
-    if dispatch_material_for_queue_item(&cfg, &queue_item)?.is_none() {
+    if dispatch_material_for_queue_item(paths, &cfg, &queue_item)?.is_none() {
         bail!("repository mapping not configured for queue item {queue_item_id}");
     }
 
@@ -769,6 +779,22 @@ mod tests {
 
     #[test]
     fn dispatch_material_for_queue_item_requires_registered_repository() {
+        let root = std::env::temp_dir().join(format!(
+            "sisyphus-daemon-worktree-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let repo_path = root.join("repo");
+        initialize_git_repo(&repo_path);
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.join(".sisyphus"),
+        };
+
         let work_item = WorkItem::from_issue_ref(
             crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap(),
         );
@@ -781,7 +807,7 @@ mod tests {
         };
 
         assert!(
-            dispatch_material_for_queue_item(&Config::default(), &queue_item)
+            dispatch_material_for_queue_item(&paths, &Config::default(), &queue_item)
                 .unwrap()
                 .is_none()
         );
@@ -791,13 +817,53 @@ mod tests {
             kind: crate::domain::Provider::GitHub,
             owner_or_namespace: "acme".to_string(),
             repo: "widgets".to_string(),
-            path: std::path::PathBuf::from("/repo"),
+            path: repo_path,
             instance_url: None,
         });
 
-        let (_, task) = dispatch_material_for_queue_item(&cfg, &queue_item)
+        let (_, task) = dispatch_material_for_queue_item(&paths, &cfg, &queue_item)
             .unwrap()
             .unwrap();
-        assert_eq!(task.repo_path, std::path::PathBuf::from("/repo"));
+        assert!(task.repo_path.exists());
+        assert!(
+            task.repo_path
+                .to_string_lossy()
+                .contains("worktrees/github/acme/widgets/feature/42-issue")
+        );
+        assert!(
+            task.prompt
+                .contains("Keep the branch name exactly: feature/42-issue")
+        );
+        assert!(
+            task.prompt
+                .contains("include this footer in each commit message: Refs #42")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn initialize_git_repo(repo_path: &std::path::Path) {
+        fs::create_dir_all(repo_path).unwrap();
+        run_git(repo_path, &["init"]);
+        run_git(repo_path, &["config", "user.email", "sisyphus@example.com"]);
+        run_git(repo_path, &["config", "user.name", "Sisyphus Test"]);
+        fs::write(repo_path.join("README.md"), "test repo\n").unwrap();
+        run_git(repo_path, &["add", "README.md"]);
+        run_git(repo_path, &["commit", "-m", "initial"]);
+    }
+
+    fn run_git(repo_path: &std::path::Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

@@ -11,20 +11,48 @@ pub struct AgentTask {
     pub prompt: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkspace {
+    pub path: PathBuf,
+    pub branch_name: Option<String>,
+    pub commit_footer: Option<String>,
+}
+
+impl AgentWorkspace {
+    pub fn new(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            branch_name: None,
+            commit_footer: None,
+        }
+    }
+}
+
 pub fn build_codex_task(queue_item: &QueueItem, repo_path: &Path) -> Result<AgentTask> {
+    build_codex_task_in_workspace(queue_item, &AgentWorkspace::new(repo_path))
+}
+
+pub fn build_codex_task_in_workspace(
+    queue_item: &QueueItem,
+    workspace: &AgentWorkspace,
+) -> Result<AgentTask> {
     let work_item: WorkItem = serde_json::from_str(&queue_item.payload)
         .with_context(|| format!("failed to parse queue item {} payload", queue_item.id))?;
-    let prompt = build_codex_prompt(queue_item.id, &work_item, repo_path);
+    let prompt = build_codex_prompt(queue_item.id, &work_item, workspace);
 
     Ok(AgentTask {
         queue_item_id: queue_item.id,
         issue_url: work_item.source_url,
-        repo_path: repo_path.to_path_buf(),
+        repo_path: workspace.path.clone(),
         prompt,
     })
 }
 
-fn build_codex_prompt(queue_item_id: i64, work_item: &WorkItem, repo_path: &Path) -> String {
+fn build_codex_prompt(
+    queue_item_id: i64,
+    work_item: &WorkItem,
+    workspace: &AgentWorkspace,
+) -> String {
     let labels = if work_item.labels.is_empty() {
         "(none)".to_string()
     } else {
@@ -36,6 +64,7 @@ fn build_codex_prompt(queue_item_id: i64, work_item: &WorkItem, repo_path: &Path
         work_item.body.trim()
     };
     let comments = format_issue_comments(work_item);
+    let git_rules = format_git_rules(workspace);
 
     format!(
         r#"You are handling a Sisyphus-dispatched issue.
@@ -54,6 +83,9 @@ Issue body:
 
 Issue comments:
 {comments}
+
+Git tracking rules:
+{git_rules}
 
 Clarification gate:
 First, inspect the task for blocking ambiguity. If the task is not actionable, do not implement.
@@ -77,6 +109,7 @@ If the task is actionable, state that no blocking clarification is needed and co
 
 Execution rules:
 - Do not scan GitHub or GitLab to decide what work to pick up; this issue is the assigned task.
+- Do not switch away from the Sisyphus-provided workspace when one is specified.
 - Follow the repository's native instructions, including AGENTS.md, OMA, skills, or workflows when Codex normally sees them.
 - Sisyphus does not own Codex session storage. Use Codex-native session behavior.
 - Verify the change before final response whenever the repository provides tests or checks.
@@ -87,13 +120,26 @@ Execution rules:
         provider = work_item.provider.as_str(),
         owner = work_item.owner_or_namespace.as_str(),
         repo = work_item.repo.as_str(),
-        repo_path = repo_path.display(),
+        repo_path = workspace.path.display(),
         title = work_item.title.as_str(),
         state = work_item.state.as_str(),
         labels = labels,
         body = body,
-        comments = comments
+        comments = comments,
+        git_rules = git_rules
     )
+}
+
+fn format_git_rules(workspace: &AgentWorkspace) -> String {
+    match (&workspace.branch_name, &workspace.commit_footer) {
+        (Some(branch_name), Some(commit_footer)) => format!(
+            "- Work only in the isolated git worktree shown as Local workspace.\n\
+             - Keep the branch name exactly: {branch_name}\n\
+             - If you create commits for this issue, include this footer in each commit message: {commit_footer}\n\
+             - Do not rename the branch, delete the worktree, or edit the source checkout outside this workspace."
+        ),
+        _ => "- Use the repository's existing git workflow for this manual dispatch.".to_string(),
+    }
 }
 
 fn format_issue_comments(work_item: &WorkItem) -> String {
@@ -166,5 +212,51 @@ mod tests {
         );
         assert!(task.prompt.contains("Issue comments:"));
         assert!(task.prompt.contains("Use the compact import flow."));
+    }
+
+    #[test]
+    fn builds_codex_task_with_isolated_workspace_git_rules() {
+        let work_item = WorkItem {
+            provider: Provider::GitLab,
+            source_url: "https://gitlab.com/acme/widgets/-/issues/42".to_string(),
+            instance_url: "https://gitlab.com".to_string(),
+            owner_or_namespace: "acme".to_string(),
+            repo: "widgets".to_string(),
+            number: 42,
+            state: "open".to_string(),
+            title: "Build import flow".to_string(),
+            body: "Need an import flow.".to_string(),
+            labels: vec!["sisyphus".to_string()],
+            comments: Vec::new(),
+        };
+        let queue_item = QueueItem {
+            id: 7,
+            provider: "gitlab".to_string(),
+            issue_url: work_item.source_url.clone(),
+            state: "queued".to_string(),
+            payload: serde_json::to_string(&work_item).unwrap(),
+        };
+
+        let task = build_codex_task_in_workspace(
+            &queue_item,
+            &AgentWorkspace {
+                path: PathBuf::from(
+                    "/tmp/sisyphus/worktrees/gitlab/acme/widgets/42-feature-build-import-flow",
+                ),
+                branch_name: Some("42-feature-build-import-flow".to_string()),
+                commit_footer: Some("Ref #42".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert!(task.prompt.contains("isolated git worktree"));
+        assert!(
+            task.prompt
+                .contains("Keep the branch name exactly: 42-feature-build-import-flow")
+        );
+        assert!(
+            task.prompt
+                .contains("include this footer in each commit message: Ref #42")
+        );
     }
 }
