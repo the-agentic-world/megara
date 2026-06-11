@@ -212,8 +212,8 @@ The CI workflow runs the same Rust checks on Ubuntu and macOS arm runners.
 Releases are tag-driven:
 
 ```bash
-git tag v0.0.1
-git push origin v0.0.1
+git tag v0.0.2
+git push origin v0.0.2
 ```
 
 The release workflow builds:
