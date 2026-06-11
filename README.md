@@ -186,6 +186,9 @@ sisyphus provider-add ...        Register a provider repository polling target
 sisyphus repo-add ...            Map a provider repository to a local path
 sisyphus import <issue-url>      Import an issue into the queue
 sisyphus queue                   List queued work
+sisyphus queue status <id>       Inspect queue, Codex thread, and App-list visibility
+sisyphus queue cancel <id>       Request cancellation for queued or running work
+sisyphus queue cleanup <id>      Remove the Sisyphus-managed issue worktree
 sisyphus dispatch <id>           Dispatch queued work to Codex
 sisyphus sessions                List Codex session references
 sisyphus events                  List lifecycle events

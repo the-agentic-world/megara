@@ -1361,6 +1361,7 @@ dependencies = [
  "security-framework-sys",
  "serde",
  "serde_json",
+ "signal-hook",
  "tokio",
  "toml",
  "urlencoding",

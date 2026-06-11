@@ -8,6 +8,10 @@ use crate::storage::QueueItem;
 use crate::tasks::{self, AgentTask, AgentWorkspace};
 use crate::worktree;
 use anyhow::{Context, Result, bail};
+#[cfg(unix)]
+use signal_hook::consts::signal::{SIGINT, SIGTERM};
+#[cfg(unix)]
+use signal_hook::iterator::Signals;
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::process::{Command, Stdio};
@@ -81,14 +85,15 @@ async fn run_foreground() -> Result<()> {
     println!("control_socket={}", paths.socket_path.display());
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let mut signal_rx = spawn_shutdown_signal_listener()?;
 
     let mut control_task = tokio::spawn(handle_control(control, paths.clone(), shutdown_tx));
     let mut polling_task = tokio::spawn(run_polling_loop(paths.clone()));
     let mut dispatch_task = tokio::spawn(run_dispatch_loop(paths.clone()));
 
     let result = tokio::select! {
-        result = shutdown_signal() => {
-            result
+        result = &mut signal_rx => {
+            result.map(|_| ()).context("signal shutdown channel closed")
         }
         result = shutdown_rx => {
             result.map(|_| ()).context("control shutdown channel closed")
@@ -109,30 +114,46 @@ async fn run_foreground() -> Result<()> {
     result
 }
 
-async fn shutdown_signal() -> Result<()> {
-    #[cfg(unix)]
-    {
-        let mut interrupt =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-                .context("failed to listen for SIGINT")?;
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .context("failed to listen for SIGTERM")?;
+#[cfg(unix)]
+fn spawn_shutdown_signal_listener() -> Result<oneshot::Receiver<()>> {
+    let mut signals = Signals::new([SIGINT, SIGTERM]).context("failed to listen for signals")?;
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-        tokio::select! {
-            _ = interrupt.recv() => {}
-            _ = terminate.recv() => {}
+    std::thread::spawn(move || {
+        let mut shutdown_tx = Some(shutdown_tx);
+        let mut interrupt_seen = false;
+
+        for signal in signals.forever() {
+            if signal == SIGINT && interrupt_seen {
+                eprintln!("received second Ctrl+C; forcing shutdown");
+                unsafe { libc::_exit(130) };
+            }
+
+            if signal == SIGINT {
+                interrupt_seen = true;
+            }
+
+            if let Some(shutdown_tx) = shutdown_tx.take() {
+                let _ = shutdown_tx.send(());
+            }
         }
-    }
+    });
 
-    #[cfg(not(unix))]
-    {
-        tokio::signal::ctrl_c()
-            .await
-            .context("failed to listen for ctrl-c")?;
-    }
+    Ok(shutdown_rx)
+}
 
-    Ok(())
+#[cfg(not(unix))]
+fn spawn_shutdown_signal_listener() -> Result<oneshot::Receiver<()>> {
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    std::thread::spawn(move || {
+        let Ok(runtime) = tokio::runtime::Runtime::new() else {
+            return;
+        };
+        let _ = runtime.block_on(tokio::signal::ctrl_c());
+        let _ = shutdown_tx.send(());
+    });
+
+    Ok(shutdown_rx)
 }
 
 fn abort_tasks(tasks: [JoinHandle<Result<()>>; 3]) {
@@ -253,6 +274,7 @@ async fn run_dispatch_loop(paths: Paths) -> Result<()> {
 
 async fn dispatch_queued_once(paths: &Paths, cfg: &Config) -> Result<usize> {
     let mut progressed = recover_dispatched_session_refs(paths)?;
+    progressed += refresh_running_queue_items(paths, cfg)?;
 
     if !cfg.dispatch.auto_dispatch {
         return Ok(progressed);
@@ -285,12 +307,81 @@ fn recover_dispatched_session_refs(paths: &Paths) -> Result<usize> {
         })
     {
         if session_queue_ids.contains(&queue_item.id) {
-            storage::update_queue_state(paths, queue_item.id, "dispatched")?;
+            storage::update_queue_state(paths, queue_item.id, "running")?;
             recovered += 1;
         }
     }
 
     Ok(recovered)
+}
+
+fn refresh_running_queue_items(paths: &Paths, _cfg: &Config) -> Result<usize> {
+    let session_refs = storage::list_agent_session_refs(paths)?;
+    let mut progressed = 0;
+
+    for queue_item in storage::list_queue_items(paths)?
+        .into_iter()
+        .filter(|item| item.state == "running" || item.state == "cancel_requested")
+    {
+        let Some(session_ref) = session_refs
+            .iter()
+            .find(|session_ref| session_ref.queue_item_id == queue_item.id)
+        else {
+            continue;
+        };
+        let Some(thread_id) = session_ref.session_id.as_deref() else {
+            continue;
+        };
+        let Some(turn_id) = session_ref.turn_id.as_deref() else {
+            continue;
+        };
+        let inspection = match codex::inspect_thread(thread_id, Some(turn_id), None) {
+            Ok(inspection) => inspection,
+            Err(error) => {
+                eprintln!(
+                    "failed to inspect Codex thread for queue item {}: {error:#}",
+                    queue_item.id
+                );
+                continue;
+            }
+        };
+
+        if let Some(turn_status) = inspection.turn_status.as_deref() {
+            storage::update_agent_session_status(paths, queue_item.id, turn_status)?;
+        }
+
+        let Some(next_state) = queue_state_for_turn_status(&queue_item.state, &inspection) else {
+            continue;
+        };
+        storage::update_queue_state(paths, queue_item.id, next_state)?;
+        storage::record_loop_event(
+            paths,
+            Some(&format!("queue-{}", queue_item.id)),
+            "codex.thread_observed",
+            &serde_json::to_value(&inspection).context("failed to serialize inspection")?,
+        )?;
+        progressed += 1;
+    }
+
+    Ok(progressed)
+}
+
+fn queue_state_for_turn_status(
+    current_state: &str,
+    inspection: &codex::CodexThreadInspection,
+) -> Option<&'static str> {
+    match inspection.turn_status.as_deref() {
+        Some("completed") => Some("completed"),
+        Some("failed") => Some("failed"),
+        Some("interrupted") if current_state == "cancel_requested" => Some("canceled"),
+        Some("interrupted") => Some("interrupted"),
+        Some("inProgress") => None,
+        _ => match inspection.thread_status.as_deref() {
+            Some("systemError") => Some("failed"),
+            Some("idle") if current_state == "cancel_requested" => Some("canceled"),
+            _ => None,
+        },
+    }
 }
 
 async fn dispatch_queue_item(paths: &Paths, cfg: &Config, queue_item: QueueItem) -> Result<bool> {
@@ -315,6 +406,8 @@ async fn dispatch_queue_item(paths: &Paths, cfg: &Config, queue_item: QueueItem)
                 }
             } else if result.app_deep_link.is_some() && result.thread_id.is_none() {
                 "manual_open_required"
+            } else if result.turn_id.is_some() {
+                "running"
             } else {
                 "dispatched"
             };
@@ -346,6 +439,8 @@ fn store_codex_session_ref(
             agent: "codex".to_string(),
             dispatch_path: result.path.as_str().to_string(),
             session_id: result.thread_id.clone(),
+            turn_id: result.turn_id.clone(),
+            status: result.turn_id.as_ref().map(|_| "running".to_string()),
             resume_hint: result.resume_hint.clone(),
             app_deep_link: result.app_deep_link.clone(),
         },
@@ -698,6 +793,36 @@ mod tests {
     }
 
     #[test]
+    fn maps_codex_turn_status_to_queue_terminal_state() {
+        let completed = codex::CodexThreadInspection {
+            thread_id: "thread-1".to_string(),
+            visible_in_default_list: true,
+            thread_status: Some("idle".to_string()),
+            turn_status: Some("completed".to_string()),
+            cwd: None,
+            source: None,
+            thread_source: Some("user".to_string()),
+        };
+        let interrupted = codex::CodexThreadInspection {
+            turn_status: Some("interrupted".to_string()),
+            ..completed.clone()
+        };
+
+        assert_eq!(
+            queue_state_for_turn_status("running", &completed),
+            Some("completed")
+        );
+        assert_eq!(
+            queue_state_for_turn_status("running", &interrupted),
+            Some("interrupted")
+        );
+        assert_eq!(
+            queue_state_for_turn_status("cancel_requested", &interrupted),
+            Some("canceled")
+        );
+    }
+
+    #[test]
     fn recovers_dispatching_item_with_session_ref() {
         let root = std::env::temp_dir().join(format!(
             "sisyphus-dispatch-recovery-test-{}",
@@ -726,6 +851,8 @@ mod tests {
                 agent: "codex".to_string(),
                 dispatch_path: "app-server".to_string(),
                 session_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                status: Some("running".to_string()),
                 resume_hint: Some("codex resume thread-1".to_string()),
                 app_deep_link: Some("codex://threads/thread-1".to_string()),
             },
@@ -736,7 +863,7 @@ mod tests {
         let item = storage::get_queue_item(&paths, id).unwrap();
 
         assert_eq!(recovered, 1);
-        assert_eq!(item.state, "dispatched");
+        assert_eq!(item.state, "running");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -770,6 +897,8 @@ mod tests {
                 agent: "codex".to_string(),
                 dispatch_path: "app-server".to_string(),
                 session_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                status: Some("running".to_string()),
                 resume_hint: Some("codex resume thread-1".to_string()),
                 app_deep_link: Some("codex://threads/thread-1".to_string()),
             },
@@ -780,7 +909,7 @@ mod tests {
         let item = storage::get_queue_item(&paths, id).unwrap();
 
         assert_eq!(recovered, 1);
-        assert_eq!(item.state, "dispatched");
+        assert_eq!(item.state, "running");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -996,7 +1125,7 @@ mod tests {
         assert!(
             task.repo_path
                 .to_string_lossy()
-                .contains("worktrees/github/acme/widgets/feature/42-issue")
+                .contains(".sisyphus-worktrees/github/acme/widgets/feature/42-issue")
         );
         assert!(
             task.prompt

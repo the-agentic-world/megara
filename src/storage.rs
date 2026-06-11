@@ -20,6 +20,8 @@ pub struct AgentSessionRef {
     pub agent: String,
     pub dispatch_path: String,
     pub session_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub status: Option<String>,
     pub resume_hint: Option<String>,
     pub app_deep_link: Option<String>,
 }
@@ -87,6 +89,8 @@ pub fn initialize(paths: &Paths) -> Result<()> {
             agent TEXT NOT NULL,
             dispatch_path TEXT NOT NULL,
             session_id TEXT,
+            turn_id TEXT,
+            status TEXT,
             resume_hint TEXT,
             app_deep_link TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -100,7 +104,34 @@ pub fn initialize(paths: &Paths) -> Result<()> {
         "#,
     )
     .context("failed to initialize sqlite schema")?;
+    add_column_if_missing(&conn, "agent_session_refs", "turn_id", "TEXT")?;
+    add_column_if_missing(&conn, "agent_session_refs", "status", "TEXT")?;
 
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    column_type: &str,
+) -> Result<()> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .with_context(|| format!("failed to inspect table {table}"))?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .with_context(|| format!("failed to read table info for {table}"))?;
+    if columns.iter().any(|existing| existing == column) {
+        return Ok(());
+    }
+
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {column_type}"),
+        [],
+    )
+    .with_context(|| format!("failed to add column {table}.{column}"))?;
     Ok(())
 }
 
@@ -289,6 +320,27 @@ pub fn update_queue_state(paths: &Paths, id: i64, state: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn update_agent_session_status(paths: &Paths, queue_item_id: i64, status: &str) -> Result<()> {
+    let conn = Connection::open(&paths.db_path)
+        .with_context(|| format!("failed to open {}", paths.db_path.display()))?;
+    let changed = conn
+        .execute(
+            r#"
+            UPDATE agent_session_refs
+            SET status = ?2,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE queue_item_id = ?1
+            "#,
+            params![queue_item_id, status],
+        )
+        .with_context(|| format!("failed to update agent session ref for {queue_item_id}"))?;
+    if changed == 0 {
+        anyhow::bail!("agent session ref for queue item {queue_item_id} not found");
+    }
+
+    Ok(())
+}
+
 pub fn retry_queue_item(paths: &Paths, id: i64) -> Result<QueueItem> {
     let item = get_queue_item(paths, id)?;
     if !is_retryable_state(&item.state) {
@@ -373,14 +425,18 @@ pub fn upsert_agent_session_ref(paths: &Paths, session_ref: &AgentSessionRef) ->
             agent,
             dispatch_path,
             session_id,
+            turn_id,
+            status,
             resume_hint,
             app_deep_link
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(queue_item_id) DO UPDATE SET
             agent = excluded.agent,
             dispatch_path = excluded.dispatch_path,
             session_id = excluded.session_id,
+            turn_id = excluded.turn_id,
+            status = excluded.status,
             resume_hint = excluded.resume_hint,
             app_deep_link = excluded.app_deep_link,
             updated_at = CURRENT_TIMESTAMP
@@ -390,6 +446,8 @@ pub fn upsert_agent_session_ref(paths: &Paths, session_ref: &AgentSessionRef) ->
             session_ref.agent.as_str(),
             session_ref.dispatch_path.as_str(),
             session_ref.session_id.as_deref(),
+            session_ref.turn_id.as_deref(),
+            session_ref.status.as_deref(),
             session_ref.resume_hint.as_deref(),
             session_ref.app_deep_link.as_deref(),
         ],
@@ -410,7 +468,7 @@ pub fn list_agent_session_refs(paths: &Paths) -> Result<Vec<AgentSessionRef>> {
     let mut stmt = conn
         .prepare(
             r#"
-            SELECT queue_item_id, agent, dispatch_path, session_id, resume_hint, app_deep_link
+            SELECT queue_item_id, agent, dispatch_path, session_id, turn_id, status, resume_hint, app_deep_link
             FROM agent_session_refs
             ORDER BY queue_item_id ASC
             "#,
@@ -423,8 +481,10 @@ pub fn list_agent_session_refs(paths: &Paths) -> Result<Vec<AgentSessionRef>> {
             agent: row.get(1)?,
             dispatch_path: row.get(2)?,
             session_id: row.get(3)?,
-            resume_hint: row.get(4)?,
-            app_deep_link: row.get(5)?,
+            turn_id: row.get(4)?,
+            status: row.get(5)?,
+            resume_hint: row.get(6)?,
+            app_deep_link: row.get(7)?,
         })
     })?;
 
@@ -438,7 +498,7 @@ pub fn get_agent_session_ref(paths: &Paths, queue_item_id: i64) -> Result<AgentS
 
     conn.query_row(
         r#"
-        SELECT queue_item_id, agent, dispatch_path, session_id, resume_hint, app_deep_link
+        SELECT queue_item_id, agent, dispatch_path, session_id, turn_id, status, resume_hint, app_deep_link
         FROM agent_session_refs
         WHERE queue_item_id = ?1
         "#,
@@ -449,8 +509,10 @@ pub fn get_agent_session_ref(paths: &Paths, queue_item_id: i64) -> Result<AgentS
                 agent: row.get(1)?,
                 dispatch_path: row.get(2)?,
                 session_id: row.get(3)?,
-                resume_hint: row.get(4)?,
-                app_deep_link: row.get(5)?,
+                turn_id: row.get(4)?,
+                status: row.get(5)?,
+                resume_hint: row.get(6)?,
+                app_deep_link: row.get(7)?,
             })
         },
     )
@@ -539,6 +601,10 @@ fn should_requeue_on_payload_change(state: &str) -> bool {
             | "clarification_publish_failed"
             | "dispatch_failed"
             | "manual_open_required"
+            | "failed"
+            | "interrupted"
+            | "canceled"
+            | "cleaned"
     )
 }
 
@@ -546,10 +612,15 @@ fn is_retryable_state(state: &str) -> bool {
     matches!(
         state,
         "dispatching"
+            | "running"
             | "awaiting_clarification"
             | "clarification_publish_failed"
             | "dispatch_failed"
             | "manual_open_required"
+            | "failed"
+            | "interrupted"
+            | "canceled"
+            | "cleaned"
     )
 }
 
@@ -559,6 +630,8 @@ fn is_cancelable_state(state: &str) -> bool {
         "queued"
             | "paused"
             | "dispatching"
+            | "running"
+            | "cancel_requested"
             | "awaiting_clarification"
             | "clarification_publish_failed"
             | "dispatch_failed"
@@ -955,6 +1028,8 @@ mod tests {
                 agent: "codex".to_string(),
                 dispatch_path: "app-server".to_string(),
                 session_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                status: Some("running".to_string()),
                 resume_hint: None,
                 app_deep_link: None,
             },
@@ -1003,6 +1078,8 @@ mod tests {
                 agent: "codex".to_string(),
                 dispatch_path: "exec-json".to_string(),
                 session_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                status: Some("running".to_string()),
                 resume_hint: Some("codex resume thread-1".to_string()),
                 app_deep_link: Some("codex://threads/thread-1".to_string()),
             },
@@ -1013,9 +1090,14 @@ mod tests {
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].queue_item_id, queue_item_id);
         assert_eq!(refs[0].session_id.as_deref(), Some("thread-1"));
+        assert_eq!(refs[0].turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(refs[0].status.as_deref(), Some("running"));
+
+        update_agent_session_status(&paths, queue_item_id, "completed").unwrap();
 
         let found = get_agent_session_ref(&paths, queue_item_id).unwrap();
         assert_eq!(found.resume_hint.as_deref(), Some("codex resume thread-1"));
+        assert_eq!(found.status.as_deref(), Some("completed"));
 
         let _ = fs::remove_dir_all(root);
     }

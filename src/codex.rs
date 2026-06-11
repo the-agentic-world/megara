@@ -67,9 +67,21 @@ impl CodexCapabilities {
 pub struct CodexDispatchResult {
     pub path: CodexDispatchPath,
     pub thread_id: Option<String>,
+    pub turn_id: Option<String>,
     pub resume_hint: Option<String>,
     pub app_deep_link: Option<String>,
     pub clarification_request: Option<ClarificationRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexThreadInspection {
+    pub thread_id: String,
+    pub visible_in_default_list: bool,
+    pub thread_status: Option<String>,
+    pub turn_status: Option<String>,
+    pub cwd: Option<String>,
+    pub source: Option<String>,
+    pub thread_source: Option<String>,
 }
 
 pub fn dispatch(task: &AgentTask, dry_run: bool) -> Result<CodexDispatchResult> {
@@ -77,32 +89,35 @@ pub fn dispatch(task: &AgentTask, dry_run: bool) -> Result<CodexDispatchResult> 
     let path = capabilities.preferred_dispatch_path();
 
     if dry_run {
-        return Ok(dispatch_result(path, None, None, task));
+        return Ok(dispatch_result(path, None, None, None, task));
     }
 
     match path {
         CodexDispatchPath::AppServer => dispatch_app_server(task),
         CodexDispatchPath::ExecJson => dispatch_exec_json(task),
-        CodexDispatchPath::DeepLinkManual => Ok(dispatch_result(path, None, None, task)),
+        CodexDispatchPath::DeepLinkManual => Ok(dispatch_result(path, None, None, None, task)),
     }
 }
 
 fn dispatch_app_server(task: &AgentTask) -> Result<CodexDispatchResult> {
     let mut rpc = AppServerJsonRpc::spawn()?;
     rpc.initialize()?;
+    rpc.initialized()?;
     let thread_start = rpc.thread_start(task, false)?;
     let thread_id = thread_id_from_thread_start(&thread_start)?;
     let turn_start = rpc.turn_start(&thread_id, task)?;
     let turn_id = turn_id_from_turn_start(&turn_start)?;
     let drain_thread_id = thread_id.clone();
+    let drain_turn_id = turn_id.clone();
     std::thread::spawn(move || {
-        let _ = rpc.read_until_turn_completed(&drain_thread_id, &turn_id);
+        let _ = rpc.read_until_turn_completed(&drain_thread_id, &drain_turn_id);
         rpc.shutdown();
     });
 
     Ok(dispatch_result(
         CodexDispatchPath::AppServer,
         Some(thread_id),
+        Some(turn_id),
         None,
         task,
     ))
@@ -142,6 +157,7 @@ fn dispatch_exec_json(task: &AgentTask) -> Result<CodexDispatchResult> {
     Ok(dispatch_result(
         CodexDispatchPath::ExecJson,
         thread_id,
+        None,
         clarification_request,
         task,
     ))
@@ -150,6 +166,7 @@ fn dispatch_exec_json(task: &AgentTask) -> Result<CodexDispatchResult> {
 fn dispatch_result(
     path: CodexDispatchPath,
     thread_id: Option<String>,
+    turn_id: Option<String>,
     clarification_request: Option<ClarificationRequest>,
     task: &AgentTask,
 ) -> CodexDispatchResult {
@@ -170,10 +187,57 @@ fn dispatch_result(
     CodexDispatchResult {
         path,
         thread_id,
+        turn_id,
         resume_hint,
         app_deep_link,
         clarification_request,
     }
+}
+
+pub fn inspect_thread(
+    thread_id: &str,
+    turn_id: Option<&str>,
+    cwd: Option<&std::path::Path>,
+) -> Result<CodexThreadInspection> {
+    let mut rpc = AppServerJsonRpc::spawn()?;
+    rpc.initialize()?;
+    rpc.initialized()?;
+
+    let read = rpc.thread_read(thread_id)?;
+    let visible_in_default_list = rpc.thread_visible_in_default_list(thread_id, cwd)?;
+    rpc.shutdown();
+
+    let thread = read
+        .get("thread")
+        .with_context(|| format!("thread/read response missing thread for {thread_id}"))?;
+
+    Ok(CodexThreadInspection {
+        thread_id: thread_id.to_string(),
+        visible_in_default_list,
+        thread_status: thread_status(thread),
+        turn_status: turn_id.and_then(|turn_id| turn_status(thread, turn_id)),
+        cwd: thread
+            .get("cwd")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        source: thread
+            .get("source")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        thread_source: thread
+            .get("threadSource")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+    })
+}
+
+pub fn interrupt_turn(thread_id: &str, turn_id: &str) -> Result<()> {
+    let mut rpc = AppServerJsonRpc::spawn()?;
+    rpc.initialize()?;
+    rpc.initialized()?;
+    rpc.turn_interrupt(thread_id, turn_id)?;
+    rpc.shutdown();
+    Ok(())
 }
 
 fn manual_deep_link(task: &AgentTask) -> String {
@@ -209,6 +273,7 @@ fn probe_app_server_thread_start() -> bool {
     let result = (|| -> Result<()> {
         let mut rpc = AppServerJsonRpc::spawn()?;
         rpc.initialize()?;
+        rpc.initialized()?;
         rpc.thread_start(&probe_task, true)?;
         rpc.shutdown();
         Ok(())
@@ -256,6 +321,7 @@ impl AppServerJsonRpc {
             json!({
                 "clientInfo": {
                     "name": "sisyphus",
+                    "title": "Sisyphus",
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {
@@ -265,6 +331,10 @@ impl AppServerJsonRpc {
         )
     }
 
+    fn initialized(&mut self) -> Result<()> {
+        self.notify("initialized", json!({}))
+    }
+
     fn thread_start(&mut self, task: &AgentTask, ephemeral: bool) -> Result<Value> {
         self.request(
             2,
@@ -272,6 +342,9 @@ impl AppServerJsonRpc {
             json!({
                 "cwd": task.repo_path,
                 "runtimeWorkspaceRoots": [task.repo_path],
+                "serviceName": "sisyphus",
+                "threadSource": "user",
+                "sessionStartSource": "startup",
                 "ephemeral": ephemeral
             }),
         )
@@ -293,6 +366,75 @@ impl AppServerJsonRpc {
                 ]
             }),
         )
+    }
+
+    fn thread_read(&mut self, thread_id: &str) -> Result<Value> {
+        self.request(
+            4,
+            "thread/read",
+            json!({
+                "threadId": thread_id,
+                "includeTurns": true
+            }),
+        )
+    }
+
+    fn thread_visible_in_default_list(
+        &mut self,
+        thread_id: &str,
+        cwd: Option<&std::path::Path>,
+    ) -> Result<bool> {
+        let mut params = json!({
+            "archived": false,
+            "limit": 100,
+            "useStateDbOnly": false
+        });
+
+        if let Some(cwd) = cwd
+            && let Some(params) = params.as_object_mut()
+        {
+            params.insert("cwd".to_string(), json!(cwd));
+        }
+
+        let result = self.request(5, "thread/list", params)?;
+        Ok(result
+            .get("data")
+            .and_then(Value::as_array)
+            .is_some_and(|threads| {
+                threads
+                    .iter()
+                    .any(|thread| thread.get("id").and_then(Value::as_str) == Some(thread_id))
+            }))
+    }
+
+    fn turn_interrupt(&mut self, thread_id: &str, turn_id: &str) -> Result<Value> {
+        self.request(
+            6,
+            "turn/interrupt",
+            json!({
+                "threadId": thread_id,
+                "turnId": turn_id
+            }),
+        )
+    }
+
+    fn notify(&mut self, method: &str, params: Value) -> Result<()> {
+        let request = json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params
+        });
+        let stdin = self
+            .stdin
+            .as_mut()
+            .context("app-server stdin is already closed")?;
+        writeln!(stdin, "{request}")
+            .with_context(|| format!("failed to write app-server notification {method}"))?;
+        stdin
+            .flush()
+            .with_context(|| format!("failed to flush app-server notification {method}"))?;
+
+        Ok(())
     }
 
     fn request(&mut self, id: u64, method: &str, params: Value) -> Result<Value> {
@@ -439,6 +581,25 @@ fn is_turn_completed_message(value: &Value, thread_id: &str, turn_id: &str) -> b
         && completed_turn_id(value) == Some(turn_id)
 }
 
+fn thread_status(thread: &Value) -> Option<String> {
+    thread
+        .get("status")
+        .and_then(|status| status.get("type"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
+fn turn_status(thread: &Value, turn_id: &str) -> Option<String> {
+    thread
+        .get("turns")
+        .and_then(Value::as_array)?
+        .iter()
+        .find(|turn| turn.get("id").and_then(Value::as_str) == Some(turn_id))?
+        .get("status")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
 fn extract_thread_id(jsonl: &str) -> Option<String> {
     for line in jsonl.lines() {
         let Ok(value) = serde_json::from_str::<Value>(line) else {
@@ -562,6 +723,26 @@ mod tests {
         assert_eq!(message_thread_id(&value), Some("thread-1"));
         assert_eq!(completed_turn_id(&value), Some("turn-1"));
         assert!(is_turn_completed_message(&value, "thread-1", "turn-1"));
+    }
+
+    #[test]
+    fn extracts_thread_and_turn_status_from_thread_payload() {
+        let thread = json!({
+            "status": {
+                "type": "idle"
+            },
+            "turns": [
+                {
+                    "id": "turn-1",
+                    "status": "completed",
+                    "items": []
+                }
+            ]
+        });
+
+        assert_eq!(thread_status(&thread).as_deref(), Some("idle"));
+        assert_eq!(turn_status(&thread, "turn-1").as_deref(), Some("completed"));
+        assert_eq!(turn_status(&thread, "missing"), None);
     }
 
     #[test]

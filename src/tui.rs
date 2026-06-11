@@ -383,11 +383,13 @@ fn session_label(session: &AgentSessionRef) -> String {
         .or(session.app_deep_link.as_deref())
         .or(session.session_id.as_deref())
         .unwrap_or("-");
+    let status = session.status.as_deref().unwrap_or("-");
     format!(
-        "#{:<4} {:<7} {:<11} {}",
+        "#{:<4} {:<7} {:<11} {:<12} {}",
         session.queue_item_id,
         session.agent,
         session.dispatch_path,
+        status,
         truncate(resume, 96)
     )
 }

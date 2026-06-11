@@ -73,8 +73,19 @@ async fn main() -> Result<()> {
                     println!("resumed work item {}: {}", item.id, item.issue_url);
                 }
                 Some(QueueCommand::Cancel { queue_item_id }) => {
-                    let item = sisyphus::storage::cancel_queue_item(&paths, queue_item_id)?;
-                    println!("canceled work item {}: {}", item.id, item.issue_url);
+                    let item = cancel_queue_item(&paths, queue_item_id)?;
+                    println!("{} work item {}: {}", item.state, item.id, item.issue_url);
+                }
+                Some(QueueCommand::Status { queue_item_id }) => {
+                    let inspection = inspect_queue_item(&paths, queue_item_id)?;
+                    println!("{}", serde_json::to_string_pretty(&inspection)?);
+                }
+                Some(QueueCommand::Cleanup {
+                    queue_item_id,
+                    force,
+                }) => {
+                    let cleanup = cleanup_queue_item(&paths, queue_item_id, force)?;
+                    println!("{}", serde_json::to_string_pretty(&cleanup)?);
                 }
                 Some(QueueCommand::Remove { queue_item_id }) => {
                     sisyphus::storage::remove_queue_item(&paths, queue_item_id)?;
@@ -88,10 +99,13 @@ async fn main() -> Result<()> {
             sisyphus::storage::initialize(&paths)?;
             for session_ref in sisyphus::storage::list_agent_session_refs(&paths)? {
                 println!(
-                    "{}\t{}\t{}\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     session_ref.queue_item_id,
                     session_ref.agent,
                     session_ref.dispatch_path,
+                    session_ref.session_id.unwrap_or_default(),
+                    session_ref.turn_id.unwrap_or_default(),
+                    session_ref.status.unwrap_or_default(),
                     session_ref.resume_hint.unwrap_or_default(),
                     session_ref.app_deep_link.unwrap_or_default()
                 );
@@ -175,13 +189,17 @@ async fn main() -> Result<()> {
                         agent: "codex".to_string(),
                         dispatch_path: result.path.as_str().to_string(),
                         session_id: result.thread_id.clone(),
+                        turn_id: result.turn_id.clone(),
+                        status: result.turn_id.as_ref().map(|_| "running".to_string()),
                         resume_hint: result.resume_hint.clone(),
                         app_deep_link: result.app_deep_link.clone(),
                     },
                 )?;
             }
 
-            if result.thread_id.is_some() {
+            if result.turn_id.is_some() {
+                sisyphus::storage::update_queue_state(&paths, queue_item_id, "running")?;
+            } else if result.thread_id.is_some() {
                 sisyphus::storage::update_queue_state(&paths, queue_item_id, "dispatched")?;
             } else if result.app_deep_link.is_some() {
                 sisyphus::storage::update_queue_state(
@@ -293,6 +311,88 @@ fn print_queue_item_row(item: &QueueItem) {
         item.state,
         item.issue_url
     );
+}
+
+fn cancel_queue_item(
+    paths: &sisyphus::config::Paths,
+    queue_item_id: i64,
+) -> Result<sisyphus::storage::QueueItem> {
+    let item = sisyphus::storage::get_queue_item(paths, queue_item_id)?;
+    if item.state == "running" {
+        let session_ref = sisyphus::storage::get_agent_session_ref(paths, queue_item_id)?;
+        if let (Some(thread_id), Some(turn_id)) = (
+            session_ref.session_id.as_deref(),
+            session_ref.turn_id.as_deref(),
+        ) {
+            sisyphus::codex::interrupt_turn(thread_id, turn_id)?;
+            sisyphus::storage::update_agent_session_status(paths, queue_item_id, "interrupting")?;
+            sisyphus::storage::update_queue_state(paths, queue_item_id, "cancel_requested")?;
+            return sisyphus::storage::get_queue_item(paths, queue_item_id);
+        }
+    }
+
+    sisyphus::storage::cancel_queue_item(paths, queue_item_id)
+}
+
+fn inspect_queue_item(
+    paths: &sisyphus::config::Paths,
+    queue_item_id: i64,
+) -> Result<serde_json::Value> {
+    let item = sisyphus::storage::get_queue_item(paths, queue_item_id)?;
+    let session_ref = sisyphus::storage::get_agent_session_ref(paths, queue_item_id).ok();
+    let codex = if let Some(session_ref) = &session_ref {
+        if let Some(thread_id) = session_ref.session_id.as_deref() {
+            Some(sisyphus::codex::inspect_thread(
+                thread_id,
+                session_ref.turn_id.as_deref(),
+                None,
+            )?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    Ok(serde_json::json!({
+        "queue_item": item,
+        "session_ref": session_ref,
+        "codex": codex,
+    }))
+}
+
+fn cleanup_queue_item(
+    paths: &sisyphus::config::Paths,
+    queue_item_id: i64,
+    force: bool,
+) -> Result<serde_json::Value> {
+    let cfg = sisyphus::config::load_or_create(paths)?;
+    let item = sisyphus::storage::get_queue_item(paths, queue_item_id)?;
+    if !matches!(
+        item.state.as_str(),
+        "completed" | "failed" | "interrupted" | "canceled" | "cleaned"
+    ) {
+        anyhow::bail!(
+            "queue item {queue_item_id} cannot be cleaned from state {}",
+            item.state
+        );
+    }
+    let work_item: WorkItem = serde_json::from_str(&item.payload)
+        .with_context(|| format!("failed to parse queue item {queue_item_id} payload"))?;
+    let repo_path = cfg.repository_path_for(&work_item).with_context(|| {
+        format!("repository mapping not configured for queue item {queue_item_id}")
+    })?;
+    let cleanup = sisyphus::worktree::cleanup_issue_worktree(paths, &repo_path, &work_item, force)?;
+    if cleanup.removed {
+        sisyphus::storage::update_queue_state(paths, queue_item_id, "cleaned")?;
+    }
+
+    Ok(serde_json::json!({
+        "queue_item_id": queue_item_id,
+        "path": cleanup.path,
+        "removed": cleanup.removed,
+        "state": sisyphus::storage::get_queue_item(paths, queue_item_id)?.state,
+    }))
 }
 
 fn print_queue_item_detail(item: &QueueItem) -> Result<()> {

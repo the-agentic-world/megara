@@ -107,6 +107,17 @@ pub enum QueueCommand {
     Resume { queue_item_id: i64 },
     #[command(about = "Cancel a work item")]
     Cancel { queue_item_id: i64 },
+    #[command(about = "Inspect a Codex-backed queue item status")]
+    Status { queue_item_id: i64 },
+    #[command(about = "Remove the Sisyphus-managed issue worktree")]
+    Cleanup {
+        queue_item_id: i64,
+        #[arg(
+            long,
+            help = "Remove the worktree even when it has uncommitted changes"
+        )]
+        force: bool,
+    },
     #[command(about = "Remove a work item from the local queue")]
     Remove { queue_item_id: i64 },
 }
@@ -250,6 +261,25 @@ mod tests {
             cli.command,
             Some(Command::Queue {
                 command: Some(QueueCommand::Remove { queue_item_id: 7 })
+            })
+        );
+
+        let cli = Cli::parse_from(["sisyphus", "queue", "status", "7"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Status { queue_item_id: 7 })
+            })
+        );
+
+        let cli = Cli::parse_from(["sisyphus", "queue", "cleanup", "7", "--force"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Cleanup {
+                    queue_item_id: 7,
+                    force: true
+                })
             })
         );
     }

@@ -12,15 +12,21 @@ pub struct IssueWorktree {
     pub commit_footer: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeCleanup {
+    pub path: PathBuf,
+    pub removed: bool,
+}
+
 pub fn prepare_issue_worktree(
-    paths: &Paths,
+    _paths: &Paths,
     repo_path: &Path,
     work_item: &WorkItem,
 ) -> Result<IssueWorktree> {
     ensure_git_repository(repo_path)?;
 
     let branch_name = issue_branch_name(work_item);
-    let worktree_path = issue_worktree_path(paths, work_item, &branch_name);
+    let worktree_path = issue_worktree_path(repo_path, work_item, &branch_name)?;
 
     if worktree_path.exists() {
         let current_branch = git_output(&worktree_path, ["branch", "--show-current"])?;
@@ -76,6 +82,59 @@ pub fn issue_branch_name(work_item: &WorkItem) -> String {
     }
 }
 
+pub fn cleanup_issue_worktree(
+    _paths: &Paths,
+    repo_path: &Path,
+    work_item: &WorkItem,
+    force: bool,
+) -> Result<WorktreeCleanup> {
+    ensure_git_repository(repo_path)?;
+
+    let branch_name = issue_branch_name(work_item);
+    let worktree_path = issue_worktree_path(repo_path, work_item, &branch_name)?;
+    ensure_managed_worktree_path(repo_path, &worktree_path)?;
+
+    if !worktree_path.exists() {
+        return Ok(WorktreeCleanup {
+            path: worktree_path,
+            removed: false,
+        });
+    }
+
+    let status = git_output(&worktree_path, ["status", "--porcelain"])?;
+    if !status.is_empty() && !force {
+        bail!(
+            "worktree {} has uncommitted changes; rerun with --force to remove it",
+            worktree_path.display()
+        );
+    }
+
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(repo_path)
+        .args(["worktree", "remove"]);
+    if force {
+        command.arg("--force");
+    }
+    command.arg(&worktree_path);
+    let output = command
+        .output()
+        .with_context(|| format!("failed to execute git in {}", repo_path.display()))?;
+    if !output.status.success() {
+        bail!(
+            "git failed in {}: {}",
+            repo_path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    Ok(WorktreeCleanup {
+        path: worktree_path,
+        removed: true,
+    })
+}
+
 fn issue_commit_footer(work_item: &WorkItem) -> String {
     match work_item.provider {
         Provider::GitHub => format!("Refs #{}", work_item.number),
@@ -106,14 +165,36 @@ fn has_any_label(work_item: &WorkItem, candidates: &[&str]) -> bool {
     })
 }
 
-fn issue_worktree_path(paths: &Paths, work_item: &WorkItem, branch_name: &str) -> PathBuf {
-    paths
-        .base_dir
-        .join("worktrees")
+fn issue_worktree_path(
+    repo_path: &Path,
+    work_item: &WorkItem,
+    branch_name: &str,
+) -> Result<PathBuf> {
+    let parent = repo_path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", repo_path.display()))?;
+
+    Ok(parent
+        .join(".sisyphus-worktrees")
         .join(work_item.provider.as_str())
         .join(sanitize_path_component(&work_item.owner_or_namespace))
         .join(sanitize_path_component(&work_item.repo))
-        .join(branch_name)
+        .join(branch_name))
+}
+
+fn ensure_managed_worktree_path(repo_path: &Path, worktree_path: &Path) -> Result<()> {
+    let root = repo_path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", repo_path.display()))?
+        .join(".sisyphus-worktrees");
+    if !worktree_path.starts_with(&root) {
+        bail!(
+            "refusing to clean unmanaged worktree path {}",
+            worktree_path.display()
+        );
+    }
+
+    Ok(())
 }
 
 fn ensure_git_repository(repo_path: &Path) -> Result<()> {
@@ -278,6 +359,24 @@ mod tests {
         assert_eq!(
             issue_branch_name(&work_item(Provider::GitHub, "!!!", Vec::new())),
             "feature/42-issue"
+        );
+    }
+
+    #[test]
+    fn worktree_path_lives_next_to_registered_repo() {
+        let repo_path = PathBuf::from("/workspace/widgets");
+        let path = issue_worktree_path(
+            &repo_path,
+            &work_item(Provider::GitHub, "Build import flow", Vec::new()),
+            "feature/42-build-import-flow",
+        )
+        .unwrap();
+
+        assert_eq!(
+            path,
+            PathBuf::from(
+                "/workspace/.sisyphus-worktrees/github/acme/widgets/feature/42-build-import-flow"
+            )
         );
     }
 
