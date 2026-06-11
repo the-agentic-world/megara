@@ -89,22 +89,16 @@ Git tracking rules:
 
 Clarification gate:
 First, inspect the task for blocking ambiguity. If the task is not actionable, do not implement.
-Return clarification questions in this exact JSON shape:
+Return only a JSON object with these fields when clarification is required:
+- "type": exactly "clarification_request"
+- "blocking": true
+- "summary": one concrete sentence explaining what prevents implementation
+- "questions": one or more objects, each with:
+  - "id": a specific snake_case identifier
+  - "question": a concrete implementation or verification question
+  - "options": concrete answer choices when useful, otherwise []
 
-{{
-  "type": "clarification_request",
-  "blocking": true,
-  "summary": "short reason the task is blocked",
-  "questions": [
-    {{
-      "id": "short_snake_case_id",
-      "question": "implementation-relevant question",
-      "options": ["concrete option A", "concrete option B"]
-    }}
-  ]
-}}
-
-Ask only questions that materially affect implementation or verification. Prefer concrete options when possible.
+Do not copy schema descriptions into the JSON values. Ask only questions that materially affect implementation or verification. Prefer concrete options when possible.
 If the task is actionable, state that no blocking clarification is needed and continue.
 
 Execution rules:
@@ -205,7 +199,10 @@ mod tests {
             task.prompt
                 .contains("Issue URL: https://github.com/acme/widgets/issues/42")
         );
-        assert!(task.prompt.contains("\"type\": \"clarification_request\""));
+        assert!(task.prompt.contains("exactly \"clarification_request\""));
+        assert!(!task.prompt.contains("short reason the task is blocked"));
+        assert!(!task.prompt.contains("implementation-relevant question"));
+        assert!(!task.prompt.contains("concrete option A"));
         assert!(
             task.prompt
                 .contains("Follow the repository's native instructions")
