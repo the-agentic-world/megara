@@ -1,6 +1,7 @@
 use crate::domain::Provider;
 use anyhow::{Context, Result, bail};
 
+#[cfg(target_os = "macos")]
 const KEYCHAIN_SERVICE: &str = "sisyphus-provider-token";
 
 pub fn prompt_for_provider_token(provider: &Provider) -> Result<String> {
