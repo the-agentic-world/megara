@@ -16,8 +16,11 @@ use ratatui::{
 };
 use serde::de::DeserializeOwned;
 use std::io::{self, IsTerminal, Read, Write};
+use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
+
+const CONTROL_TIMEOUT: Duration = Duration::from_millis(750);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DashboardState {
@@ -83,7 +86,8 @@ fn print_dashboard_text(paths: &Paths, state: &DashboardState) {
     if let Some(error) = &state.error {
         println!("error: {error}");
     }
-    println!("provider_add: sisyphus provider-add github <owner> <repo> --token-env GITHUB_TOKEN");
+    println!("auth: sisyphus auth github");
+    println!("provider_add: sisyphus provider-add github <owner> <repo>");
     println!("repo_add: sisyphus repo-add github <owner> <repo> <path>");
     println!("queue: sisyphus queue");
     if !state.daemon_running {
@@ -232,22 +236,31 @@ fn dispatch_selected_queue_item(
 
 fn read_dashboard_state(paths: &Paths) -> DashboardState {
     if UnixStream::connect(&paths.socket_path).is_err() {
+        let (queue_items, sessions, error) = local_dashboard_snapshot(paths);
         return DashboardState {
             daemon_running: false,
-            queue_items: Vec::new(),
-            sessions: Vec::new(),
-            error: None,
+            queue_items,
+            sessions,
+            error,
         };
     }
 
     let queue_items = match control_json::<Vec<QueueItem>>(paths, "/queue") {
         Ok(items) => items,
         Err(error) => {
+            let (queue_items, sessions, snapshot_error) = local_dashboard_snapshot(paths);
             return DashboardState {
                 daemon_running: true,
-                queue_items: Vec::new(),
-                sessions: Vec::new(),
-                error: Some(format!("{error:#}")),
+                queue_items,
+                sessions,
+                error: Some(snapshot_error.map_or_else(
+                    || format!("control API unavailable; showing local snapshot: {error:#}"),
+                    |snapshot_error| {
+                        format!(
+                            "control API unavailable: {error:#}; local snapshot failed: {snapshot_error}"
+                        )
+                    },
+                )),
             };
         }
     };
@@ -255,11 +268,15 @@ fn read_dashboard_state(paths: &Paths) -> DashboardState {
     let sessions = match control_json::<Vec<AgentSessionRef>>(paths, "/sessions") {
         Ok(sessions) => sessions,
         Err(error) => {
+            let fallback_sessions =
+                crate::storage::list_agent_session_refs(paths).unwrap_or_default();
             return DashboardState {
                 daemon_running: true,
                 queue_items,
-                sessions: Vec::new(),
-                error: Some(format!("{error:#}")),
+                sessions: fallback_sessions,
+                error: Some(format!(
+                    "control API sessions unavailable; showing local snapshot: {error:#}"
+                )),
             };
         }
     };
@@ -270,6 +287,33 @@ fn read_dashboard_state(paths: &Paths) -> DashboardState {
         sessions,
         error: None,
     }
+}
+
+fn local_dashboard_snapshot(
+    paths: &Paths,
+) -> (Vec<QueueItem>, Vec<AgentSessionRef>, Option<String>) {
+    let mut errors = Vec::new();
+    let queue_items = match crate::storage::list_queue_items(paths) {
+        Ok(items) => items,
+        Err(error) => {
+            errors.push(format!("{error:#}"));
+            Vec::new()
+        }
+    };
+    let sessions = match crate::storage::list_agent_session_refs(paths) {
+        Ok(items) => items,
+        Err(error) => {
+            errors.push(format!("{error:#}"));
+            Vec::new()
+        }
+    };
+    let error = if errors.is_empty() {
+        None
+    } else {
+        Some(errors.join("; "))
+    };
+
+    (queue_items, sessions, error)
 }
 
 fn queue_list_items(state: &DashboardState) -> Vec<ListItem<'static>> {
@@ -372,6 +416,8 @@ fn control_get(paths: &Paths, route: &str) -> Result<String> {
 
 fn control_request(paths: &Paths, method: &str, route: &str) -> Result<String> {
     let mut stream = UnixStream::connect(&paths.socket_path)?;
+    stream.set_read_timeout(Some(CONTROL_TIMEOUT))?;
+    stream.set_write_timeout(Some(CONTROL_TIMEOUT))?;
     let request = match method {
         "POST" => {
             format!("{method} {route} HTTP/1.1\r\nhost: sisyphus\r\ncontent-length: 0\r\n\r\n")
@@ -379,6 +425,7 @@ fn control_request(paths: &Paths, method: &str, route: &str) -> Result<String> {
         _ => format!("{method} {route} HTTP/1.1\r\nhost: sisyphus\r\n\r\n"),
     };
     stream.write_all(request.as_bytes())?;
+    let _ = stream.shutdown(Shutdown::Write);
 
     let mut response = String::new();
     stream.read_to_string(&mut response)?;
