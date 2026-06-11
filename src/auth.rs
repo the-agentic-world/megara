@@ -5,8 +5,6 @@ use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
 const KEYCHAIN_SERVICE: &str = "sisyphus-provider-token";
-const GITHUB_OAUTH_CLIENT_ID_ENV: &str = "SISYPHUS_GITHUB_OAUTH_CLIENT_ID";
-const DEFAULT_GITHUB_OAUTH_CLIENT_ID: &str = "Ov23liKPxXDEk4TPGU76";
 const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const GITHUB_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const GITHUB_DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -30,15 +28,10 @@ pub fn load_provider_token(provider: &Provider) -> Result<Option<String>> {
     load_provider_token_for_account(credential_account(provider))
 }
 
-pub fn resolve_github_oauth_client_id(cli_client_id: Option<String>) -> String {
+pub fn require_github_oauth_client_id(cli_client_id: Option<String>) -> Result<String> {
     cli_client_id
         .and_then(trimmed_non_empty)
-        .or_else(|| {
-            std::env::var(GITHUB_OAUTH_CLIENT_ID_ENV)
-                .ok()
-                .and_then(trimmed_non_empty)
-        })
-        .unwrap_or_else(|| DEFAULT_GITHUB_OAUTH_CLIENT_ID.to_string())
+        .context("GitHub OAuth requires --client-id; use provider-add --token-env to authenticate with a GitHub PAT instead")
 }
 
 pub fn github_oauth_scopes(scopes: &[String]) -> String {
@@ -250,23 +243,17 @@ mod tests {
     }
 
     #[test]
-    fn resolve_github_oauth_client_id_trims_cli_value() {
+    fn require_github_oauth_client_id_trims_cli_value() {
         assert_eq!(
-            resolve_github_oauth_client_id(Some(" client-1 ".to_string())),
+            require_github_oauth_client_id(Some(" client-1 ".to_string())).unwrap(),
             "client-1"
-        );
-        assert_eq!(
-            resolve_github_oauth_client_id(Some(" ".to_string())),
-            DEFAULT_GITHUB_OAUTH_CLIENT_ID
         );
     }
 
     #[test]
-    fn resolve_github_oauth_client_id_uses_builtin_default() {
-        assert_eq!(
-            resolve_github_oauth_client_id(None),
-            DEFAULT_GITHUB_OAUTH_CLIENT_ID
-        );
+    fn require_github_oauth_client_id_rejects_missing_or_blank_value() {
+        assert!(require_github_oauth_client_id(None).is_err());
+        assert!(require_github_oauth_client_id(Some(" ".to_string())).is_err());
     }
 
     #[test]

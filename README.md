@@ -91,24 +91,31 @@ sisyphus
 Authenticate a provider locally, then register a provider polling target:
 
 ```bash
-sisyphus auth github
+sisyphus auth github --client-id <github-oauth-client-id>
 sisyphus provider-add github the-agentic-world sisyphus
 ```
 
-GitHub auth uses OAuth Device Flow through the built-in Sisyphus OAuth App.
-The client ID can be overridden for development or self-managed deployments:
+GitHub OAuth uses Device Flow and requires an explicit OAuth App client ID:
 
 ```bash
 sisyphus auth github --client-id <github-oauth-client-id>
-sisyphus auth github --scope public_repo
+sisyphus auth github --client-id <github-oauth-client-id> --scope public_repo
 ```
 
-GitLab currently uses local token input. Environment variable tokens are still
-supported when preferred:
+To authenticate GitHub with a personal access token instead, skip `sisyphus auth
+github` and register the polling target with `--token-env`. When `--token-env` is
+set, Sisyphus reads that environment variable and does not read the stored OAuth
+token:
 
 ```bash
 export GITHUB_TOKEN=...
 sisyphus provider-add github the-agentic-world sisyphus --token-env GITHUB_TOKEN
+```
+
+GitLab currently uses local token input:
+
+```bash
+sisyphus auth gitlab
 ```
 
 Map the provider repository to a local workspace:
@@ -160,9 +167,9 @@ ignore_labels = ["wontfix", "blocked"]
 ```
 
 Provider tokens are stored in the OS credential store with `sisyphus auth github` or
-`sisyphus auth gitlab` where supported. GitHub acquires the token through OAuth
-Device Flow by default. Environment variable tokens are still supported with
-`provider-add --token-env`; raw token values are not written to the config.
+`sisyphus auth gitlab` where supported. GitHub OAuth requires `--client-id`.
+Environment variable PATs are supported with `provider-add --token-env` and take
+precedence over stored credentials; raw token values are not written to the config.
 
 ## CLI
 
@@ -171,7 +178,7 @@ sisyphus                         Open the local dashboard
 sisyphus serve                   Run the backend in the foreground
 sisyphus serve --daemon          Run the backend headlessly
 sisyphus register                Register macOS LaunchAgent autostart
-sisyphus auth github             Store GitHub auth via OAuth Device Flow or token input
+sisyphus auth github --client-id <id> Store GitHub auth via OAuth Device Flow
 sisyphus auth gitlab             Store a GitLab token in the OS credential store
 sisyphus provider-add ...        Register a provider repository polling target
 sisyphus repo-add ...            Map a provider repository to a local path

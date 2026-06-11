@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
                 .parse::<sisyphus::domain::Provider>()
                 .map_err(|error| anyhow::anyhow!("failed to parse provider for auth: {error}"))?;
             let token = if kind == sisyphus::domain::Provider::GitHub {
-                let client_id = sisyphus::auth::resolve_github_oauth_client_id(client_id);
+                let client_id = sisyphus::auth::require_github_oauth_client_id(client_id)?;
                 sisyphus::auth::authenticate_github_device_flow(&client_id, &scopes).await?
             } else {
                 sisyphus::auth::prompt_for_provider_token(&kind)?
