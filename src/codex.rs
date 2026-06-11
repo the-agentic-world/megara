@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -218,7 +219,7 @@ fn probe_app_server_thread_start() -> bool {
 
 struct AppServerJsonRpc {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
 }
 
@@ -243,7 +244,7 @@ impl AppServerJsonRpc {
 
         Ok(Self {
             child,
-            stdin,
+            stdin: Some(stdin),
             stdout: BufReader::new(stdout),
         })
     }
@@ -301,9 +302,13 @@ impl AppServerJsonRpc {
             "method": method,
             "params": params
         });
-        writeln!(self.stdin, "{request}")
+        let stdin = self
+            .stdin
+            .as_mut()
+            .context("app-server stdin is already closed")?;
+        writeln!(stdin, "{request}")
             .with_context(|| format!("failed to write app-server request {method}"))?;
-        self.stdin
+        stdin
             .flush()
             .with_context(|| format!("failed to flush app-server request {method}"))?;
 
@@ -344,19 +349,7 @@ impl AppServerJsonRpc {
                 assistant_text.push_str(delta);
             }
 
-            if message_method(&value) == Some("turn/completed")
-                && message_thread_id(&value) == Some(thread_id)
-                && completed_turn_id(&value) == Some(turn_id)
-            {
-                transcript.push_str(&assistant_text);
-                transcript.push('\n');
-                return Ok(transcript);
-            }
-
-            if message_method(&value) == Some("thread/status/changed")
-                && message_thread_id(&value) == Some(thread_id)
-                && thread_status_type(&value) == Some("idle")
-            {
+            if is_turn_completed_message(&value, thread_id, turn_id) {
                 transcript.push_str(&assistant_text);
                 transcript.push('\n');
                 return Ok(transcript);
@@ -378,6 +371,19 @@ impl AppServerJsonRpc {
     }
 
     fn shutdown(&mut self) {
+        let _ = self.stdin.take();
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -427,12 +433,10 @@ fn completed_turn_id(value: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
-fn thread_status_type(value: &Value) -> Option<&str> {
-    value
-        .get("params")
-        .and_then(|params| params.get("status"))
-        .and_then(|status| status.get("type"))
-        .and_then(Value::as_str)
+fn is_turn_completed_message(value: &Value, thread_id: &str, turn_id: &str) -> bool {
+    message_method(value) == Some("turn/completed")
+        && message_thread_id(value) == Some(thread_id)
+        && completed_turn_id(value) == Some(turn_id)
 }
 
 fn extract_thread_id(jsonl: &str) -> Option<String> {
@@ -557,10 +561,11 @@ mod tests {
         assert_eq!(message_method(&value), Some("turn/completed"));
         assert_eq!(message_thread_id(&value), Some("thread-1"));
         assert_eq!(completed_turn_id(&value), Some("turn-1"));
+        assert!(is_turn_completed_message(&value, "thread-1", "turn-1"));
     }
 
     #[test]
-    fn recognizes_app_server_thread_idle_notification() {
+    fn ignores_app_server_thread_idle_notification_as_turn_completion() {
         let value = json!({
             "method": "thread/status/changed",
             "params": {
@@ -571,8 +576,6 @@ mod tests {
             }
         });
 
-        assert_eq!(message_method(&value), Some("thread/status/changed"));
-        assert_eq!(message_thread_id(&value), Some("thread-1"));
-        assert_eq!(thread_status_type(&value), Some("idle"));
+        assert!(!is_turn_completed_message(&value, "thread-1", "turn-1"));
     }
 }
