@@ -74,6 +74,8 @@ pub enum Command {
         )]
         daemon: bool,
     },
+    #[command(about = "Stop the running local Sisyphus backend")]
+    Stop,
     #[command(
         alias = "resgister",
         about = "Register reboot-persistent autostart for `sisyphus serve --daemon`"
@@ -118,6 +120,12 @@ mod tests {
     fn parses_register() {
         let cli = Cli::parse_from(["sisyphus", "register"]);
         assert_eq!(cli.command, Some(Command::Register));
+    }
+
+    #[test]
+    fn parses_stop() {
+        let cli = Cli::parse_from(["sisyphus", "stop"]);
+        assert_eq!(cli.command, Some(Command::Stop));
     }
 
     #[test]

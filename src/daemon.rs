@@ -10,8 +10,10 @@ use crate::worktree;
 use anyhow::{Context, Result, bail};
 use std::fs::{self, OpenOptions};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
 
@@ -77,13 +79,18 @@ async fn run_foreground() -> Result<()> {
     println!("Sisyphus backend ready");
     println!("control_socket={}", paths.socket_path.display());
 
-    let mut control_task = tokio::spawn(handle_control(control, paths.clone()));
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let mut control_task = tokio::spawn(handle_control(control, paths.clone(), shutdown_tx));
     let mut polling_task = tokio::spawn(run_polling_loop(paths.clone()));
     let mut dispatch_task = tokio::spawn(run_dispatch_loop(paths.clone()));
 
     let result = tokio::select! {
         result = shutdown_signal() => {
             result
+        }
+        result = shutdown_rx => {
+            result.map(|_| ()).context("control shutdown channel closed")
         }
         result = &mut control_task => {
             result.context("control task failed to join").and_then(|inner| inner)
@@ -149,10 +156,16 @@ fn remove_stale_socket_or_bail(paths: &Paths) -> Result<()> {
         .with_context(|| format!("failed to remove stale {}", paths.socket_path.display()))
 }
 
-async fn handle_control(listener: UnixListener, paths: Paths) -> Result<()> {
+async fn handle_control(
+    listener: UnixListener,
+    paths: Paths,
+    shutdown_tx: oneshot::Sender<()>,
+) -> Result<()> {
+    let shutdown_tx = Arc::new(Mutex::new(Some(shutdown_tx)));
     loop {
         let (mut stream, _) = listener.accept().await?;
         let paths = paths.clone();
+        let shutdown_tx = Arc::clone(&shutdown_tx);
         tokio::spawn(async move {
             let mut buf = [0_u8; 2048];
             let n = stream.read(&mut buf).await.unwrap_or(0);
@@ -163,6 +176,12 @@ async fn handle_control(listener: UnixListener, paths: Paths) -> Result<()> {
             };
             let response = control_response(&request, &paths).await;
             let _ = stream.write_all(response.as_bytes()).await;
+            if is_shutdown_request(&request) {
+                let shutdown_tx = shutdown_tx.lock().ok().and_then(|mut tx| tx.take());
+                if let Some(shutdown_tx) = shutdown_tx {
+                    let _ = shutdown_tx.send(());
+                }
+            }
         });
     }
 }
@@ -381,6 +400,14 @@ async fn control_response(request: &str, paths: &Paths) -> String {
         );
     }
 
+    if first_line.starts_with("POST /shutdown ") {
+        return http_response(
+            "202 Accepted",
+            "application/json",
+            "{\"status\":\"stopping\"}\n",
+        );
+    }
+
     if first_line.starts_with("GET /queue ") {
         return match storage::list_queue_items(paths)
             .and_then(|items| serde_json::to_string(&items).context("failed to serialize queue"))
@@ -498,6 +525,13 @@ fn parse_dispatch_route(first_line: &str) -> Option<i64> {
     segments[2].parse::<i64>().ok().filter(|id| *id > 0)
 }
 
+fn is_shutdown_request(request: &str) -> bool {
+    request
+        .lines()
+        .next()
+        .is_some_and(|first_line| first_line.starts_with("POST /shutdown "))
+}
+
 fn http_response(status: &str, content_type: &str, body: &str) -> String {
     format!(
         "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
@@ -522,6 +556,27 @@ mod tests {
         let response = control_response("GET /health HTTP/1.1\r\n\r\n", &paths).await;
         assert!(response.starts_with("HTTP/1.1 200 OK"));
         assert!(response.contains("\"service\":\"sisyphus\""));
+    }
+
+    #[tokio::test]
+    async fn control_shutdown_response_is_accepted() {
+        let paths = Paths {
+            config_path: std::path::PathBuf::from("config.toml"),
+            db_path: std::path::PathBuf::from("sisyphus.db"),
+            socket_path: std::path::PathBuf::from("sisyphus.sock"),
+            stdout_log_path: std::path::PathBuf::from("out.log"),
+            stderr_log_path: std::path::PathBuf::from("err.log"),
+            base_dir: std::path::PathBuf::from("."),
+        };
+        let response = control_response("POST /shutdown HTTP/1.1\r\n\r\n", &paths).await;
+        assert!(response.starts_with("HTTP/1.1 202 Accepted"));
+        assert!(response.contains("\"status\":\"stopping\""));
+    }
+
+    #[test]
+    fn recognizes_shutdown_request() {
+        assert!(is_shutdown_request("POST /shutdown HTTP/1.1\r\n\r\n"));
+        assert!(!is_shutdown_request("GET /shutdown HTTP/1.1\r\n\r\n"));
     }
 
     #[tokio::test]

@@ -2,6 +2,11 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use sisyphus::cli::{Cli, Command, QueueCommand};
 use sisyphus::storage::QueueItem;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
+use std::time::Duration;
+
+const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -236,6 +241,12 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Command::Serve { daemon } => sisyphus::daemon::serve(daemon).await,
+        Command::Stop => {
+            let paths = sisyphus::config::Paths::resolve()?;
+            let body = control_post(&paths, "/shutdown")?;
+            println!("{body}");
+            Ok(())
+        }
         Command::Register => sisyphus::register::register_autostart(),
     }
 }
@@ -256,6 +267,43 @@ fn print_queue_item_detail(item: &QueueItem) -> Result<()> {
         serde_json::from_str(&item.payload).context("failed to parse queue item payload")?;
     println!("payload={}", serde_json::to_string_pretty(&payload)?);
     Ok(())
+}
+
+fn control_post(paths: &sisyphus::config::Paths, route: &str) -> Result<String> {
+    let mut stream = UnixStream::connect(&paths.socket_path)
+        .with_context(|| format!("failed to connect to {}", paths.socket_path.display()))?;
+    stream.set_read_timeout(Some(CONTROL_TIMEOUT))?;
+    stream.set_write_timeout(Some(CONTROL_TIMEOUT))?;
+    let request = format!("POST {route} HTTP/1.1\r\nhost: sisyphus\r\ncontent-length: 0\r\n\r\n");
+    stream.write_all(request.as_bytes())?;
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+
+    let mut response = String::new();
+    stream.read_to_string(&mut response)?;
+    successful_response_body(&response).map(|body| body.trim().to_string())
+}
+
+fn successful_response_body(response: &str) -> Result<&str> {
+    let status_line = response
+        .lines()
+        .next()
+        .context("missing HTTP status line")?;
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .context("missing HTTP status code")?
+        .parse::<u16>()
+        .context("invalid HTTP status code")?;
+    let body = response
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .context("missing HTTP response body")?;
+
+    if !(200..300).contains(&status) {
+        anyhow::bail!("{}", body.trim());
+    }
+
+    Ok(body)
 }
 
 fn open_app_deep_link(app_deep_link: &str) -> Result<()> {
