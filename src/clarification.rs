@@ -30,17 +30,23 @@ pub fn parse_clarification_request(text: &str) -> Result<Option<ClarificationReq
         return Ok(request.is_valid_request().then_some(request));
     }
 
-    for candidate in clarification_json_candidates(text) {
-        let Ok(request) = serde_json::from_str::<ClarificationRequest>(candidate) else {
+    for line in text.lines() {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
             continue;
         };
-        if request.is_valid_request() {
+        if let Some(request) = find_clarification_in_value(&value)? {
             return Ok(Some(request));
         }
     }
 
-    for line in text.lines() {
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
+    for candidate in clarification_json_candidates(text) {
+        if let Ok(request) = serde_json::from_str::<ClarificationRequest>(candidate)
+            && request.is_valid_request()
+        {
+            return Ok(Some(request));
+        }
+
+        let Ok(value) = serde_json::from_str::<Value>(candidate) else {
             continue;
         };
         if let Some(request) = find_clarification_in_value(&value)? {
@@ -94,34 +100,12 @@ Reply to this comment or update the issue description. Sisyphus will retry after
 
 fn clarification_json_candidates(text: &str) -> Vec<&str> {
     let mut candidates = Vec::new();
-    let mut search_start = 0;
-
-    while let Some(relative_index) = text[search_start..].find("\"type\"") {
-        let type_index = search_start + relative_index;
-        let Some(object_start) = text[..type_index].rfind('{') else {
-            search_start = type_index + 6;
-            continue;
-        };
-        let Some(object_end) = find_matching_brace(text, object_start) else {
-            search_start = type_index + 6;
-            continue;
-        };
-        let candidate = &text[object_start..=object_end];
-        if candidate.contains("clarification_request") {
-            candidates.push(candidate);
-        }
-        search_start = object_end + 1;
-    }
-
-    candidates
-}
-
-fn find_matching_brace(text: &str, object_start: usize) -> Option<usize> {
     let mut depth = 0_i32;
+    let mut object_start = None;
     let mut in_string = false;
     let mut escaped = false;
 
-    for (offset, byte) in text[object_start..].bytes().enumerate() {
+    for (index, byte) in text.bytes().enumerate() {
         if in_string {
             if escaped {
                 escaped = false;
@@ -135,18 +119,31 @@ fn find_matching_brace(text: &str, object_start: usize) -> Option<usize> {
 
         match byte {
             b'"' => in_string = true,
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
+            b'{' => {
                 if depth == 0 {
-                    return Some(object_start + offset);
+                    object_start = Some(index);
+                }
+                depth += 1;
+            }
+            b'}' => {
+                if depth == 0 {
+                    continue;
+                }
+                depth -= 1;
+                if depth == 0
+                    && let Some(start) = object_start.take()
+                {
+                    let candidate = &text[start..=index];
+                    if candidate.contains("clarification_request") {
+                        candidates.push(candidate);
+                    }
                 }
             }
             _ => {}
         }
     }
 
-    None
+    candidates
 }
 
 fn find_clarification_in_value(value: &Value) -> Result<Option<ClarificationRequest>> {
@@ -216,6 +213,31 @@ mod tests {
 
         assert_eq!(parsed.summary, "Need scope.");
         assert_eq!(parsed.questions[0].options, vec!["A", "B"]);
+    }
+
+    #[test]
+    fn parses_nested_clarification_json_inside_text() {
+        let parsed = parse_clarification_request(
+            r#"prefix {"message":{"type":"clarification_request","blocking":true,"summary":"Need repo.","questions":[{"id":"repo","question":"Which repo?","options":[]}]}} suffix"#,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(parsed.summary, "Need repo.");
+        assert_eq!(parsed.questions[0].id, "repo");
+    }
+
+    #[test]
+    fn ignores_escaped_json_candidates_in_large_jsonl() {
+        let content = r#"{\"type\":\"clarification_request\",\"blocking\":true,\"summary\":\"Need scope.\",\"questions\":[{\"id\":\"scope\",\"question\":\"What scope?\",\"options\":[]}]}"#;
+        let jsonl = (0..500)
+            .map(|_| format!(r#"{{"type":"message","content":"{content}"}}"#))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let parsed = parse_clarification_request(&jsonl).unwrap().unwrap();
+
+        assert_eq!(parsed.summary, "Need scope.");
     }
 
     #[test]
