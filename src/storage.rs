@@ -299,6 +299,69 @@ pub fn retry_queue_item(paths: &Paths, id: i64) -> Result<QueueItem> {
     get_queue_item(paths, id)
 }
 
+pub fn pause_queue_item(paths: &Paths, id: i64) -> Result<QueueItem> {
+    let item = get_queue_item(paths, id)?;
+    if item.state != "queued" {
+        anyhow::bail!("queue item {id} is not pausable from state {}", item.state);
+    }
+
+    update_queue_state(paths, id, "paused")?;
+    get_queue_item(paths, id)
+}
+
+pub fn resume_queue_item(paths: &Paths, id: i64) -> Result<QueueItem> {
+    let item = get_queue_item(paths, id)?;
+    if item.state != "paused" {
+        anyhow::bail!("queue item {id} is not resumable from state {}", item.state);
+    }
+
+    update_queue_state(paths, id, "queued")?;
+    get_queue_item(paths, id)
+}
+
+pub fn cancel_queue_item(paths: &Paths, id: i64) -> Result<QueueItem> {
+    let item = get_queue_item(paths, id)?;
+    if !is_cancelable_state(&item.state) {
+        anyhow::bail!(
+            "queue item {id} is not cancelable from state {}",
+            item.state
+        );
+    }
+
+    update_queue_state(paths, id, "canceled")?;
+    get_queue_item(paths, id)
+}
+
+pub fn remove_queue_item(paths: &Paths, id: i64) -> Result<()> {
+    let conn = Connection::open(&paths.db_path)
+        .with_context(|| format!("failed to open {}", paths.db_path.display()))?;
+    let item = get_queue_item(paths, id)?;
+
+    conn.execute(
+        "DELETE FROM agent_session_refs WHERE queue_item_id = ?1",
+        params![id],
+    )
+    .with_context(|| format!("failed to delete session refs for queue item {id}"))?;
+    let changed = conn
+        .execute("DELETE FROM work_queue_items WHERE id = ?1", params![id])
+        .with_context(|| format!("failed to delete queue item {id}"))?;
+    if changed == 0 {
+        anyhow::bail!("queue item {id} not found");
+    }
+
+    record_loop_event_conn(
+        &conn,
+        Some(&queue_run_id(id)),
+        "queue.removed",
+        &json!({
+            "queue_item_id": id,
+            "state": item.state,
+            "provider": item.provider,
+            "issue_url": item.issue_url,
+        }),
+    )
+}
+
 pub fn upsert_agent_session_ref(paths: &Paths, session_ref: &AgentSessionRef) -> Result<()> {
     let conn = Connection::open(&paths.db_path)
         .with_context(|| format!("failed to open {}", paths.db_path.display()))?;
@@ -483,6 +546,19 @@ fn is_retryable_state(state: &str) -> bool {
     matches!(
         state,
         "dispatching"
+            | "awaiting_clarification"
+            | "clarification_publish_failed"
+            | "dispatch_failed"
+            | "manual_open_required"
+    )
+}
+
+fn is_cancelable_state(state: &str) -> bool {
+    matches!(
+        state,
+        "queued"
+            | "paused"
+            | "dispatching"
             | "awaiting_clarification"
             | "clarification_publish_failed"
             | "dispatch_failed"
@@ -790,6 +866,111 @@ mod tests {
         let error = retry_queue_item(&paths, id).unwrap_err().to_string();
 
         assert!(error.contains("not retryable"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pause_and_resume_queue_item_round_trips_state() {
+        let root =
+            std::env::temp_dir().join(format!("sisyphus-queue-pause-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+
+        initialize(&paths).unwrap();
+        let issue_ref =
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap();
+        let work_item = WorkItem::from_issue_ref(issue_ref);
+        let id = enqueue_work_item(&paths, &work_item).unwrap();
+
+        let paused = pause_queue_item(&paths, id).unwrap();
+        let resumed = resume_queue_item(&paths, id).unwrap();
+
+        assert_eq!(paused.state, "paused");
+        assert_eq!(resumed.state, "queued");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cancel_queue_item_marks_item_canceled() {
+        let root =
+            std::env::temp_dir().join(format!("sisyphus-queue-cancel-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+
+        initialize(&paths).unwrap();
+        let issue_ref =
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap();
+        let work_item = WorkItem::from_issue_ref(issue_ref);
+        let id = enqueue_work_item(&paths, &work_item).unwrap();
+
+        let item = cancel_queue_item(&paths, id).unwrap();
+
+        assert_eq!(item.state, "canceled");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn remove_queue_item_deletes_item_and_session_ref() {
+        let root =
+            std::env::temp_dir().join(format!("sisyphus-queue-remove-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let paths = Paths {
+            config_path: root.join("config.toml"),
+            db_path: root.join("sisyphus.db"),
+            socket_path: root.join("sisyphus.sock"),
+            stdout_log_path: root.join("out.log"),
+            stderr_log_path: root.join("err.log"),
+            base_dir: root.clone(),
+        };
+
+        initialize(&paths).unwrap();
+        let issue_ref =
+            crate::providers::parse_issue_url("https://github.com/acme/widgets/issues/42").unwrap();
+        let work_item = WorkItem::from_issue_ref(issue_ref);
+        let queue_item_id = enqueue_work_item(&paths, &work_item).unwrap();
+        upsert_agent_session_ref(
+            &paths,
+            &AgentSessionRef {
+                queue_item_id,
+                agent: "codex".to_string(),
+                dispatch_path: "app-server".to_string(),
+                session_id: Some("thread-1".to_string()),
+                resume_hint: None,
+                app_deep_link: None,
+            },
+        )
+        .unwrap();
+
+        remove_queue_item(&paths, queue_item_id).unwrap();
+
+        assert!(get_queue_item(&paths, queue_item_id).is_err());
+        assert!(get_agent_session_ref(&paths, queue_item_id).is_err());
+        let events = list_loop_events(&paths).unwrap();
+        assert!(events.iter().any(|event| {
+            event.kind == "queue.removed"
+                && event.run_id.as_deref() == Some("queue-1")
+                && event.payload.contains("\"queue_item_id\":1")
+        }));
 
         let _ = fs::remove_dir_all(root);
     }

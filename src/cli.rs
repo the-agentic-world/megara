@@ -15,8 +15,11 @@ pub enum Command {
     Dashboard,
     #[command(about = "Import an issue URL into the local queue")]
     Import { issue_url: String },
-    #[command(about = "List local queued work items")]
-    Queue,
+    #[command(about = "List and manage local queued work items")]
+    Queue {
+        #[command(subcommand)]
+        command: Option<QueueCommand>,
+    },
     #[command(about = "List agent session references known to Sisyphus")]
     Sessions,
     #[command(about = "List local lifecycle events")]
@@ -76,6 +79,22 @@ pub enum Command {
         about = "Register reboot-persistent autostart for `sisyphus serve --daemon`"
     )]
     Register,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
+pub enum QueueCommand {
+    #[command(about = "Show queue item details")]
+    Show { queue_item_id: i64 },
+    #[command(about = "Move a stuck or failed work item back to queued")]
+    Retry { queue_item_id: i64 },
+    #[command(about = "Pause a queued work item")]
+    Pause { queue_item_id: i64 },
+    #[command(about = "Resume a paused work item")]
+    Resume { queue_item_id: i64 },
+    #[command(about = "Cancel a work item")]
+    Cancel { queue_item_id: i64 },
+    #[command(about = "Remove a work item from the local queue")]
+    Remove { queue_item_id: i64 },
 }
 
 #[cfg(test)]
@@ -138,6 +157,12 @@ mod tests {
     }
 
     #[test]
+    fn parses_queue_without_subcommand_as_list() {
+        let cli = Cli::parse_from(["sisyphus", "queue"]);
+        assert_eq!(cli.command, Some(Command::Queue { command: None }));
+    }
+
+    #[test]
     fn parses_events() {
         let cli = Cli::parse_from(["sisyphus", "events"]);
         assert_eq!(cli.command, Some(Command::Events));
@@ -153,6 +178,60 @@ mod tests {
     fn parses_retry() {
         let cli = Cli::parse_from(["sisyphus", "retry", "7"]);
         assert_eq!(cli.command, Some(Command::Retry { queue_item_id: 7 }));
+    }
+
+    #[test]
+    fn parses_queue_retry() {
+        let cli = Cli::parse_from(["sisyphus", "queue", "retry", "7"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Retry { queue_item_id: 7 })
+            })
+        );
+    }
+
+    #[test]
+    fn parses_queue_management_commands() {
+        let cli = Cli::parse_from(["sisyphus", "queue", "show", "7"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Show { queue_item_id: 7 })
+            })
+        );
+
+        let cli = Cli::parse_from(["sisyphus", "queue", "pause", "7"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Pause { queue_item_id: 7 })
+            })
+        );
+
+        let cli = Cli::parse_from(["sisyphus", "queue", "resume", "7"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Resume { queue_item_id: 7 })
+            })
+        );
+
+        let cli = Cli::parse_from(["sisyphus", "queue", "cancel", "7"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Cancel { queue_item_id: 7 })
+            })
+        );
+
+        let cli = Cli::parse_from(["sisyphus", "queue", "remove", "7"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Queue {
+                command: Some(QueueCommand::Remove { queue_item_id: 7 })
+            })
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use sisyphus::cli::{Cli, Command};
+use sisyphus::cli::{Cli, Command, QueueCommand};
+use sisyphus::storage::QueueItem;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,14 +18,39 @@ async fn main() -> Result<()> {
             println!("queued work item {id}: {}", work_item.source_url);
             Ok(())
         }
-        Command::Queue => {
+        Command::Queue { command } => {
             let paths = sisyphus::config::Paths::resolve()?;
             sisyphus::storage::initialize(&paths)?;
-            for item in sisyphus::storage::list_queue_items(&paths)? {
-                println!(
-                    "{}\t{}\t{}\t{}",
-                    item.id, item.provider, item.state, item.issue_url
-                );
+            match command {
+                None => {
+                    for item in sisyphus::storage::list_queue_items(&paths)? {
+                        print_queue_item_row(&item);
+                    }
+                }
+                Some(QueueCommand::Show { queue_item_id }) => {
+                    let item = sisyphus::storage::get_queue_item(&paths, queue_item_id)?;
+                    print_queue_item_detail(&item)?;
+                }
+                Some(QueueCommand::Retry { queue_item_id }) => {
+                    let item = sisyphus::storage::retry_queue_item(&paths, queue_item_id)?;
+                    println!("requeued work item {}: {}", item.id, item.issue_url);
+                }
+                Some(QueueCommand::Pause { queue_item_id }) => {
+                    let item = sisyphus::storage::pause_queue_item(&paths, queue_item_id)?;
+                    println!("paused work item {}: {}", item.id, item.issue_url);
+                }
+                Some(QueueCommand::Resume { queue_item_id }) => {
+                    let item = sisyphus::storage::resume_queue_item(&paths, queue_item_id)?;
+                    println!("resumed work item {}: {}", item.id, item.issue_url);
+                }
+                Some(QueueCommand::Cancel { queue_item_id }) => {
+                    let item = sisyphus::storage::cancel_queue_item(&paths, queue_item_id)?;
+                    println!("canceled work item {}: {}", item.id, item.issue_url);
+                }
+                Some(QueueCommand::Remove { queue_item_id }) => {
+                    sisyphus::storage::remove_queue_item(&paths, queue_item_id)?;
+                    println!("removed work item {queue_item_id}");
+                }
             }
             Ok(())
         }
@@ -212,6 +238,24 @@ async fn main() -> Result<()> {
         Command::Serve { daemon } => sisyphus::daemon::serve(daemon).await,
         Command::Register => sisyphus::register::register_autostart(),
     }
+}
+
+fn print_queue_item_row(item: &QueueItem) {
+    println!(
+        "{}\t{}\t{}\t{}",
+        item.id, item.provider, item.state, item.issue_url
+    );
+}
+
+fn print_queue_item_detail(item: &QueueItem) -> Result<()> {
+    println!("id={}", item.id);
+    println!("provider={}", item.provider);
+    println!("state={}", item.state);
+    println!("issue_url={}", item.issue_url);
+    let payload: serde_json::Value =
+        serde_json::from_str(&item.payload).context("failed to parse queue item payload")?;
+    println!("payload={}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
 }
 
 fn open_app_deep_link(app_deep_link: &str) -> Result<()> {
