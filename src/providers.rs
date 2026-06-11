@@ -24,6 +24,19 @@ pub async fn poll_provider_targets(targets: &[ProviderTargetConfig]) -> Result<V
     Ok(work_items)
 }
 
+pub async fn fetch_issue(
+    issue_ref: &IssueRef,
+    configured_target: Option<&ProviderTargetConfig>,
+) -> Result<WorkItem> {
+    let client = reqwest::Client::new();
+    let target = issue_target(issue_ref, configured_target)?;
+
+    match issue_ref.provider {
+        Provider::GitHub => fetch_github_issue(&client, &target, issue_ref).await,
+        Provider::GitLab => fetch_gitlab_issue(&client, &target, issue_ref).await,
+    }
+}
+
 pub async fn post_issue_comment(
     target: &ProviderTargetConfig,
     work_item: &WorkItem,
@@ -156,6 +169,47 @@ async fn fetch_github_issues(
     Ok(work_items)
 }
 
+async fn fetch_github_issue(
+    client: &reqwest::Client,
+    target: &ProviderTargetConfig,
+    issue_ref: &IssueRef,
+) -> Result<WorkItem> {
+    let instance_url = target.resolved_instance_url();
+    let url = format!(
+        "{}/repos/{}/{}/issues/{}",
+        api_base_url(&instance_url, Provider::GitHub),
+        target.owner_or_namespace,
+        target.repo,
+        issue_ref.number
+    );
+
+    let mut request = client.get(url).headers(github_headers()?);
+    if let Some(token) = target.auth_token()? {
+        request = request.bearer_auth(token);
+    }
+
+    let response = request
+        .send()
+        .await
+        .context("failed to fetch GitHub issue")?;
+    let status = response.status();
+    if !status.is_success() {
+        bail!("GitHub issue fetch failed with HTTP {status}");
+    }
+
+    let issue = response
+        .json::<GitHubIssue>()
+        .await
+        .context("failed to parse GitHub issue response")?;
+    if issue.pull_request.is_some() {
+        bail!("GitHub URL points to a pull request, not an issue");
+    }
+
+    let mut work_item = issue.into_work_item(target, &instance_url);
+    work_item.comments = fetch_github_issue_comments(client, target, &work_item).await?;
+    Ok(work_item)
+}
+
 async fn fetch_gitlab_issues(
     client: &reqwest::Client,
     target: &ProviderTargetConfig,
@@ -196,6 +250,48 @@ async fn fetch_gitlab_issues(
     }
 
     Ok(work_items)
+}
+
+async fn fetch_gitlab_issue(
+    client: &reqwest::Client,
+    target: &ProviderTargetConfig,
+    issue_ref: &IssueRef,
+) -> Result<WorkItem> {
+    let instance_url = target.resolved_instance_url();
+    let project_path = format!("{}/{}", target.owner_or_namespace, target.repo);
+    let encoded_project_path = urlencoding::encode(&project_path);
+    let url = format!(
+        "{}/api/v4/projects/{}/issues/{}",
+        instance_url.trim_end_matches('/'),
+        encoded_project_path,
+        issue_ref.number
+    );
+
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+    headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VALUE));
+
+    let mut request = client.get(url).headers(headers);
+    if let Some(token) = target.auth_token()? {
+        request = request.header("PRIVATE-TOKEN", token);
+    }
+
+    let response = request
+        .send()
+        .await
+        .context("failed to fetch GitLab issue")?;
+    let status = response.status();
+    if !status.is_success() {
+        bail!("GitLab issue fetch failed with HTTP {status}");
+    }
+
+    let issue = response
+        .json::<GitLabIssue>()
+        .await
+        .context("failed to parse GitLab issue response")?;
+    let mut work_item = issue.into_work_item(target, &instance_url);
+    work_item.comments = fetch_gitlab_issue_comments(client, target, &work_item).await?;
+    Ok(work_item)
 }
 
 async fn fetch_github_issue_comments(
@@ -369,6 +465,31 @@ fn api_base_url(instance_url: &str, provider: Provider) -> String {
         }
         _ => instance_url.trim_end_matches('/').to_string(),
     }
+}
+
+fn issue_target(
+    issue_ref: &IssueRef,
+    configured_target: Option<&ProviderTargetConfig>,
+) -> Result<ProviderTargetConfig> {
+    if let Some(target) = configured_target {
+        if target.kind != issue_ref.provider
+            || target.owner_or_namespace != issue_ref.owner_or_namespace
+            || target.repo != issue_ref.repo
+            || target.resolved_instance_url().trim_end_matches('/')
+                != issue_ref.instance_url.trim_end_matches('/')
+        {
+            bail!("configured provider target does not match issue URL");
+        }
+        return Ok(target.clone());
+    }
+
+    Ok(ProviderTargetConfig {
+        kind: issue_ref.provider.clone(),
+        owner_or_namespace: issue_ref.owner_or_namespace.clone(),
+        repo: issue_ref.repo.clone(),
+        instance_url: Some(issue_ref.instance_url.clone()),
+        token_env: None,
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -699,6 +820,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fetches_single_github_issue_from_http_endpoint() {
+        let instance_url = mock_json_responses(vec![
+            r#"{
+              "html_url": "https://github.example.com/acme/widgets/issues/42",
+              "number": 42,
+              "state": "open",
+              "title": "Build import fetch",
+              "body": "body",
+              "labels": [{"name": "sisyphus"}]
+            }"#,
+            r#"[
+              {
+                "body": "clarification answer",
+                "created_at": "2026-06-10T00:00:00Z",
+                "user": {"login": "alice"}
+              }
+            ]"#,
+        ])
+        .await;
+        let issue_ref = IssueRef {
+            provider: Provider::GitHub,
+            instance_url: instance_url.clone(),
+            owner_or_namespace: "acme".to_string(),
+            repo: "widgets".to_string(),
+            number: 42,
+            source_url: "https://github.example.com/acme/widgets/issues/42".to_string(),
+        };
+
+        let item = fetch_issue(&issue_ref, None).await.unwrap();
+
+        assert_eq!(item.title, "Build import fetch");
+        assert_eq!(item.body, "body");
+        assert_eq!(item.labels, vec!["sisyphus"]);
+        assert_eq!(item.comments.len(), 1);
+    }
+
+    #[tokio::test]
     async fn polls_gitlab_issues_from_http_endpoint() {
         let instance_url = mock_json_responses(vec![
             r#"[
@@ -745,6 +903,45 @@ mod tests {
         assert_eq!(items[0].comments.len(), 1);
         assert_eq!(items[0].comments[0].author, "alice");
         assert_eq!(items[0].comments[0].body, "clarification answer");
+    }
+
+    #[tokio::test]
+    async fn fetches_single_gitlab_issue_from_http_endpoint() {
+        let instance_url = mock_json_responses(vec![
+            r#"{
+              "web_url": "https://gitlab.example.com/acme/platform/widgets/-/issues/7",
+              "iid": 7,
+              "state": "opened",
+              "title": "Build import fetch",
+              "description": "body",
+              "labels": ["sisyphus"]
+            }"#,
+            r#"[
+              {
+                "body": "clarification answer",
+                "created_at": "2026-06-10T00:00:00Z",
+                "author": {"username": "alice"},
+                "system": false
+              }
+            ]"#,
+        ])
+        .await;
+        let issue_ref = IssueRef {
+            provider: Provider::GitLab,
+            instance_url: instance_url.clone(),
+            owner_or_namespace: "acme/platform".to_string(),
+            repo: "widgets".to_string(),
+            number: 7,
+            source_url: "https://gitlab.example.com/acme/platform/widgets/-/issues/7".to_string(),
+        };
+
+        let item = fetch_issue(&issue_ref, None).await.unwrap();
+
+        assert_eq!(item.state, "open");
+        assert_eq!(item.title, "Build import fetch");
+        assert_eq!(item.body, "body");
+        assert_eq!(item.labels, vec!["sisyphus"]);
+        assert_eq!(item.comments.len(), 1);
     }
 
     #[tokio::test]

@@ -17,9 +17,29 @@ async fn main() -> Result<()> {
         Command::Dashboard => sisyphus::tui::run_dashboard().await,
         Command::Import { issue_url } => {
             let paths = sisyphus::config::Paths::resolve()?;
+            let cfg = sisyphus::config::load_or_create(&paths)?;
             sisyphus::storage::initialize(&paths)?;
             let issue_ref = sisyphus::providers::parse_issue_url(&issue_url)?;
-            let work_item = sisyphus::domain::WorkItem::from_issue_ref(issue_ref);
+            let fallback_work_item = sisyphus::domain::WorkItem::from_issue_ref(issue_ref.clone());
+            let configured_target = cfg.provider_target_for(&fallback_work_item);
+            let fetched = match sisyphus::providers::fetch_issue(&issue_ref, configured_target)
+                .await
+            {
+                Ok(work_item) => Ok(work_item),
+                Err(error) if configured_target.is_some() => {
+                    eprintln!(
+                        "warning: failed to fetch issue details with configured provider auth, retrying without auth: {error:#}"
+                    );
+                    sisyphus::providers::fetch_issue(&issue_ref, None).await
+                }
+                Err(error) => Err(error),
+            };
+            let work_item = fetched.unwrap_or_else(|error| {
+                eprintln!(
+                    "warning: failed to fetch issue details, queued URL-only item: {error:#}"
+                );
+                fallback_work_item
+            });
             let id = sisyphus::storage::enqueue_work_item(&paths, &work_item)?;
             println!(
                 "queued queue_item_id={id} issue=#{} {}",
