@@ -350,6 +350,15 @@ impl AppServerJsonRpc {
                 transcript.push('\n');
                 return Ok(transcript);
             }
+
+            if message_method(&value) == Some("thread/status/changed")
+                && message_thread_id(&value) == Some(thread_id)
+                && thread_status_type(&value) == Some("idle")
+            {
+                transcript.push_str(&assistant_text);
+                transcript.push('\n');
+                return Ok(transcript);
+            }
         }
     }
 
@@ -413,6 +422,14 @@ fn completed_turn_id(value: &Value) -> Option<&str> {
         .get("params")
         .and_then(|params| params.get("turn"))
         .and_then(|turn| turn.get("id"))
+        .and_then(Value::as_str)
+}
+
+fn thread_status_type(value: &Value) -> Option<&str> {
+    value
+        .get("params")
+        .and_then(|params| params.get("status"))
+        .and_then(|status| status.get("type"))
         .and_then(Value::as_str)
 }
 
@@ -538,5 +555,22 @@ mod tests {
         assert_eq!(message_method(&value), Some("turn/completed"));
         assert_eq!(message_thread_id(&value), Some("thread-1"));
         assert_eq!(completed_turn_id(&value), Some("turn-1"));
+    }
+
+    #[test]
+    fn recognizes_app_server_thread_idle_notification() {
+        let value = json!({
+            "method": "thread/status/changed",
+            "params": {
+                "threadId": "thread-1",
+                "status": {
+                    "type": "idle"
+                }
+            }
+        });
+
+        assert_eq!(message_method(&value), Some("thread/status/changed"));
+        assert_eq!(message_thread_id(&value), Some("thread-1"));
+        assert_eq!(thread_status_type(&value), Some("idle"));
     }
 }
