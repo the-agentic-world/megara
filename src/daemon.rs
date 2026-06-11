@@ -11,6 +11,7 @@ use std::fs::{self, OpenOptions};
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
+use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
 
 const DAEMON_CHILD_ENV: &str = "SISYPHUS_DAEMON_CHILD";
@@ -75,27 +76,60 @@ async fn run_foreground() -> Result<()> {
     println!("Sisyphus backend ready");
     println!("control_socket={}", paths.socket_path.display());
 
-    let control_task = tokio::spawn(handle_control(control, paths.clone()));
-    let polling_task = tokio::spawn(run_polling_loop(paths.clone()));
-    let dispatch_task = tokio::spawn(run_dispatch_loop(paths.clone()));
+    let mut control_task = tokio::spawn(handle_control(control, paths.clone()));
+    let mut polling_task = tokio::spawn(run_polling_loop(paths.clone()));
+    let mut dispatch_task = tokio::spawn(run_dispatch_loop(paths.clone()));
 
-    tokio::select! {
-        result = tokio::signal::ctrl_c() => {
-            result.context("failed to listen for ctrl-c")?;
+    let result = tokio::select! {
+        result = shutdown_signal() => {
+            result
         }
-        result = control_task => {
-            result.context("control task failed to join")??;
+        result = &mut control_task => {
+            result.context("control task failed to join").and_then(|inner| inner)
         }
-        result = polling_task => {
-            result.context("polling task failed to join")??;
+        result = &mut polling_task => {
+            result.context("polling task failed to join").and_then(|inner| inner)
         }
-        result = dispatch_task => {
-            result.context("dispatch task failed to join")??;
+        result = &mut dispatch_task => {
+            result.context("dispatch task failed to join").and_then(|inner| inner)
+        }
+    };
+
+    abort_tasks([control_task, polling_task, dispatch_task]);
+    let _ = fs::remove_file(&paths.socket_path);
+    result
+}
+
+async fn shutdown_signal() -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .context("failed to listen for SIGINT")?;
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("failed to listen for SIGTERM")?;
+
+        tokio::select! {
+            _ = interrupt.recv() => {}
+            _ = terminate.recv() => {}
         }
     }
 
-    let _ = fs::remove_file(&paths.socket_path);
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c()
+            .await
+            .context("failed to listen for ctrl-c")?;
+    }
+
     Ok(())
+}
+
+fn abort_tasks(tasks: [JoinHandle<Result<()>>; 3]) {
+    for task in tasks {
+        task.abort();
+    }
 }
 
 fn remove_stale_socket_or_bail(paths: &Paths) -> Result<()> {
