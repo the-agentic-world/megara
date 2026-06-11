@@ -39,7 +39,19 @@ pub enum Command {
     #[command(about = "Probe local Codex integration capabilities")]
     CodexProbe,
     #[command(about = "Store a provider token in the OS credential store")]
-    Auth { provider: String },
+    Auth {
+        provider: String,
+        #[arg(
+            long,
+            help = "Override the built-in Sisyphus GitHub OAuth App client ID"
+        )]
+        client_id: Option<String>,
+        #[arg(
+            long = "scope",
+            help = "GitHub OAuth scope for device login; defaults to repo"
+        )]
+        scopes: Vec<String>,
+    },
     #[command(about = "Register a provider repository polling target")]
     ProviderAdd {
         provider: String,
@@ -301,7 +313,9 @@ mod tests {
         assert_eq!(
             cli.command,
             Some(Command::Auth {
-                provider: "github".to_string()
+                provider: "github".to_string(),
+                client_id: None,
+                scopes: Vec::new()
             })
         );
     }
@@ -312,7 +326,32 @@ mod tests {
         assert_eq!(
             cli.command,
             Some(Command::Auth {
-                provider: "gitlab".to_string()
+                provider: "gitlab".to_string(),
+                client_id: None,
+                scopes: Vec::new()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_auth_github_oauth_options() {
+        let cli = Cli::parse_from([
+            "sisyphus",
+            "auth",
+            "github",
+            "--client-id",
+            "client-1",
+            "--scope",
+            "repo",
+            "--scope",
+            "read:user",
+        ]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Auth {
+                provider: "github".to_string(),
+                client_id: Some("client-1".to_string()),
+                scopes: vec!["repo".to_string(), "read:user".to_string()]
             })
         );
     }

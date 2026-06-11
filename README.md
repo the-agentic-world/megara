@@ -88,14 +88,23 @@ Open the dashboard:
 sisyphus
 ```
 
-Store a provider token locally, then register a provider polling target:
+Authenticate a provider locally, then register a provider polling target:
 
 ```bash
 sisyphus auth github
 sisyphus provider-add github the-agentic-world sisyphus
 ```
 
-Environment variable tokens are still supported when preferred:
+GitHub auth uses OAuth Device Flow through the built-in Sisyphus OAuth App.
+The client ID can be overridden for development or self-managed deployments:
+
+```bash
+sisyphus auth github --client-id <github-oauth-client-id>
+sisyphus auth github --scope public_repo
+```
+
+GitLab currently uses local token input. Environment variable tokens are still
+supported when preferred:
 
 ```bash
 export GITHUB_TOKEN=...
@@ -151,8 +160,9 @@ ignore_labels = ["wontfix", "blocked"]
 ```
 
 Provider tokens are stored in the OS credential store with `sisyphus auth github` or
-`sisyphus auth gitlab` where supported. Environment variable tokens are still supported
-with `provider-add --token-env`; raw token values are not written to the config.
+`sisyphus auth gitlab` where supported. GitHub acquires the token through OAuth
+Device Flow by default. Environment variable tokens are still supported with
+`provider-add --token-env`; raw token values are not written to the config.
 
 ## CLI
 
@@ -161,7 +171,8 @@ sisyphus                         Open the local dashboard
 sisyphus serve                   Run the backend in the foreground
 sisyphus serve --daemon          Run the backend headlessly
 sisyphus register                Register macOS LaunchAgent autostart
-sisyphus auth github|gitlab      Store a provider token in the OS credential store
+sisyphus auth github             Store GitHub auth via OAuth Device Flow or token input
+sisyphus auth gitlab             Store a GitLab token in the OS credential store
 sisyphus provider-add ...        Register a provider repository polling target
 sisyphus repo-add ...            Map a provider repository to a local path
 sisyphus import <issue-url>      Import an issue into the queue

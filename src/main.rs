@@ -202,11 +202,20 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
-        Command::Auth { provider } => {
+        Command::Auth {
+            provider,
+            client_id,
+            scopes,
+        } => {
             let kind = provider
                 .parse::<sisyphus::domain::Provider>()
                 .map_err(|error| anyhow::anyhow!("failed to parse provider for auth: {error}"))?;
-            let token = sisyphus::auth::prompt_for_provider_token(&kind)?;
+            let token = if kind == sisyphus::domain::Provider::GitHub {
+                let client_id = sisyphus::auth::resolve_github_oauth_client_id(client_id);
+                sisyphus::auth::authenticate_github_device_flow(&client_id, &scopes).await?
+            } else {
+                sisyphus::auth::prompt_for_provider_token(&kind)?
+            };
             sisyphus::auth::store_provider_token(&kind, &token)?;
             println!("{} token stored in the OS credential store", kind.as_str());
             Ok(())
