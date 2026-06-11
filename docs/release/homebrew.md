@@ -14,8 +14,8 @@ The release workflow is still valid without these settings. It will create the G
 ## Release Flow
 
 ```bash
-git tag v0.0.4
-git push origin v0.0.4
+git tag v0.0.5
+git push origin v0.0.5
 ```
 
 The workflow builds:
