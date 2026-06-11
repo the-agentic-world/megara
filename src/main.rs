@@ -137,6 +137,15 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
+        Command::Auth { provider } => {
+            let kind = provider
+                .parse::<sisyphus::domain::Provider>()
+                .map_err(|error| anyhow::anyhow!("failed to parse provider for auth: {error}"))?;
+            let token = sisyphus::auth::prompt_for_provider_token(&kind)?;
+            sisyphus::auth::store_provider_token(&kind, &token)?;
+            println!("{} token stored in the OS credential store", kind.as_str());
+            Ok(())
+        }
         Command::ProviderAdd {
             provider,
             owner_or_namespace,

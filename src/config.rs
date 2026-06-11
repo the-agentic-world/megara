@@ -173,12 +173,24 @@ impl ProviderTargetConfig {
     }
 
     pub fn auth_token(&self) -> Result<Option<String>> {
+        self.auth_token_with_resolvers(|key| std::env::var(key), crate::auth::load_provider_token)
+    }
+
+    fn auth_token_with_resolvers<Env, Stored>(
+        &self,
+        env: Env,
+        stored: Stored,
+    ) -> Result<Option<String>>
+    where
+        Env: FnOnce(&str) -> std::result::Result<String, std::env::VarError>,
+        Stored: FnOnce(&Provider) -> Result<Option<String>>,
+    {
         let Some(env_key) = &self.token_env else {
-            return Ok(None);
+            return stored(&self.kind);
         };
 
-        let token = std::env::var(env_key)
-            .with_context(|| format!("provider token env {env_key} is not set"))?;
+        let token =
+            env(env_key).with_context(|| format!("provider token env {env_key} is not set"))?;
         Ok(Some(token))
     }
 
@@ -453,6 +465,52 @@ mod tests {
 
         assert_eq!(config.providers.len(), 1);
         assert_eq!(config.providers[0].token_env.as_deref(), Some("NEW_TOKEN"));
+    }
+
+    #[test]
+    fn auth_token_prefers_token_env() {
+        let target = ProviderTargetConfig {
+            kind: Provider::GitHub,
+            owner_or_namespace: "acme".to_string(),
+            repo: "widgets".to_string(),
+            instance_url: None,
+            token_env: Some("GITHUB_TOKEN".to_string()),
+        };
+
+        let token = target
+            .auth_token_with_resolvers(
+                |key| {
+                    assert_eq!(key, "GITHUB_TOKEN");
+                    Ok("env-token".to_string())
+                },
+                |_| panic!("stored credential should not be read when token_env is set"),
+            )
+            .unwrap();
+
+        assert_eq!(token.as_deref(), Some("env-token"));
+    }
+
+    #[test]
+    fn auth_token_uses_stored_credential_without_token_env() {
+        let target = ProviderTargetConfig {
+            kind: Provider::GitLab,
+            owner_or_namespace: "acme/platform".to_string(),
+            repo: "widgets".to_string(),
+            instance_url: None,
+            token_env: None,
+        };
+
+        let token = target
+            .auth_token_with_resolvers(
+                |_| panic!("environment should not be read without token_env"),
+                |provider| {
+                    assert_eq!(provider, &Provider::GitLab);
+                    Ok(Some("stored-token".to_string()))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(token.as_deref(), Some("stored-token"));
     }
 
     #[test]

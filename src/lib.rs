@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod clarification;
 pub mod cli;
 pub mod codex;

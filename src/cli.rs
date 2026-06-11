@@ -33,6 +33,8 @@ pub enum Command {
     },
     #[command(about = "Probe local Codex integration capabilities")]
     CodexProbe,
+    #[command(about = "Store a provider token in the OS credential store")]
+    Auth { provider: String },
     #[command(about = "Register a provider repository polling target")]
     ProviderAdd {
         provider: String,
@@ -179,6 +181,43 @@ mod tests {
                 repo: "widgets".to_string(),
                 token_env: Some("GITHUB_TOKEN".to_string()),
                 instance_url: None
+            })
+        );
+    }
+
+    #[test]
+    fn parses_provider_add_without_token_env() {
+        let cli = Cli::parse_from(["sisyphus", "provider-add", "github", "acme", "widgets"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::ProviderAdd {
+                provider: "github".to_string(),
+                owner_or_namespace: "acme".to_string(),
+                repo: "widgets".to_string(),
+                token_env: None,
+                instance_url: None
+            })
+        );
+    }
+
+    #[test]
+    fn parses_auth_github() {
+        let cli = Cli::parse_from(["sisyphus", "auth", "github"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Auth {
+                provider: "github".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_auth_gitlab() {
+        let cli = Cli::parse_from(["sisyphus", "auth", "gitlab"]);
+        assert_eq!(
+            cli.command,
+            Some(Command::Auth {
+                provider: "gitlab".to_string()
             })
         );
     }
