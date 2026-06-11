@@ -8,6 +8,7 @@ const KEYCHAIN_SERVICE: &str = "sisyphus-provider-token";
 const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const GITHUB_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const GITHUB_DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
+const DEFAULT_GITHUB_OAUTH_CLIENT_ID: &str = "Ov23li3PALF71aEclFVu";
 const DEFAULT_GITHUB_SCOPE: &str = "repo";
 
 pub fn prompt_for_provider_token(provider: &Provider) -> Result<String> {
@@ -28,10 +29,10 @@ pub fn load_provider_token(provider: &Provider) -> Result<Option<String>> {
     load_provider_token_for_account(credential_account(provider))
 }
 
-pub fn require_github_oauth_client_id(cli_client_id: Option<String>) -> Result<String> {
+pub fn resolve_github_oauth_client_id(cli_client_id: Option<String>) -> String {
     cli_client_id
         .and_then(trimmed_non_empty)
-        .context("GitHub OAuth requires --client-id; use provider-add --token-env to authenticate with a GitHub PAT instead")
+        .unwrap_or_else(|| DEFAULT_GITHUB_OAUTH_CLIENT_ID.to_string())
 }
 
 pub fn github_oauth_scopes(scopes: &[String]) -> String {
@@ -243,17 +244,23 @@ mod tests {
     }
 
     #[test]
-    fn require_github_oauth_client_id_trims_cli_value() {
+    fn resolve_github_oauth_client_id_trims_cli_value() {
         assert_eq!(
-            require_github_oauth_client_id(Some(" client-1 ".to_string())).unwrap(),
+            resolve_github_oauth_client_id(Some(" client-1 ".to_string())),
             "client-1"
         );
     }
 
     #[test]
-    fn require_github_oauth_client_id_rejects_missing_or_blank_value() {
-        assert!(require_github_oauth_client_id(None).is_err());
-        assert!(require_github_oauth_client_id(Some(" ".to_string())).is_err());
+    fn resolve_github_oauth_client_id_uses_builtin_default() {
+        assert_eq!(
+            resolve_github_oauth_client_id(None),
+            DEFAULT_GITHUB_OAUTH_CLIENT_ID
+        );
+        assert_eq!(
+            resolve_github_oauth_client_id(Some(" ".to_string())),
+            DEFAULT_GITHUB_OAUTH_CLIENT_ID
+        );
     }
 
     #[test]

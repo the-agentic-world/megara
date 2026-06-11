@@ -91,11 +91,12 @@ sisyphus
 Authenticate a provider locally, then register a provider polling target:
 
 ```bash
-sisyphus auth github --client-id <github-oauth-client-id>
+sisyphus auth github
 sisyphus provider-add github the-agentic-world sisyphus
 ```
 
-GitHub OAuth uses Device Flow and requires an explicit OAuth App client ID:
+GitHub OAuth uses Device Flow through the built-in Sisyphus OAuth App. The
+client ID can be overridden for development or self-managed deployments:
 
 ```bash
 sisyphus auth github --client-id <github-oauth-client-id>
@@ -167,9 +168,10 @@ ignore_labels = ["wontfix", "blocked"]
 ```
 
 Provider tokens are stored in the OS credential store with `sisyphus auth github` or
-`sisyphus auth gitlab` where supported. GitHub OAuth requires `--client-id`.
-Environment variable PATs are supported with `provider-add --token-env` and take
-precedence over stored credentials; raw token values are not written to the config.
+`sisyphus auth gitlab` where supported. GitHub OAuth uses the built-in Sisyphus
+OAuth App client ID by default. Environment variable PATs are supported with
+`provider-add --token-env` and take precedence over stored credentials; raw token
+values are not written to the config.
 
 ## CLI
 
@@ -178,7 +180,7 @@ sisyphus                         Open the local dashboard
 sisyphus serve                   Run the backend in the foreground
 sisyphus serve --daemon          Run the backend headlessly
 sisyphus register                Register macOS LaunchAgent autostart
-sisyphus auth github --client-id <id> Store GitHub auth via OAuth Device Flow
+sisyphus auth github             Store GitHub auth via OAuth Device Flow
 sisyphus auth gitlab             Store a GitLab token in the OS credential store
 sisyphus provider-add ...        Register a provider repository polling target
 sisyphus repo-add ...            Map a provider repository to a local path

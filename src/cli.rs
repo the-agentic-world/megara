@@ -41,7 +41,10 @@ pub enum Command {
     #[command(about = "Store a provider token in the OS credential store")]
     Auth {
         provider: String,
-        #[arg(long, help = "GitHub OAuth App client ID; required for GitHub auth")]
+        #[arg(
+            long,
+            help = "Override the built-in Sisyphus GitHub OAuth App client ID"
+        )]
         client_id: Option<String>,
         #[arg(
             long = "scope",
