@@ -3,7 +3,7 @@
 [![CI](https://github.com/the-agentic-world/sisyphus/actions/workflows/ci.yml/badge.svg)](https://github.com/the-agentic-world/sisyphus/actions/workflows/ci.yml)
 [![Release](https://github.com/the-agentic-world/sisyphus/actions/workflows/release.yml/badge.svg)](https://github.com/the-agentic-world/sisyphus/actions/workflows/release.yml)
 
-Megara installs a portable agent harness at project or global scope, then projects it into supported agent runtimes. It borrows the installation shape of OMA while keeping its own SSOT and templates.
+Megara installs a portable agent harness at project or global scope, then projects it into supported agent runtimes. It keeps its own source of truth and built-in templates.
 
 V1 targets Codex only, but the code is structured around target adapters so additional agent runtimes can be added without changing the installer contract.
 
