@@ -1,0 +1,68 @@
+mod cli;
+mod doctor;
+mod installer;
+mod paths;
+mod targets;
+mod templates;
+mod writer;
+
+use anyhow::Result;
+use clap::Parser;
+use cli::{Cli, Commands, TargetCommands, TemplateCommands};
+use installer::{InstallOptions, Planner};
+use templates::TemplateRegistry;
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+    let registry = TemplateRegistry::default();
+
+    match cli.command {
+        Commands::Install(args) => {
+            let options = InstallOptions::resolve(args, true)?;
+            let result = Planner::new(&registry, options).execute()?;
+            result.print()?;
+        }
+        Commands::Sync(args) => {
+            let options = InstallOptions::resolve(args, false)?;
+            let result = Planner::new(&registry, options).execute()?;
+            result.print()?;
+        }
+        Commands::Doctor(args) => {
+            let options = args.resolve()?;
+            let report = doctor::run(&registry, options)?;
+            report.print()?;
+        }
+        Commands::Templates { command } => match command {
+            TemplateCommands::List(args) => {
+                let list = registry.template_names();
+                if args.json {
+                    println!("{}", serde_json::to_string_pretty(&list)?);
+                } else {
+                    for name in list {
+                        println!("{name}");
+                    }
+                }
+            }
+            TemplateCommands::Show(args) => {
+                let template = registry
+                    .find(&args.name)
+                    .ok_or_else(|| anyhow::anyhow!("unknown template: {}", args.name))?;
+                println!("{}", template.content);
+            }
+        },
+        Commands::Targets { command } => match command {
+            TargetCommands::List(args) => {
+                let targets = targets::supported_targets();
+                if args.json {
+                    println!("{}", serde_json::to_string_pretty(&targets)?);
+                } else {
+                    for target in targets {
+                        println!("{}", target.name);
+                    }
+                }
+            }
+        },
+    }
+
+    Ok(())
+}

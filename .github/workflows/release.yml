@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="megara-v${version}-${{ matrix.target }}.tar.gz"
+          mkdir -p "dist/megara-v${version}-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/megara" "dist/megara-v${version}-${{ matrix.target }}/"
+          tar -C "dist/megara-v${version}-${{ matrix.target }}" -czf "${archive}" "megara"
+          shasum -a 256 "${archive}" > "${archive}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: megara-${{ matrix.target }}
+          path: |
+            megara-v*.tar.gz
+            megara-v*.tar.gz.sha256
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/megara-v*.tar.gz
+            dist/megara-v*.tar.gz.sha256
+
+  homebrew:
+    name: Update Homebrew tap
+    runs-on: ubuntu-latest
+    needs: publish
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          repository: the-agentic-world/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Update formula
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          repo="${GITHUB_REPOSITORY}"
+          mac_archive="megara-v${version}-aarch64-apple-darwin.tar.gz"
+          linux_archive="megara-v${version}-x86_64-unknown-linux-gnu.tar.gz"
+          mac_sha="$(cut -d ' ' -f 1 "dist/${mac_archive}.sha256")"
+          linux_sha="$(cut -d ' ' -f 1 "dist/${linux_archive}.sha256")"
+          mkdir -p tap/Formula
+          cat > tap/Formula/megara.rb <<RUBY
+          class Megara < Formula
+            desc "Project and global agent harness installer"
+            homepage "https://github.com/${repo}"
+            version "${version}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/${repo}/releases/download/v${version}/${mac_archive}"
+                sha256 "${mac_sha}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.intel?
+                url "https://github.com/${repo}/releases/download/v${version}/${linux_archive}"
+                sha256 "${linux_sha}"
+              end
+            end
+
+            def install
+              bin.install "megara"
+            end
+
+            test do
+              assert_match "codex", shell_output("#{bin}/megara targets list")
+            end
+          end
+          RUBY
+      - name: Commit formula
+        shell: bash
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/megara.rb
+          git commit -m "megara ${GITHUB_REF_NAME}" || exit 0
+          git push
