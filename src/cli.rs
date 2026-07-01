@@ -1,4 +1,7 @@
-use std::io::{self, IsTerminal, Write};
+use std::{
+    io::{self, IsTerminal, Write},
+    path::PathBuf,
+};
 
 use anyhow::{bail, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -31,6 +34,9 @@ pub enum Commands {
         #[command(subcommand)]
         command: TargetCommands,
     },
+    /// Internal runtime hook entrypoint.
+    #[command(hide = true)]
+    Hook(HookArgs),
 }
 
 #[derive(Debug, Args)]
@@ -55,6 +61,22 @@ pub struct DoctorArgs {
     pub target: Option<TargetArg>,
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct HookArgs {
+    #[arg(long, hide = true)]
+    pub managed_marker: Option<String>,
+    #[arg(long, value_enum, default_value = "project")]
+    pub scope: ScopeArg,
+    #[arg(long)]
+    pub project_root: Option<PathBuf>,
+    #[arg(long, default_value = "codex")]
+    pub runtime: String,
+    #[arg(long)]
+    pub event: String,
+    #[arg(long)]
+    pub matcher: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

@@ -18,6 +18,7 @@ pub struct DoctorReport {
     pub missing: Vec<String>,
     pub unmanaged: Vec<String>,
     pub stale: Vec<String>,
+    pub warnings: Vec<String>,
     #[serde(skip)]
     pub json: bool,
 }
@@ -27,6 +28,7 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
     let mut missing = Vec::new();
     let mut unmanaged = Vec::new();
     let mut stale = Vec::new();
+    let warnings = runtime_dependency_issues(options.target);
 
     missing.extend(
         TemplateRegistry::missing_paths(&paths.ssot_root)
@@ -37,7 +39,9 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
     if missing.is_empty() {
         let ssot_registry = TemplateRegistry::from_ssot_root(&paths.ssot_root)?;
         let projection_files = match options.target {
-            TargetRuntime::Codex => codex::projection_files(paths.target_root, &ssot_registry)?,
+            TargetRuntime::Codex => {
+                codex::projection_files(paths.target_root, options.scope, &ssot_registry)?
+            }
         };
 
         for file in projection_files {
@@ -58,10 +62,11 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
     Ok(DoctorReport {
         scope: options.scope.to_string(),
         target: options.target.to_string(),
-        ok: missing.is_empty() && unmanaged.is_empty() && stale.is_empty(),
+        ok: missing.is_empty() && unmanaged.is_empty() && stale.is_empty() && warnings.is_empty(),
         missing,
         unmanaged,
         stale,
+        warnings,
         json: options.json,
     })
 }
@@ -81,7 +86,14 @@ impl DoctorReport {
         print_group("missing", &self.missing);
         print_group("unmanaged", &self.unmanaged);
         print_group("stale", &self.stale);
+        print_group("warnings", &self.warnings);
         Ok(())
+    }
+}
+
+fn runtime_dependency_issues(target: TargetRuntime) -> Vec<String> {
+    match target {
+        TargetRuntime::Codex => codex::runtime_dependency_issues(),
     }
 }
 

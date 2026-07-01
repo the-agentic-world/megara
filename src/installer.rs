@@ -108,6 +108,7 @@ impl<'a> Planner<'a> {
             TargetRuntime::Codex => {
                 files.extend(codex::projection_files(
                     paths.target_root.clone(),
+                    self.options.scope,
                     &projection_registry,
                 )?);
             }
@@ -125,10 +126,12 @@ impl<'a> Planner<'a> {
     pub fn execute(&self) -> Result<InstallResult> {
         let plan = self.plan()?;
         let summary = write_files(&plan.files, self.options.dry_run, self.options.force)?;
+        let warnings = runtime_dependency_issues(self.options.target);
         Ok(InstallResult {
             options: self.options.clone(),
             plan,
             summary,
+            warnings,
         })
     }
 }
@@ -138,6 +141,7 @@ pub struct InstallResult {
     pub options: InstallOptions,
     pub plan: InstallPlan,
     pub summary: WriteSummary,
+    pub warnings: Vec<String>,
 }
 
 impl InstallResult {
@@ -175,7 +179,20 @@ impl InstallResult {
             }
         }
 
+        if !self.warnings.is_empty() {
+            println!("warnings:");
+            for warning in &self.warnings {
+                println!("- {warning}");
+            }
+        }
+
         Ok(())
+    }
+}
+
+fn runtime_dependency_issues(target: TargetRuntime) -> Vec<String> {
+    match target {
+        TargetRuntime::Codex => codex::runtime_dependency_issues(),
     }
 }
 

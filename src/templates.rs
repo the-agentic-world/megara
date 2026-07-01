@@ -25,7 +25,6 @@ pub enum TemplateKind {
     Rule,
     Workflow,
     SkillFragment,
-    Hook,
     Agent,
 }
 
@@ -121,13 +120,6 @@ const TEMPLATE_SPECS: &[TemplateSpec] = &[
         relative_path: "skill-fragments/ultragoal/ai-slop-cleaner.md",
         description: "Ultragoal cleanup detector fragment",
         content: include_str!("../.agents/skill-fragments/ultragoal/ai-slop-cleaner.md"),
-    },
-    TemplateSpec {
-        name: "megara-hook",
-        kind: TemplateKind::Hook,
-        relative_path: "hooks/megara-hook.sh",
-        description: "Portable runtime hook runner",
-        content: include_str!("../.agents/hooks/megara-hook.sh"),
     },
     TemplateSpec {
         name: "executor",
@@ -226,13 +218,6 @@ impl TemplateRegistry {
         self.files
             .iter()
             .filter(|template| template.kind == TemplateKind::SkillFragment)
-            .collect()
-    }
-
-    pub fn hooks(&self) -> Vec<&HarnessTemplate> {
-        self.files
-            .iter()
-            .filter(|template| template.kind == TemplateKind::Hook)
             .collect()
     }
 

@@ -12,15 +12,19 @@ fn megara() -> Command {
 }
 
 fn run_hook(
-    script: &Path,
+    project_root: &Path,
     cwd: &Path,
     event: &str,
     matcher: Option<&str>,
     payload: &[u8],
 ) -> Output {
-    let mut command = Command::new("sh");
+    let mut command = megara();
     command
-        .arg(script)
+        .arg("hook")
+        .arg("--scope")
+        .arg("project")
+        .arg("--project-root")
+        .arg(project_root)
         .arg("--runtime")
         .arg("codex")
         .arg("--event")
@@ -70,19 +74,15 @@ fn installs_project_scope_codex_harness() {
         .path()
         .join(".codex/skill-fragments/deep-interview/auto-research-greenfield.md")
         .exists());
-    assert!(dir.path().join(".agents/hooks/megara-hook.sh").exists());
     assert!(dir.path().join(".agents/agents/executor.toml").exists());
-    assert!(dir.path().join(".codex/hooks/megara-hook.sh").exists());
     assert!(dir.path().join(".codex/hooks.json").exists());
     assert!(dir.path().join(".codex/agents/executor.toml").exists());
-    let hook_script = fs::read_to_string(dir.path().join(".codex/hooks/megara-hook.sh")).unwrap();
-    assert!(hook_script.starts_with("#!/usr/bin/env sh\n# MEGARA:MANAGED"));
     let skill =
         fs::read_to_string(dir.path().join(".codex/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));
     assert!(skill.contains("MEGARA:MANAGED"));
-    assert!(skill.contains("Ambiguity: NN% remaining"));
-    assert!(skill.contains("Round 0 | Topology confirmation"));
+    assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
+    assert!(skill.contains("<configured-locale round 0 topology heading>"));
     assert!(skill.contains("Calculate ambiguity as `100 - weighted_clarity`"));
     assert!(skill.contains("Ambiguity is bidirectional and non-monotonic"));
     assert!(skill.contains("Interview ledger update:"));
@@ -90,10 +90,12 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Megara Workflow State:"));
     assert!(skill.contains("locked markdown artifact"));
     assert!(skill.contains("spec_path"));
-    assert!(skill.contains("Restate gate"));
     assert!(skill.contains("Write every user-facing sentence in the configured locale"));
     assert!(skill.contains("option labels"));
     assert!(skill.contains("free-text values"));
+    assert!(!skill.contains("Deep Interview threshold:"));
+    assert!(!skill.contains("I'm reading this as"));
+    assert!(!skill.contains("Restate gate"));
     let ssot_agent = fs::read_to_string(dir.path().join(".agents/agents/executor.toml")).unwrap();
     let ssot_agent: toml::Value = toml::from_str(&ssot_agent).unwrap();
     assert!(ssot_agent.get("instructions").is_some());
@@ -113,6 +115,13 @@ fn installs_project_scope_codex_harness() {
     let hooks_json = fs::read_to_string(dir.path().join(".codex/hooks.json")).unwrap();
     serde_json::from_str::<serde_json::Value>(&hooks_json).unwrap();
     assert!(hooks_json.contains("megara-hook-UserPromptSubmit"));
+    assert!(hooks_json.contains("megara-hook-PreToolUse"));
+    assert!(hooks_json
+        .contains("megara hook --managed-marker MEGARA:MANAGED --scope project --project-root"));
+    assert!(hooks_json.contains("--runtime codex --event UserPromptSubmit"));
+    assert!(!hooks_json.contains("megara-hook.sh"));
+    assert!(!hooks_json.contains("python3"));
+    assert!(!hooks_json.contains(r#""matcher": "Bash""#));
     let megara_config = fs::read_to_string(dir.path().join(".agents/megara.toml")).unwrap();
     assert!(megara_config.contains("locale = \"ko-KR\""));
     let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
@@ -226,13 +235,12 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
         .unwrap();
     assert!(install.status.success());
 
-    let script = dir.path().join(".codex/hooks/megara-hook.sh");
     let question_payload = br#"{
   "session_id": "sess-di",
   "cwd": "/tmp/project",
   "last_assistant_message": "Round 1 | Component: game | Targeting: Verification | Ambiguity: 42%\n\nWhat proves this is done?\n\nMegara Question Gate:\n- id: di-r1-verification\n- round: 1\n- component: game\n- dimension: Verification\n- question: What proves this is done?\n- options:\n  - Unit tests\n  - E2E tests\n- free_text: true\n\n"
 }"#;
-    let output = run_hook(&script, dir.path(), "Stop", None, question_payload);
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, question_payload);
     assert!(
         output.status.success(),
         "stderr={}",
@@ -252,7 +260,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
 
     let answer_payload = br#"{"session_id":"sess-di","prompt":"Use both unit and E2E tests."}"#;
     let output = run_hook(
-        &script,
+        dir.path(),
         dir.path(),
         "UserPromptSubmit",
         None,
@@ -273,7 +281,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     let mutation_payload =
         br#"{"session_id":"sess-di","tool_input":{"command":"echo changed > app.js"}}"#;
     let output = run_hook(
-        &script,
+        dir.path(),
         dir.path(),
         "PreToolUse",
         Some("Bash"),
@@ -282,12 +290,26 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("MEGARA mutation guard"));
 
+    let edit_payload = br#"{"session_id":"sess-di","tool_name":"apply_patch","tool_input":{"patch":"*** Begin Patch\n*** End Patch\n"}}"#;
+    let output = run_hook(dir.path(), dir.path(), "PreToolUse", None, edit_payload);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("MEGARA mutation guard"));
+
+    let read_payload =
+        br#"{"session_id":"sess-di","tool_name":"Read","tool_input":{"file_path":"app.js"}}"#;
+    let output = run_hook(dir.path(), dir.path(), "PreToolUse", None, read_payload);
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
     let state_only_terminal_payload = br#"{
   "session_id": "sess-di",
   "last_assistant_message": "Megara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n\n"
 }"#;
     let output = run_hook(
-        &script,
+        dir.path(),
         dir.path(),
         "Stop",
         None,
@@ -306,7 +328,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(state.get("spec_path").is_none());
 
     let output = run_hook(
-        &script,
+        dir.path(),
         dir.path(),
         "PreToolUse",
         Some("Bash"),
@@ -317,9 +339,9 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
 
     let terminal_payload = br#"{
   "session_id": "sess-di",
-  "last_assistant_message": "**Pending Approval Specification**\n\nGoal: build the verified game.\n\nAcceptance criteria:\n- Unit tests pass\n- E2E tests pass\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n\n"
+  "last_assistant_message": "**Pending Approval Specification**\n\nGoal: build the verified game.\n\nTranscript summary:\nMegara Question Gate:\n- id: di-old-transcript\n- round: 0\n- component: topology\n- dimension: Outcome clarity\n- question: Historical question embedded in the final spec.\n- options:\n  - Historical option\n- free_text: true\n\nAcceptance criteria:\n- Unit tests pass\n- E2E tests pass\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n\n"
 }"#;
-    let output = run_hook(&script, dir.path(), "Stop", None, terminal_payload);
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, terminal_payload);
     assert!(
         output.status.success(),
         "stderr={}",
@@ -331,6 +353,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert_eq!(state["active"], false);
     assert_eq!(state["phase"], "crystallized");
     assert_eq!(state["ambiguity"], "12%");
+    assert!(state["pending_question"].is_null());
     let spec_path = PathBuf::from(state["spec_path"].as_str().unwrap());
     assert!(spec_path.exists());
     assert_eq!(state["spec_sha256"].as_str().unwrap().len(), 64);
@@ -352,7 +375,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(spec_index.contains(spec_path.to_str().unwrap()));
 
     let output = run_hook(
-        &script,
+        dir.path(),
         dir.path(),
         "PreToolUse",
         Some("Bash"),
@@ -376,6 +399,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(events.contains("\"event\":\"spec_persisted\""));
     assert!(events.contains("\"event\":\"workflow_state\""));
     assert!(events.contains(spec_path.to_str().unwrap()));
+    assert!(!events.contains("di-old-transcript"));
 }
 
 #[test]
@@ -393,63 +417,35 @@ fn projected_hook_runner_records_runtime_event() {
         .unwrap();
     assert!(install.status.success());
 
-    let script = dir.path().join(".codex/hooks/megara-hook.sh");
-    let mut child = Command::new("sh")
-        .arg(&script)
-        .arg("--runtime")
-        .arg("codex")
-        .arg("--event")
-        .arg("UserPromptSubmit")
-        .current_dir(dir.path())
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(br#"{"prompt":"hello"}"#)
-        .unwrap();
-    let status = child.wait().unwrap();
-    assert!(status.success());
+    let nested = dir.path().join("src").join("game");
+    fs::create_dir_all(&nested).unwrap();
 
-    let mut second_child = Command::new("sh")
-        .arg(&script)
-        .arg("--runtime")
-        .arg("codex")
-        .arg("--event")
-        .arg("UserPromptSubmit")
-        .current_dir(dir.path())
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
-    second_child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(br#"{"prompt":"second"}"#)
-        .unwrap();
-    let status = second_child.wait().unwrap();
-    assert!(status.success());
+    let output = run_hook(
+        dir.path(),
+        &nested,
+        "UserPromptSubmit",
+        None,
+        br#"{"prompt":"hello"}"#,
+    );
+    assert!(output.status.success());
 
-    let mut stop_child = Command::new("sh")
-        .arg(&script)
-        .arg("--runtime")
-        .arg("codex")
-        .arg("--event")
-        .arg("Stop")
-        .current_dir(dir.path())
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
-    stop_child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(br#"{"last_assistant_message":"question?"}"#)
-        .unwrap();
-    let status = stop_child.wait().unwrap();
-    assert!(status.success());
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"prompt":"second"}"#,
+    );
+    assert!(output.status.success());
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"last_assistant_message":"question?"}"#,
+    );
+    assert!(output.status.success());
 
     let log = fs::read_to_string(dir.path().join(".agents/state/hooks/events.jsonl")).unwrap();
     assert!(log.contains("\"runtime\":\"codex\""));
@@ -487,13 +483,46 @@ fn projected_hook_runner_records_runtime_event() {
     assert!(conversation_events.contains("\"role\":\"assistant\""));
 
     let conversation =
-        fs::read_to_string(dir.path().join(".agents/state/hooks/conversation.jsonl"))
-            .unwrap_or_default();
-    if !conversation.is_empty() {
-        assert!(conversation.contains("\"content\":\"hello\""));
-        assert!(conversation.contains("\"content\":\"second\""));
-        assert!(conversation.contains("\"content\":\"question?\""));
-    }
+        fs::read_to_string(dir.path().join(".agents/state/hooks/conversation.jsonl")).unwrap();
+    assert!(conversation.contains("\"content\":\"hello\""));
+    assert!(conversation.contains("\"content\":\"second\""));
+    assert!(conversation.contains("\"content\":\"question?\""));
+}
+
+#[test]
+fn project_hook_rejects_cwd_outside_project_root() {
+    let project = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+
+    let install = megara()
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(project.path())
+        .output()
+        .unwrap();
+    assert!(install.status.success());
+
+    let output = run_hook(
+        project.path(),
+        outside.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"prompt":"outside"}"#,
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside project root"));
+    assert!(!project
+        .path()
+        .join(".agents/state/hooks/events.jsonl")
+        .exists());
+    assert!(!outside
+        .path()
+        .join(".agents/state/hooks/events.jsonl")
+        .exists());
 }
 
 #[test]
@@ -569,6 +598,7 @@ fn doctor_reports_missing_then_ok() {
     assert!(ok.status.success());
     let ok_stdout = String::from_utf8_lossy(&ok.stdout);
     assert!(ok_stdout.contains("\"ok\": true"));
+    assert!(ok_stdout.contains("\"warnings\": []"));
 }
 
 #[test]
@@ -582,5 +612,5 @@ fn lists_targets_and_templates() {
     let stdout = String::from_utf8_lossy(&templates.stdout);
     assert!(stdout.contains("deep-interview"));
     assert!(stdout.contains("deep-interview/auto-research-greenfield"));
-    assert!(stdout.contains("megara-hook"));
+    assert!(!stdout.contains("megara-hook"));
 }

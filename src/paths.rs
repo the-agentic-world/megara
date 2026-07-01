@@ -73,8 +73,8 @@ impl TargetRuntime {
 }
 
 pub fn home_dir() -> Result<PathBuf> {
-    match env::var_os("HOME") {
+    match env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
         Some(home) if !home.is_empty() => Ok(PathBuf::from(home)),
-        _ => bail!("HOME is not set"),
+        _ => bail!("HOME or USERPROFILE is not set"),
     }
 }

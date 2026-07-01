@@ -28,7 +28,7 @@ The installer compiles these files into the `megara` binary, writes them to the 
 
 ## Runtime Hooks
 
-- `hooks/megara-hook.sh`: portable hook runner used by runtime adapters to keep lightweight event state without breaking the agent runtime.
+- `megara hook`: portable Rust hook runner used by runtime adapters to keep lightweight event state without breaking the agent runtime.
 - Hook state is append-only by default:
   - `.agents/state/hooks/events.jsonl` indexes every hook event.
   - `.agents/state/hooks/payloads/<runtime>/<event>/*.json` stores every raw payload.
@@ -40,4 +40,4 @@ The installer compiles these files into the `megara` binary, writes them to the 
   - `deep-interview/events.jsonl` records gate, answer, state, and mutation-guard events.
   - `deep-interview/specs/deep-interview-<session-id>-<timestamp>.md` stores the crystallized final spec as a durable lock artifact.
   - `deep-interview/specs/index.jsonl` indexes persisted spec artifacts and sha256 values.
-- During active `deep-interview`, the hook blocks obvious Bash-based file mutations unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.
+- During active `deep-interview`, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.

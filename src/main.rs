@@ -1,5 +1,6 @@
 mod cli;
 mod doctor;
+mod hook;
 mod installer;
 mod paths;
 mod targets;
@@ -31,6 +32,12 @@ fn main() -> Result<()> {
             let options = args.resolve()?;
             let report = doctor::run(&registry, options)?;
             report.print()?;
+        }
+        Commands::Hook(args) => {
+            let exit_code = hook::run(args)?;
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
         }
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {

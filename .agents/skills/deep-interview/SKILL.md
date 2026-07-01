@@ -43,10 +43,10 @@ Resolve the ambiguity threshold before the first question.
 - If the user explicitly gives a stricter or looser threshold, use that and name it.
 - If project or runtime settings expose a deep-interview threshold, use that and name the source.
 
-Before Round 0, report:
+Before the first topology question, report the threshold in configured-locale prose. Keep only numeric values and literal configuration/source names unchanged.
 
 ```text
-Deep Interview threshold: NN% remaining ambiguity (source: default|user|project|runtime)
+<configured-locale threshold label>: NN% <configured-locale remaining ambiguity> (source: default|user|project|runtime)
 ```
 
 ## Ambiguity Scoring
@@ -76,12 +76,12 @@ Use these weighted dimensions:
 Calculate weighted clarity as `sum(dimension_clarity_percent * weight) / 100`.
 Calculate ambiguity as `100 - weighted_clarity`.
 
-After each user answer, report at minimum:
+After each user answer, report at minimum using configured-locale prose:
 
 ```text
-Ambiguity: NN% remaining
-Weakest dimension: <dimension> (MM%)
-Next target: <component> / <dimension> — <one-sentence rationale>
+<configured-locale ambiguity label>: NN% <configured-locale remaining>
+<configured-locale weakest dimension label>: <dimension> (MM%)
+<configured-locale next target label>: <component> / <dimension> — <configured-locale one-sentence rationale>
 ```
 
 Ambiguity is bidirectional and non-monotonic. Later answers can increase ambiguity when they contradict established facts, add scope, expose internal inconsistency, or fail to answer the targeted gap. Surface the rise through the normal score report and target the next question at the affected component/dimension.
@@ -101,16 +101,16 @@ Before scoring, enumerate top-level components from the user's idea and any repo
 - Do not collapse sibling components just because one component is described in more detail.
 - Allow user-confirmed deferrals.
 
-Ask exactly one Round 0 confirmation question:
+Ask exactly one first-round topology confirmation question. Use configured-locale prose for all visible text:
 
 ```text
-Round 0 | Topology confirmation | Ambiguity: not scored yet
+<configured-locale round 0 topology heading> | <configured-locale not scored yet>
 
-I'm reading this as N top-level component(s):
+<configured-locale sentence explaining that the request is being read as N components>:
 1. <component>: <one-sentence outcome>
 2. ...
 
-Is that topology right? Should anything be added, removed, merged, split, or deferred?
+<configured-locale single confirmation question about adding, removing, merging, splitting, or deferring components>
 ```
 
 After the answer, carry this topology forward for every score, progress report, and final spec.
@@ -237,7 +237,7 @@ Passing the numeric threshold is not enough.
 Before writing the final spec:
 
 1. Closure audit: confirm every active component has outcome, scope, constraints, verification, and risk/context coverage. If a material gap remains, explain the gap and ask one more targeted question.
-2. Restate gate: collapse the intended outcome into one sentence and ask the user to confirm whether that sentence alone would lead to the desired result.
+2. Final restatement confirmation: collapse the intended outcome into one sentence and ask the user to confirm whether that sentence alone would lead to the desired result. Use configured-locale wording for this label.
 
 Only crystallize the spec after both gates pass or the user explicitly exits early with known ambiguity.
 
