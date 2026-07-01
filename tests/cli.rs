@@ -11,6 +11,12 @@ fn megara() -> Command {
     Command::new(env!("CARGO_BIN_EXE_megara"))
 }
 
+fn megara_with_codex_home(codex_home: &Path) -> Command {
+    let mut command = megara();
+    command.env("CODEX_HOME", codex_home);
+    command
+}
+
 fn run_hook(
     project_root: &Path,
     cwd: &Path,
@@ -44,8 +50,9 @@ fn run_hook(
 #[test]
 fn installs_project_scope_codex_harness() {
     let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
 
-    let output = megara()
+    let output = megara_with_codex_home(codex_home.path())
         .arg("install")
         .arg("--scope")
         .arg("project")
@@ -137,8 +144,9 @@ fn installs_project_scope_codex_harness() {
 fn installs_global_scope_codex_harness() {
     let cwd = tempdir().unwrap();
     let home = tempdir().unwrap();
+    let codex_home = home.path().join(".codex");
 
-    let output = megara()
+    let output = megara_with_codex_home(&codex_home)
         .arg("install")
         .arg("--scope")
         .arg("global")
@@ -161,6 +169,7 @@ fn installs_global_scope_codex_harness() {
 #[test]
 fn sync_refreshes_managed_projection() {
     let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
     let agents = dir.path().join(".codex/AGENTS.md");
     let ssot_skill = dir.path().join(".agents/skills/deep-interview/SKILL.md");
     let projected_skill = dir.path().join(".codex/skills/deep-interview/SKILL.md");
@@ -168,7 +177,7 @@ fn sync_refreshes_managed_projection() {
     let projected_agent = dir.path().join(".codex/agents/executor.toml");
     let ssot_config = dir.path().join(".agents/megara.toml");
 
-    let install = megara()
+    let install = megara_with_codex_home(codex_home.path())
         .arg("install")
         .arg("--scope")
         .arg("project")
@@ -195,7 +204,7 @@ fn sync_refreshes_managed_projection() {
     let config_content = fs::read_to_string(&ssot_config).unwrap();
     fs::write(&ssot_config, config_content.replace("ko-KR", "en-US")).unwrap();
 
-    let sync = megara()
+    let sync = megara_with_codex_home(codex_home.path())
         .arg("sync")
         .arg("--scope")
         .arg("project")
@@ -223,8 +232,9 @@ fn sync_refreshes_managed_projection() {
 #[test]
 fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
 
-    let install = megara()
+    let install = megara_with_codex_home(codex_home.path())
         .arg("install")
         .arg("--scope")
         .arg("project")
@@ -405,8 +415,9 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
 #[test]
 fn projected_hook_runner_records_runtime_event() {
     let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
 
-    let install = megara()
+    let install = megara_with_codex_home(codex_home.path())
         .arg("install")
         .arg("--scope")
         .arg("project")
@@ -493,8 +504,9 @@ fn projected_hook_runner_records_runtime_event() {
 fn project_hook_rejects_cwd_outside_project_root() {
     let project = tempdir().unwrap();
     let outside = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
 
-    let install = megara()
+    let install = megara_with_codex_home(codex_home.path())
         .arg("install")
         .arg("--scope")
         .arg("project")
@@ -528,6 +540,7 @@ fn project_hook_rejects_cwd_outside_project_root() {
 #[test]
 fn doctor_reports_missing_then_ok() {
     let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
 
     let missing = megara()
         .arg("doctor")
@@ -543,7 +556,7 @@ fn doctor_reports_missing_then_ok() {
     let missing_stdout = String::from_utf8_lossy(&missing.stdout);
     assert!(missing_stdout.contains("\"ok\": false"));
 
-    let install = megara()
+    let install = megara_with_codex_home(codex_home.path())
         .arg("install")
         .arg("--scope")
         .arg("project")
@@ -574,7 +587,7 @@ fn doctor_reports_missing_then_ok() {
     assert!(stale_stdout.contains("\"ok\": false"));
     assert!(stale_stdout.contains(".codex/skills/deep-interview/SKILL.md"));
 
-    let sync = megara()
+    let sync = megara_with_codex_home(codex_home.path())
         .arg("sync")
         .arg("--scope")
         .arg("project")
@@ -599,6 +612,61 @@ fn doctor_reports_missing_then_ok() {
     let ok_stdout = String::from_utf8_lossy(&ok.stdout);
     assert!(ok_stdout.contains("\"ok\": true"));
     assert!(ok_stdout.contains("\"warnings\": []"));
+}
+
+#[test]
+fn install_registers_codex_hook_trust_state_once() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+
+    let install = megara_with_codex_home(codex_home.path())
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        install.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    let install_stdout = String::from_utf8_lossy(&install.stdout);
+    assert!(install_stdout.contains("hook trust: registered=3, unchanged=0"));
+
+    let config_path = codex_home.path().join("config.toml");
+    let config = fs::read_to_string(&config_path).unwrap();
+    let hooks_path = fs::canonicalize(dir.path().join(".codex/hooks.json")).unwrap();
+    let hooks_path = hooks_path.display().to_string();
+    for event in ["pre_tool_use", "stop", "user_prompt_submit"] {
+        let header = format!("[hooks.state.\"{hooks_path}:{event}:0:0\"]");
+        assert_eq!(occurrences(&config, &header), 1);
+    }
+    assert_eq!(occurrences(&config, "trusted_hash = \"sha256:"), 3);
+
+    let sync = megara_with_codex_home(codex_home.path())
+        .arg("sync")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        sync.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+    let sync_stdout = String::from_utf8_lossy(&sync.stdout);
+    assert!(sync_stdout.contains("hook trust: registered=0, unchanged=3"));
+    assert_eq!(fs::read_to_string(config_path).unwrap(), config);
+}
+
+fn occurrences(haystack: &str, needle: &str) -> usize {
+    haystack.match_indices(needle).count()
 }
 
 #[test]

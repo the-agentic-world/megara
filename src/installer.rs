@@ -126,11 +126,18 @@ impl<'a> Planner<'a> {
     pub fn execute(&self) -> Result<InstallResult> {
         let plan = self.plan()?;
         let summary = write_files(&plan.files, self.options.dry_run, self.options.force)?;
+        let hook_trust = match self.options.target {
+            TargetRuntime::Codex => Some(codex::ensure_hook_trust(
+                &plan.target_root.join("hooks.json"),
+                self.options.dry_run,
+            )?),
+        };
         let warnings = runtime_dependency_issues(self.options.target);
         Ok(InstallResult {
             options: self.options.clone(),
             plan,
             summary,
+            hook_trust,
             warnings,
         })
     }
@@ -141,6 +148,7 @@ pub struct InstallResult {
     pub options: InstallOptions,
     pub plan: InstallPlan,
     pub summary: WriteSummary,
+    pub hook_trust: Option<codex::HookTrustSummary>,
     pub warnings: Vec<String>,
 }
 
@@ -177,6 +185,16 @@ impl InstallResult {
             for path in &self.summary.conflicts {
                 println!("- {}", path.display());
             }
+        }
+
+        if let Some(hook_trust) = &self.hook_trust {
+            println!(
+                "hook trust: registered={}, unchanged={}, skipped={}, config={}",
+                hook_trust.registered,
+                hook_trust.unchanged,
+                hook_trust.skipped,
+                hook_trust.config_path.display()
+            );
         }
 
         if !self.warnings.is_empty() {

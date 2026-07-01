@@ -1,7 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::{
     installer::PlannedFile,
@@ -181,6 +186,292 @@ fn shell_quote(value: &str) -> String {
 
 pub fn runtime_dependency_issues() -> Vec<String> {
     Vec::new()
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct HookTrustSummary {
+    pub config_path: PathBuf,
+    pub registered: usize,
+    pub unchanged: usize,
+    pub skipped: bool,
+}
+
+pub fn ensure_hook_trust(hooks_path: &Path, dry_run: bool) -> Result<HookTrustSummary> {
+    let config_path = codex_home_dir()?.join("config.toml");
+    if dry_run {
+        return Ok(HookTrustSummary {
+            config_path,
+            registered: 0,
+            unchanged: 0,
+            skipped: true,
+        });
+    }
+
+    let hooks_content = fs::read_to_string(hooks_path)
+        .with_context(|| format!("failed to read hooks config {}", hooks_path.display()))?;
+    let trust_states = trusted_hook_states(hooks_path, &hooks_content)?;
+    let existing = fs::read_to_string(&config_path).unwrap_or_default();
+    let (next, registered, unchanged) = merge_hook_trust_state(&existing, &trust_states);
+
+    if next != existing {
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        fs::write(&config_path, next)
+            .with_context(|| format!("failed to write {}", config_path.display()))?;
+    }
+
+    Ok(HookTrustSummary {
+        config_path,
+        registered,
+        unchanged,
+        skipped: false,
+    })
+}
+
+fn codex_home_dir() -> Result<PathBuf> {
+    if let Some(value) = env::var_os("CODEX_HOME") {
+        if !value.is_empty() {
+            return Ok(PathBuf::from(value));
+        }
+    }
+    crate::paths::home_dir().map(|home| home.join(".codex"))
+}
+
+#[derive(Clone, Debug)]
+struct HookTrustState {
+    key: String,
+    trusted_hash: String,
+}
+
+fn trusted_hook_states(hooks_path: &Path, hooks_content: &str) -> Result<Vec<HookTrustState>> {
+    let hooks_path = fs::canonicalize(hooks_path).unwrap_or_else(|_| hooks_path.to_path_buf());
+    let root: Value = serde_json::from_str(hooks_content)
+        .with_context(|| format!("failed to parse hooks config {}", hooks_path.display()))?;
+    let Some(hooks) = root.get("hooks").and_then(Value::as_object) else {
+        return Ok(Vec::new());
+    };
+
+    let mut states = Vec::new();
+    for (event_name, groups) in hooks {
+        let Some(event_label) = hook_event_label(event_name) else {
+            continue;
+        };
+        let Some(groups) = groups.as_array() else {
+            continue;
+        };
+        for (group_index, group) in groups.iter().enumerate() {
+            let Some(group) = group.as_object() else {
+                continue;
+            };
+            let matcher = group.get("matcher").and_then(Value::as_str);
+            let Some(handlers) = group.get("hooks").and_then(Value::as_array) else {
+                continue;
+            };
+            for (handler_index, handler) in handlers.iter().enumerate() {
+                let Some(handler) = handler.as_object() else {
+                    continue;
+                };
+                if handler.get("type").and_then(Value::as_str) != Some("command") {
+                    continue;
+                }
+                if handler.get("async").and_then(Value::as_bool) == Some(true) {
+                    continue;
+                }
+                let Some(command) = handler.get("command").and_then(Value::as_str) else {
+                    continue;
+                };
+                if command.trim().is_empty() {
+                    continue;
+                }
+
+                let key = format!(
+                    "{}:{event_label}:{group_index}:{handler_index}",
+                    hooks_path.display()
+                );
+                states.push(HookTrustState {
+                    key,
+                    trusted_hash: command_hook_hash(event_label, matcher, handler),
+                });
+            }
+        }
+    }
+    Ok(states)
+}
+
+fn hook_event_label(event_name: &str) -> Option<&'static str> {
+    match event_name {
+        "PreToolUse" => Some("pre_tool_use"),
+        "PermissionRequest" => Some("permission_request"),
+        "PostToolUse" => Some("post_tool_use"),
+        "PreCompact" => Some("pre_compact"),
+        "PostCompact" => Some("post_compact"),
+        "SessionStart" => Some("session_start"),
+        "UserPromptSubmit" => Some("user_prompt_submit"),
+        "SubagentStart" => Some("subagent_start"),
+        "SubagentStop" => Some("subagent_stop"),
+        "Stop" => Some("stop"),
+        _ => None,
+    }
+}
+
+fn command_hook_hash(
+    event_label: &str,
+    matcher: Option<&str>,
+    handler: &serde_json::Map<String, Value>,
+) -> String {
+    let timeout = handler
+        .get("timeout")
+        .and_then(Value::as_i64)
+        .unwrap_or(600)
+        .max(1);
+    let command = handler
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    let mut normalized_handler = serde_json::Map::new();
+    normalized_handler.insert("type".to_string(), json!("command"));
+    normalized_handler.insert("command".to_string(), json!(command));
+    normalized_handler.insert("timeout".to_string(), json!(timeout));
+    normalized_handler.insert("async".to_string(), json!(false));
+    if let Some(status_message) = handler.get("statusMessage").and_then(Value::as_str) {
+        normalized_handler.insert("statusMessage".to_string(), json!(status_message));
+    }
+
+    let mut identity = serde_json::Map::new();
+    identity.insert("event_name".to_string(), json!(event_label));
+    identity.insert(
+        "hooks".to_string(),
+        Value::Array(vec![Value::Object(normalized_handler)]),
+    );
+    if let Some(matcher) = matcher {
+        identity.insert("matcher".to_string(), json!(matcher));
+    }
+
+    let canonical = canonical_json(&Value::Object(identity));
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.as_bytes());
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+fn canonical_json(value: &Value) -> String {
+    match value {
+        Value::Array(items) => {
+            let items = items.iter().map(canonical_json).collect::<Vec<_>>();
+            format!("[{}]", items.join(","))
+        }
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            let fields = keys
+                .into_iter()
+                .map(|key| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).expect("json key is serializable"),
+                        canonical_json(&object[key])
+                    )
+                })
+                .collect::<Vec<_>>();
+            format!("{{{}}}", fields.join(","))
+        }
+        _ => serde_json::to_string(value).expect("json value is serializable"),
+    }
+}
+
+fn merge_hook_trust_state(existing: &str, states: &[HookTrustState]) -> (String, usize, usize) {
+    let mut content = existing.to_string();
+    let mut registered = 0;
+    let mut unchanged = 0;
+
+    if !states.is_empty() && !content.contains("[hooks.state]") {
+        if !content.ends_with('\n') && !content.is_empty() {
+            content.push('\n');
+        }
+        content.push_str("\n[hooks.state]\n");
+    }
+
+    for state in states {
+        let header = hook_state_header(&state.key);
+        if let Some((start, end)) = find_toml_section(&content, &header) {
+            let section = &content[start..end];
+            let desired = format!(
+                "trusted_hash = \"{}\"",
+                escape_toml_basic_string(&state.trusted_hash)
+            );
+            if section.lines().any(|line| line.trim() == desired) {
+                unchanged += 1;
+                continue;
+            }
+            let next_section = replace_or_insert_trusted_hash(section, &desired);
+            content.replace_range(start..end, &next_section);
+            registered += 1;
+        } else {
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+            content.push('\n');
+            content.push_str(&header);
+            content.push('\n');
+            content.push_str(&format!(
+                "trusted_hash = \"{}\"\n",
+                escape_toml_basic_string(&state.trusted_hash)
+            ));
+            registered += 1;
+        }
+    }
+
+    (content, registered, unchanged)
+}
+
+fn hook_state_header(key: &str) -> String {
+    format!("[hooks.state.\"{}\"]", escape_toml_basic_string(key))
+}
+
+fn escape_toml_basic_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn find_toml_section(content: &str, header: &str) -> Option<(usize, usize)> {
+    let mut position = 0;
+    let mut found_start = None;
+    for line in content.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if let Some(start) = found_start {
+                return Some((start, position));
+            }
+            if trimmed == header {
+                found_start = Some(position);
+            }
+        }
+        position += line.len();
+    }
+    found_start.map(|start| (start, content.len()))
+}
+
+fn replace_or_insert_trusted_hash(section: &str, desired: &str) -> String {
+    let mut replaced = false;
+    let mut next = String::new();
+    for line in section.split_inclusive('\n') {
+        if line.trim_start().starts_with("trusted_hash") {
+            next.push_str(desired);
+            next.push('\n');
+            replaced = true;
+        } else {
+            next.push_str(line);
+        }
+    }
+    if !replaced {
+        if !next.ends_with('\n') {
+            next.push('\n');
+        }
+        next.push_str(desired);
+        next.push('\n');
+    }
+    next
 }
 
 #[derive(Debug, Deserialize)]
