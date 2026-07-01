@@ -9,7 +9,7 @@ mod writer;
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands, TargetCommands, TemplateCommands};
-use installer::{InstallOptions, Planner};
+use installer::{InstallAction, InstallOptions, Planner};
 use templates::TemplateRegistry;
 
 fn main() -> Result<()> {
@@ -18,12 +18,12 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Install(args) => {
-            let options = InstallOptions::resolve(args, true)?;
+            let options = InstallOptions::resolve(args, true, InstallAction::Install)?;
             let result = Planner::new(&registry, options).execute()?;
             result.print()?;
         }
         Commands::Sync(args) => {
-            let options = InstallOptions::resolve(args, false)?;
+            let options = InstallOptions::resolve(args, false, InstallAction::Sync)?;
             let result = Planner::new(&registry, options).execute()?;
             result.print()?;
         }

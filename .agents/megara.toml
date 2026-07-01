@@ -1,0 +1,8 @@
+schema_version = 1
+name = "megara-default"
+targets = ["codex"]
+enabled_workflows = ["deep-interview", "ralplan", "ultragoal", "team"]
+enabled_agents = ["executor", "planner", "architect", "critic"]
+
+[target.codex]
+enabled = true

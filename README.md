@@ -3,7 +3,7 @@
 [![CI](https://github.com/the-agentic-world/sisyphus/actions/workflows/ci.yml/badge.svg)](https://github.com/the-agentic-world/sisyphus/actions/workflows/ci.yml)
 [![Release](https://github.com/the-agentic-world/sisyphus/actions/workflows/release.yml/badge.svg)](https://github.com/the-agentic-world/sisyphus/actions/workflows/release.yml)
 
-Megara installs a portable agent harness at project or global scope, then projects it into supported agent runtimes. It keeps its own source of truth and built-in templates.
+Megara installs a portable agent harness at project or global scope, then projects it into supported agent runtimes. Its bundled harness source of truth lives in `.agents/` and is compiled into the installer.
 
 V1 targets Codex only, but the code is structured around target adapters so additional agent runtimes can be added without changing the installer contract.
 
@@ -60,6 +60,8 @@ megara targets list
 Megara protects existing files by default. If a destination file exists and is not Megara-managed, the command reports a conflict and leaves it untouched. Use `--force` only when you intentionally want Megara to take ownership.
 
 ## Included Harness
+
+The repository's `.agents/` directory is the bundled harness source. `megara install` writes that source to the selected scope, then projects supported runtime files.
 
 Workflows:
 

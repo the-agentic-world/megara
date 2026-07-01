@@ -4,7 +4,9 @@ use anyhow::Result;
 use serde::Serialize;
 
 use crate::{
-    installer::{DoctorOptions, InstallOptions, Planner, MANAGED_MARKER},
+    installer::{DoctorOptions, MANAGED_MARKER},
+    paths::{InstallPaths, TargetRuntime},
+    targets::codex,
     templates::TemplateRegistry,
 };
 
@@ -20,31 +22,36 @@ pub struct DoctorReport {
     pub json: bool,
 }
 
-pub fn run(registry: &TemplateRegistry, options: DoctorOptions) -> Result<DoctorReport> {
-    let install_options = InstallOptions {
-        scope: options.scope,
-        target: options.target,
-        dry_run: true,
-        force: false,
-        json: true,
-    };
-    let plan = Planner::new(registry, install_options).plan()?;
-
+pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<DoctorReport> {
+    let paths = InstallPaths::resolve(options.scope, options.target)?;
     let mut missing = Vec::new();
     let mut unmanaged = Vec::new();
     let mut stale = Vec::new();
 
-    for file in plan.files {
-        if !file.path.exists() {
-            missing.push(file.path.display().to_string());
-            continue;
-        }
+    missing.extend(
+        TemplateRegistry::missing_paths(&paths.ssot_root)
+            .into_iter()
+            .map(|path| path.display().to_string()),
+    );
 
-        let current = fs::read_to_string(&file.path)?;
-        if !current.contains(MANAGED_MARKER) {
-            unmanaged.push(file.path.display().to_string());
-        } else if current != file.content {
-            stale.push(file.path.display().to_string());
+    if missing.is_empty() {
+        let ssot_registry = TemplateRegistry::from_ssot_root(&paths.ssot_root)?;
+        let projection_files = match options.target {
+            TargetRuntime::Codex => codex::projection_files(paths.target_root, &ssot_registry),
+        };
+
+        for file in projection_files {
+            if !file.path.exists() {
+                missing.push(file.path.display().to_string());
+                continue;
+            }
+
+            let current = fs::read_to_string(&file.path)?;
+            if !current.contains(MANAGED_MARKER) {
+                unmanaged.push(file.path.display().to_string());
+            } else if current != file.content {
+                stale.push(file.path.display().to_string());
+            }
         }
     }
 

@@ -13,8 +13,16 @@ use crate::{
 
 pub const MANAGED_MARKER: &str = "MEGARA:MANAGED";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstallAction {
+    Install,
+    Sync,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct InstallOptions {
+    pub action: InstallAction,
     pub scope: InstallScope,
     pub target: TargetRuntime,
     pub dry_run: bool,
@@ -23,8 +31,9 @@ pub struct InstallOptions {
 }
 
 impl InstallOptions {
-    pub fn resolve(args: InstallArgs, interactive: bool) -> Result<Self> {
+    pub fn resolve(args: InstallArgs, interactive: bool, action: InstallAction) -> Result<Self> {
         Ok(Self {
+            action,
             scope: resolve_scope(args.scope, interactive)?,
             target: resolve_target(args.target, interactive)?,
             dry_run: args.dry_run,
@@ -85,12 +94,21 @@ impl<'a> Planner<'a> {
 
     pub fn plan(&self) -> Result<InstallPlan> {
         let paths = InstallPaths::resolve(self.options.scope, self.options.target)?;
-        let mut files = ssot_files(paths.ssot_root.clone(), self.registry);
+        let mut files = Vec::new();
+
+        let projection_registry = match self.options.action {
+            InstallAction::Install => {
+                files.extend(ssot_files(paths.ssot_root.clone(), self.registry));
+                self.registry.clone()
+            }
+            InstallAction::Sync => TemplateRegistry::from_ssot_root(&paths.ssot_root)?,
+        };
+
         match self.options.target {
             TargetRuntime::Codex => {
                 files.extend(codex::projection_files(
                     paths.target_root.clone(),
-                    self.registry,
+                    &projection_registry,
                 ));
             }
         }
@@ -129,10 +147,11 @@ impl InstallResult {
             return Ok(());
         }
 
-        let verb = if self.options.dry_run {
-            "planned"
-        } else {
-            "installed"
+        let verb = match (self.options.action, self.options.dry_run) {
+            (InstallAction::Install, true) => "install planned",
+            (InstallAction::Install, false) => "installed",
+            (InstallAction::Sync, true) => "sync planned",
+            (InstallAction::Sync, false) => "synced",
         };
         println!(
             "megara {verb}: scope={}, target={}, ssot={}, projection={}",
@@ -161,94 +180,13 @@ impl InstallResult {
 }
 
 fn ssot_files(root: PathBuf, registry: &TemplateRegistry) -> Vec<PlannedFile> {
-    let mut files = vec![
-        PlannedFile::new(root.join("megara.toml"), ssot_config(registry)),
-        PlannedFile::new(root.join("README.md"), ssot_readme(registry)),
-        PlannedFile::new(root.join("rules").join("planning.md"), planning_rule()),
-    ];
-
-    for workflow in registry.workflows() {
-        files.push(PlannedFile::new(
-            root.join("skills").join(workflow.name).join("SKILL.md"),
-            workflow.content,
-        ));
-    }
-
-    for agent in registry.agents() {
-        files.push(PlannedFile::new(
-            root.join("agents").join(format!("{}.md", agent.name)),
-            agent.content,
-        ));
-    }
-
-    files
-}
-
-fn ssot_config(registry: &TemplateRegistry) -> String {
-    let workflows = registry
-        .workflows()
+    registry
+        .ssot_files()
         .iter()
-        .map(|workflow| format!("\"{}\"", workflow.name))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let agents = registry
-        .agents()
-        .iter()
-        .map(|agent| format!("\"{}\"", agent.name))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    format!(
-        r#"schema_version = 1
-targets = ["codex"]
-enabled_workflows = [{workflows}]
-enabled_agents = [{agents}]
-
-[target.codex]
-enabled = true
-"#
-    )
-}
-
-fn ssot_readme(registry: &TemplateRegistry) -> String {
-    let workflows = registry
-        .workflows()
-        .iter()
-        .map(|workflow| format!("- {}", workflow.name))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let agents = registry
-        .agents()
-        .iter()
-        .map(|agent| format!("- {}", agent.name))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!(
-        r#"# Megara Harness
-
-This directory is the Megara source of truth.
-
-Run `megara sync` after editing these files.
-
-## Workflows
-
-{workflows}
-
-## Agents
-
-{agents}
-"#
-    )
-}
-
-fn planning_rule() -> &'static str {
-    r#"# Planning Rule
-
-- Ask clarifying questions only when the answer changes implementation.
-- Convert ambiguous work into concrete acceptance criteria.
-- Keep execution scoped to the accepted plan.
-"#
+        .map(|template| {
+            PlannedFile::new(root.join(&template.relative_path), template.content.clone())
+        })
+        .collect()
 }
 
 fn add_marker(path: &std::path::Path, content: String) -> String {
@@ -259,7 +197,27 @@ fn add_marker(path: &std::path::Path, content: String) -> String {
         format!(
             "# {MANAGED_MARKER} generated by Megara. Edit SSOT and run `megara sync`.\n{content}"
         )
+    } else if let Some(stripped) = content.strip_prefix("---\n") {
+        if let Some(frontmatter_end) = stripped.find("\n---\n") {
+            let split_at = 4 + frontmatter_end + "\n---\n".len();
+            return format!(
+                "{}<!-- {MANAGED_MARKER} generated by Megara. Edit SSOT and run `megara sync`. -->\n{}",
+                &content[..split_at],
+                &content[split_at..]
+            );
+        }
+        format!("<!-- {MANAGED_MARKER} generated by Megara. Edit SSOT and run `megara sync`. -->\n{content}")
     } else {
         format!("<!-- {MANAGED_MARKER} generated by Megara. Edit SSOT and run `megara sync`. -->\n{content}")
     }
+}
+
+pub fn strip_managed_marker(content: &str) -> String {
+    let mut stripped = String::new();
+    for line in content.split_inclusive('\n') {
+        if !line.contains(MANAGED_MARKER) {
+            stripped.push_str(line);
+        }
+    }
+    stripped
 }

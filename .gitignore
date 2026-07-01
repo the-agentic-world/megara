@@ -6,8 +6,9 @@
 *.swo
 
 # Megara-generated local harness output during manual testing.
-/.agents/
 /.codex/
 /.serena/
 /docs/plans/
 /.github/skills/
+/.agents/results/
+/.agents/state/
