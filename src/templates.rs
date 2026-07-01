@@ -209,6 +209,12 @@ impl TemplateRegistry {
         &self.files
     }
 
+    pub fn config(&self) -> Option<&HarnessTemplate> {
+        self.files
+            .iter()
+            .find(|template| template.kind == TemplateKind::Config)
+    }
+
     pub fn workflows(&self) -> Vec<&HarnessTemplate> {
         self.files
             .iter()

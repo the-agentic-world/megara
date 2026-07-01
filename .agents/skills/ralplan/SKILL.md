@@ -18,6 +18,9 @@ Use this workflow after a request is clear enough to plan, but before implementa
 - The critic rejects vague, unverifiable, or internally inconsistent plans.
 - Iterate until the plan is executable or a blocker is explicit.
 - Always finish with a pending-approval plan and clear execution options.
+- Write every user-facing sentence in the configured locale, including progress updates, plan headings, option labels, assumptions, risks, and final summaries.
+- Keep file paths, commands, config keys, API names, and quoted source text unchanged.
+- Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 
 ## Planning Shape
 

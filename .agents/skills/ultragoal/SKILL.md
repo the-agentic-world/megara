@@ -17,6 +17,9 @@ Use this workflow when an approved plan should be executed to completion with du
 - Record evidence before considering a story complete.
 - Treat missing tests, shallow evidence, or plan/code mismatches as blockers.
 - Do not ask the user to resolve work the agent can investigate or fix.
+- Write every user-facing sentence in the configured locale, including progress updates, active story reports, verification notes, blocker reports, and final summaries.
+- Keep file paths, commands, config keys, API names, and quoted source text unchanged.
+- Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 
 ## Execution Loop
 

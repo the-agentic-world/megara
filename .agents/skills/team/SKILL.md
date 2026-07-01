@@ -16,6 +16,9 @@ Use this workflow when approved work benefits from multiple coordinated roles.
 - Keep one leader responsible for integration and final verification.
 - Give each lane a bounded task, allowed files or surfaces, acceptance criteria, and evidence requirements.
 - Merge lane results only after conflicts and verification are settled.
+- Write every user-facing sentence in the configured locale, including progress updates, lane assignments, status reports, review findings, and final summaries.
+- Keep file paths, commands, config keys, API names, and quoted source text unchanged.
+- Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 
 ## Default Lanes
 

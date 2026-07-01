@@ -1,5 +1,6 @@
 schema_version = 1
 name = "megara-default"
+locale = "ko-KR"
 targets = ["codex"]
 enabled_workflows = ["deep-interview", "ralplan", "ultragoal", "team"]
 enabled_agents = ["executor", "planner", "architect", "critic"]
