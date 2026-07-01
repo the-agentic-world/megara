@@ -1,11 +1,14 @@
 use std::path::PathBuf;
 
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+
 use crate::{
     installer::PlannedFile,
     templates::{HarnessTemplate, TemplateRegistry},
 };
 
-pub fn projection_files(root: PathBuf, registry: &TemplateRegistry) -> Vec<PlannedFile> {
+pub fn projection_files(root: PathBuf, registry: &TemplateRegistry) -> Result<Vec<PlannedFile>> {
     let mut files = Vec::new();
     files.push(PlannedFile::new(
         root.join("AGENTS.md"),
@@ -39,13 +42,14 @@ pub fn projection_files(root: PathBuf, registry: &TemplateRegistry) -> Vec<Plann
     }
 
     for agent in registry.agents() {
+        let (agent_id, agent_content) = agent_toml(agent)?;
         files.push(PlannedFile::new(
-            root.join("agents").join(format!("{}.toml", agent.name)),
-            agent_toml(agent),
+            root.join("agents").join(format!("{agent_id}.toml")),
+            agent_content,
         ));
     }
 
-    files
+    Ok(files)
 }
 
 fn codex_agents_md(registry: &TemplateRegistry) -> String {
@@ -157,15 +161,30 @@ fn codex_hooks_json() -> String {
     .to_string()
 }
 
-fn agent_toml(template: &HarnessTemplate) -> String {
-    format!(
-        r#"name = "{}"
-description = "{}"
+#[derive(Debug, Deserialize)]
+struct AgentSpec {
+    id: String,
+    name: String,
+    description: String,
+    instructions: String,
+}
 
-instructions = '''
-{}
-'''
-"#,
-        template.name, template.description, template.content
-    )
+#[derive(Debug, Serialize)]
+struct CodexAgentSpec<'a> {
+    name: &'a str,
+    description: &'a str,
+    developer_instructions: &'a str,
+}
+
+fn agent_toml(template: &HarnessTemplate) -> Result<(String, String)> {
+    let agent: AgentSpec = toml::from_str(&template.content)
+        .with_context(|| format!("failed to parse agent SSOT {}", template.relative_path))?;
+    let codex_agent = CodexAgentSpec {
+        name: &agent.name,
+        description: &agent.description,
+        developer_instructions: &agent.instructions,
+    };
+    let content = toml::to_string_pretty(&codex_agent)
+        .with_context(|| format!("failed to render Codex agent {}", agent.id))?;
+    Ok((agent.id, content))
 }

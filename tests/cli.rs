@@ -44,6 +44,7 @@ fn installs_project_scope_codex_harness() {
         .join(".codex/skill-fragments/deep-interview/auto-research-greenfield.md")
         .exists());
     assert!(dir.path().join(".agents/hooks/megara-hook.sh").exists());
+    assert!(dir.path().join(".agents/agents/executor.toml").exists());
     assert!(dir.path().join(".codex/hooks/megara-hook.sh").exists());
     assert!(dir.path().join(".codex/hooks.json").exists());
     assert!(dir.path().join(".codex/agents/executor.toml").exists());
@@ -53,10 +54,18 @@ fn installs_project_scope_codex_harness() {
         fs::read_to_string(dir.path().join(".codex/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));
     assert!(skill.contains("MEGARA:MANAGED"));
-    toml::from_str::<toml::Value>(
-        &fs::read_to_string(dir.path().join(".codex/agents/executor.toml")).unwrap(),
-    )
-    .unwrap();
+    let ssot_agent = fs::read_to_string(dir.path().join(".agents/agents/executor.toml")).unwrap();
+    let ssot_agent: toml::Value = toml::from_str(&ssot_agent).unwrap();
+    assert!(ssot_agent.get("instructions").is_some());
+    assert!(ssot_agent.get("developer_instructions").is_none());
+
+    let codex_agent = fs::read_to_string(dir.path().join(".codex/agents/executor.toml")).unwrap();
+    let codex_agent: toml::Value = toml::from_str(&codex_agent).unwrap();
+    assert!(codex_agent
+        .get("developer_instructions")
+        .and_then(toml::Value::as_str)
+        .is_some_and(|instructions| instructions.contains("# Executor")));
+    assert!(codex_agent.get("instructions").is_none());
     toml::from_str::<toml::Value>(
         &fs::read_to_string(dir.path().join(".codex/config.toml")).unwrap(),
     )
@@ -97,6 +106,8 @@ fn sync_refreshes_managed_projection() {
     let agents = dir.path().join(".codex/AGENTS.md");
     let ssot_skill = dir.path().join(".agents/skills/deep-interview/SKILL.md");
     let projected_skill = dir.path().join(".codex/skills/deep-interview/SKILL.md");
+    let ssot_agent = dir.path().join(".agents/agents/executor.toml");
+    let projected_agent = dir.path().join(".codex/agents/executor.toml");
 
     let install = megara()
         .arg("install")
@@ -113,6 +124,15 @@ fn sync_refreshes_managed_projection() {
     let mut ssot_content = fs::read_to_string(&ssot_skill).unwrap();
     ssot_content.push_str("\nSSOT EDIT TOKEN\n");
     fs::write(&ssot_skill, ssot_content).unwrap();
+    let ssot_agent_content = fs::read_to_string(&ssot_agent).unwrap();
+    fs::write(
+        &ssot_agent,
+        ssot_agent_content.replace(
+            "Report changed files, decisions, verification performed, and remaining blockers.",
+            "Report changed files, decisions, verification performed, and remaining blockers.\nSSOT AGENT TOKEN",
+        ),
+    )
+    .unwrap();
 
     let sync = megara()
         .arg("sync")
@@ -133,6 +153,9 @@ fn sync_refreshes_managed_projection() {
     assert!(content.contains("Megara Codex Harness"));
     let skill_content = fs::read_to_string(projected_skill).unwrap();
     assert!(skill_content.contains("SSOT EDIT TOKEN"));
+    let agent_content = fs::read_to_string(projected_agent).unwrap();
+    assert!(agent_content.contains("developer_instructions"));
+    assert!(agent_content.contains("SSOT AGENT TOKEN"));
 }
 
 #[test]

@@ -37,7 +37,7 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
     if missing.is_empty() {
         let ssot_registry = TemplateRegistry::from_ssot_root(&paths.ssot_root)?;
         let projection_files = match options.target {
-            TargetRuntime::Codex => codex::projection_files(paths.target_root, &ssot_registry),
+            TargetRuntime::Codex => codex::projection_files(paths.target_root, &ssot_registry)?,
         };
 
         for file in projection_files {

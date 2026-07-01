@@ -132,30 +132,30 @@ const TEMPLATE_SPECS: &[TemplateSpec] = &[
     TemplateSpec {
         name: "executor",
         kind: TemplateKind::Agent,
-        relative_path: "agents/executor.md",
+        relative_path: "agents/executor.toml",
         description: "Implementation agent",
-        content: include_str!("../.agents/agents/executor.md"),
+        content: include_str!("../.agents/agents/executor.toml"),
     },
     TemplateSpec {
         name: "planner",
         kind: TemplateKind::Agent,
-        relative_path: "agents/planner.md",
+        relative_path: "agents/planner.toml",
         description: "Planning agent",
-        content: include_str!("../.agents/agents/planner.md"),
+        content: include_str!("../.agents/agents/planner.toml"),
     },
     TemplateSpec {
         name: "architect",
         kind: TemplateKind::Agent,
-        relative_path: "agents/architect.md",
+        relative_path: "agents/architect.toml",
         description: "Architecture review agent",
-        content: include_str!("../.agents/agents/architect.md"),
+        content: include_str!("../.agents/agents/architect.toml"),
     },
     TemplateSpec {
         name: "critic",
         kind: TemplateKind::Agent,
-        relative_path: "agents/critic.md",
+        relative_path: "agents/critic.toml",
         description: "Plan critic agent",
-        content: include_str!("../.agents/agents/critic.md"),
+        content: include_str!("../.agents/agents/critic.toml"),
     },
 ];
 

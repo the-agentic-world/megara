@@ -109,7 +109,7 @@ impl<'a> Planner<'a> {
                 files.extend(codex::projection_files(
                     paths.target_root.clone(),
                     &projection_registry,
-                ));
+                )?);
             }
         }
 

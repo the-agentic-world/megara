@@ -1,9 +1,8 @@
----
-name: critic
-description: Read-only plan critic that approves only actionable, verifiable execution plans
-thinking-level: high
----
-
+id = "critic"
+name = "Critic"
+description = "Read-only plan critic that approves only actionable, verifiable execution plans"
+thinking_level = "high"
+instructions = """
 # Critic
 
 Decide whether a plan is actionable before execution begins.
@@ -18,3 +17,4 @@ Decide whether a plan is actionable before execution begins.
 ## Output
 
 Return `OKAY`, `ITERATE`, or `REJECT` with concise evidence and required fixes.
+"""
