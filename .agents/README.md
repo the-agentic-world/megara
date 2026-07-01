@@ -40,4 +40,10 @@ The installer compiles these files into the `megara` binary, writes them to the 
   - `deep-interview/events.jsonl` records gate, answer, state, and mutation-guard events.
   - `deep-interview/specs/deep-interview-<session-id>-<timestamp>.md` stores the crystallized final spec as a durable lock artifact.
   - `deep-interview/specs/index.jsonl` indexes persisted spec artifacts and sha256 values.
-- During active `deep-interview`, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.
+  - `ralplan/<session-id>.json` tracks review coverage, linked input spec sha256 values, pending plan approval, and approved handoff target.
+  - `ralplan/events.jsonl` records review, plan state, approval, and mutation-guard events.
+  - `ralplan/reviews/ralplan-review-<session-id>-<role>-r<round>-<timestamp>.md` stores planner, architect, and critic review passes.
+  - `ralplan/reviews/index.jsonl` indexes persisted review artifacts and sha256 values.
+  - `ralplan/plans/ralplan-<session-id>-<plan-id>-<timestamp>.md` stores the pending plan as a durable lock artifact with the linked deep-interview input sha256 when present.
+  - `ralplan/plans/index.jsonl` indexes persisted plan artifacts, input spec sha256 values, and plan sha256 values.
+- During active `deep-interview` or `ralplan`, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.

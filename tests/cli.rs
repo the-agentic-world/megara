@@ -47,6 +47,43 @@ fn run_hook(
     child.wait_with_output().unwrap()
 }
 
+fn install_project_harness(project: &Path, codex_home: &Path) {
+    let install = megara_with_codex_home(codex_home)
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(project)
+        .output()
+        .unwrap();
+    assert!(
+        install.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+}
+
+fn ready_ralplan_reviews_payload(session_id: &str) -> String {
+    let message = "Review coverage complete.\n\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: DRAFT\n- summary: Planner pass is ready.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Architecture pass is clear.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: Critic pass approves planning quality.\n- required_fixes:\n  - none\n\n";
+    serde_json::json!({
+        "session_id": session_id,
+        "last_assistant_message": message,
+    })
+    .to_string()
+}
+
+fn pending_ralplan_plan_payload(session_id: &str, plan_id: &str, summary: &str) -> String {
+    let message = format!(
+        "**Pending Execution Plan**\n\nSummary: {summary}\n\nSteps:\n- Keep the change small.\n- Verify the expected behavior.\n\nAcceptance criteria:\n- Existing tests pass.\n\nMegara Plan Gate:\n- id: {plan_id}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {plan_id}\n- next: approval\n\n"
+    );
+    serde_json::json!({
+        "session_id": session_id,
+        "last_assistant_message": message,
+    })
+    .to_string()
+}
+
 #[test]
 fn installs_project_scope_codex_harness() {
     let dir = tempdir().unwrap();
@@ -103,6 +140,13 @@ fn installs_project_scope_codex_harness() {
     assert!(!skill.contains("Deep Interview threshold:"));
     assert!(!skill.contains("I'm reading this as"));
     assert!(!skill.contains("Restate gate"));
+    let ralplan = fs::read_to_string(dir.path().join(".codex/skills/ralplan/SKILL.md")).unwrap();
+    assert!(ralplan.contains("Megara Review Pass:"));
+    assert!(ralplan.contains("Megara Plan Gate:"));
+    assert!(ralplan.contains("Megara Approval Gate:"));
+    assert!(ralplan.contains("input_spec_sha256"));
+    assert!(ralplan.contains("plan_sha256"));
+    assert!(ralplan.contains("pending_approval"));
     let ssot_agent = fs::read_to_string(dir.path().join(".agents/agents/executor.toml")).unwrap();
     let ssot_agent: toml::Value = toml::from_str(&ssot_agent).unwrap();
     assert!(ssot_agent.get("instructions").is_some());
@@ -410,6 +454,573 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(events.contains("\"event\":\"workflow_state\""));
     assert!(events.contains(spec_path.to_str().unwrap()));
     assert!(!events.contains("di-old-transcript"));
+}
+
+#[test]
+fn projected_hook_runner_tracks_ralplan_gate_and_approval() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+
+    let install = megara_with_codex_home(codex_home.path())
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(install.status.success());
+
+    let interview_message = "**Pending Approval Specification**\n\nGoal: add Tetris as a second game mode.\n\nConstraints:\n- Keep the existing 2048 flow working.\n- Add content routing before game-specific state changes.\n\nAcceptance criteria:\n- Existing 2048 flow still works.\n- Tetris can start and restart.\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 8%\n- next: ralplan\n\n";
+    let interview_payload = serde_json::json!({
+        "session_id": "sess-rp",
+        "last_assistant_message": interview_message,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        interview_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let deep_state_path = dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/sess-rp.json");
+    let deep_state = fs::read_to_string(&deep_state_path).unwrap();
+    let deep_state: serde_json::Value = serde_json::from_str(&deep_state).unwrap();
+    let spec_path = deep_state["spec_path"].as_str().unwrap().to_string();
+    let spec_sha256 = deep_state["spec_sha256"].as_str().unwrap().to_string();
+
+    let early_plan_message = "**Pending Execution Plan**\n\nSummary: this should wait for review coverage.\n\nMegara Plan Gate:\n- id: rp-too-early\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-too-early\n- next: approval\n\n";
+    let early_plan_payload = serde_json::json!({
+        "session_id": "sess-rp",
+        "last_assistant_message": early_plan_message,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        early_plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-rp.json");
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["active"], true);
+    assert_eq!(state["phase"], "review_incomplete");
+    assert_eq!(state["approval_status"], "blocked");
+    assert!(state.get("plan_path").is_none());
+
+    let review_message = "Planner, architect, and critic passes complete.\n\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: DRAFT\n- summary: Initial sequence is ready for architecture review.\n- required_fixes:\n  - Architect must verify runtime boundaries.\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Runtime boundaries are acceptable for this plan.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: The plan is specific and verifiable enough to ask for approval.\n- required_fixes:\n  - none\n\n";
+    let review_payload = serde_json::json!({
+        "session_id": "sess-rp",
+        "last_assistant_message": review_message,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["skill"], "ralplan");
+    assert_eq!(state["active"], true);
+    assert_eq!(state["phase"], "reviewing");
+    assert_eq!(state["reviews"][0]["role"], "planner");
+    assert_eq!(state["reviews"][0]["round"], 1);
+    assert_eq!(state["reviews"][0]["verdict"], "DRAFT");
+    assert_eq!(state["reviews"][0]["sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(state["reviews"][1]["role"], "architect");
+    assert_eq!(state["reviews"][1]["verdict"], "CLEAR");
+    assert_eq!(state["reviews"][1]["required_fixes"][0], "none");
+    assert_eq!(state["reviews"][2]["role"], "critic");
+    assert_eq!(state["reviews"][2]["verdict"], "OKAY");
+    let review_path = PathBuf::from(state["reviews"][0]["path"].as_str().unwrap());
+    let architect_review_path = PathBuf::from(state["reviews"][1]["path"].as_str().unwrap());
+    let critic_review_path = PathBuf::from(state["reviews"][2]["path"].as_str().unwrap());
+    assert!(review_path.exists());
+    assert!(architect_review_path.exists());
+    assert!(critic_review_path.exists());
+    let review = fs::read_to_string(&review_path).unwrap();
+    assert!(review.contains("skill: \"ralplan\""));
+    assert!(review.contains("role: \"planner\""));
+    assert!(review.contains("Architect must verify runtime boundaries."));
+    let architect_review = fs::read_to_string(&architect_review_path).unwrap();
+    assert!(architect_review.contains("role: \"architect\""));
+    assert!(architect_review.contains("Runtime boundaries are acceptable"));
+    let critic_review = fs::read_to_string(&critic_review_path).unwrap();
+    assert!(critic_review.contains("role: \"critic\""));
+    assert!(critic_review.contains("specific and verifiable"));
+
+    let mutation_payload =
+        br#"{"session_id":"sess-rp","tool_input":{"command":"echo changed > app.js"}}"#;
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "PreToolUse",
+        Some("Bash"),
+        mutation_payload,
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("ralplan is active"));
+
+    let plan_payload = br#"{
+  "session_id": "sess-rp",
+  "last_assistant_message": "**Pending Execution Plan**\n\nSummary: add a Tetris mode without changing the current menu contract.\n\nNotes:\nThe plan body may mention this literal marker before the actual trailer.\n\nMegara Plan Gate:\nThis sentence is plan content, not the control block.\n\nSteps:\n- Add content routing.\n- Add Tetris state and rendering.\n\nAcceptance criteria:\n- Existing 2048 flow still works.\n- Tetris can start and restart.\n\nMegara Plan Gate:\n- id: rp-add-tetris\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-add-tetris\n- next: approval\n\n"
+}"#;
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, plan_payload);
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["skill"], "ralplan");
+    assert_eq!(state["active"], true);
+    assert_eq!(state["phase"], "pending_approval");
+    assert_eq!(state["approval_status"], "pending");
+    assert_eq!(state["plan_id"], "rp-add-tetris");
+    assert_eq!(state["plan_gate"]["options"][2], "approve_team");
+    assert_eq!(state["plan_sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(state["input_spec_path"].as_str().unwrap(), spec_path);
+    assert_eq!(state["input_spec_sha256"].as_str().unwrap(), spec_sha256);
+    assert_eq!(state["reviews"][0]["role"], "planner");
+    assert_eq!(state["reviews"][1]["role"], "architect");
+    assert_eq!(state["reviews"][2]["role"], "critic");
+
+    let plan_path = PathBuf::from(state["plan_path"].as_str().unwrap());
+    assert!(plan_path.exists());
+    let plan = fs::read_to_string(&plan_path).unwrap();
+    assert!(plan.starts_with("---\n"));
+    assert!(plan.contains("skill: \"ralplan\""));
+    assert!(plan.contains("plan_id: \"rp-add-tetris\""));
+    assert!(plan.contains(&format!("input_spec_sha256: \"{spec_sha256}\"")));
+    assert!(plan.contains("This sentence is plan content, not the control block."));
+    assert!(plan.contains("**Pending Execution Plan**"));
+    assert!(plan.contains("Megara Plan Gate:"));
+    assert!(!plan.contains("- id: rp-add-tetris"));
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "PreToolUse",
+        Some("Bash"),
+        mutation_payload,
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("ralplan is active"));
+
+    let reject_prompt = "Megara Approval Gate:\n- plan_id: rp-add-tetris\n- plan_sha256: 0000000000000000000000000000000000000000000000000000000000000000\n- handoff_target: ultragoal\n";
+    let reject_payload = serde_json::json!({
+        "session_id": "sess-rp",
+        "prompt": reject_prompt,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        reject_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rejected = fs::read_to_string(&state_path).unwrap();
+    let rejected: serde_json::Value = serde_json::from_str(&rejected).unwrap();
+    assert_eq!(rejected["active"], true);
+    assert_eq!(rejected["approval_status"], "approval_gate_mismatch");
+
+    let plan_sha256 = state["plan_sha256"].as_str().unwrap();
+    let approve_prompt = format!(
+        "Megara Approval Gate:\n- plan_id: rp-add-tetris\n- plan_sha256: {plan_sha256}\n- handoff_target: ultragoal\n"
+    );
+    let approve_payload = serde_json::json!({
+        "session_id": "sess-rp",
+        "prompt": approve_prompt,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        approve_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let approved = fs::read_to_string(&state_path).unwrap();
+    let approved: serde_json::Value = serde_json::from_str(&approved).unwrap();
+    assert_eq!(approved["active"], false);
+    assert_eq!(approved["phase"], "approved");
+    assert_eq!(approved["approval_status"], "approved");
+    assert_eq!(approved["approved_handoff_target"], "ultragoal");
+    assert_eq!(approved["approved_plan_id"], "rp-add-tetris");
+    assert_eq!(approved["approved_plan_sha256"], state["plan_sha256"]);
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "PreToolUse",
+        Some("Bash"),
+        mutation_payload,
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let plan_index = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/workflows/ralplan/plans/index.jsonl"),
+    )
+    .unwrap();
+    assert!(plan_index.contains("\"event\":\"plan_persisted\""));
+    assert!(plan_index.contains(plan_path.to_str().unwrap()));
+    assert!(plan_index.contains(&spec_sha256));
+
+    let review_index = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/workflows/ralplan/reviews/index.jsonl"),
+    )
+    .unwrap();
+    assert!(review_index.contains("\"event\":\"review_persisted\""));
+    assert!(review_index.contains(review_path.to_str().unwrap()));
+    assert!(review_index.contains(architect_review_path.to_str().unwrap()));
+    assert!(review_index.contains(critic_review_path.to_str().unwrap()));
+
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/workflows/ralplan/events.jsonl"),
+    )
+    .unwrap();
+    assert!(events.contains("\"event\":\"review_persisted\""));
+    assert!(events.contains("\"event\":\"plan_persisted\""));
+    assert!(events.contains("\"event\":\"mutation_blocked\""));
+    assert!(events.contains("\"event\":\"plan_approval_rejected\""));
+    assert!(events.contains("\"event\":\"plan_approved\""));
+    assert!(events.contains("\"handoff_target\":\"ultragoal\""));
+    assert!(events.contains(&spec_sha256));
+}
+
+#[test]
+fn projected_hook_runner_allows_direct_ralplan_without_interview() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let review_payload = ready_ralplan_reviews_payload("sess-direct-rp");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let plan_payload = pending_ralplan_plan_payload(
+        "sess-direct-rp",
+        "rp-direct",
+        "plan directly without a deep-interview lock.",
+    );
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-direct-rp.json");
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["phase"], "pending_approval");
+    assert_eq!(state["approval_status"], "pending");
+    assert_eq!(state["plan_id"], "rp-direct");
+    assert!(state["plan_sha256"].as_str().is_some());
+    assert!(state.get("input_spec_sha256").is_none());
+}
+
+#[test]
+fn projected_hook_runner_blocks_ralplan_when_interview_is_active() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let interview_payload = br#"{
+  "session_id": "sess-active-di",
+  "last_assistant_message": "Clarify before planning.\n\nMegara Question Gate:\n- id: di-active\n- round: 1\n- component: scope\n- dimension: Goal clarity\n- question: What should be clarified first?\n- options:\n  - Scope\n- free_text: true\n\n"
+}"#;
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, interview_payload);
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let review_payload = ready_ralplan_reviews_payload("sess-active-di");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let plan_payload = pending_ralplan_plan_payload(
+        "sess-active-di",
+        "rp-blocked",
+        "should not pass while deep-interview is active.",
+    );
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-active-di.json");
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["phase"], "handoff_not_ready");
+    assert_eq!(state["approval_status"], "blocked");
+    assert_eq!(state["blocked_by"], "deep-interview");
+    assert_eq!(state["blocked_phase"], "question_pending");
+    assert!(state.get("plan_path").is_none());
+
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/workflows/ralplan/events.jsonl"),
+    )
+    .unwrap();
+    assert!(events.contains("\"event\":\"handoff_blocked\""));
+}
+
+#[test]
+fn projected_hook_runner_invalidates_reviews_after_refine() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let review_payload = ready_ralplan_reviews_payload("sess-refine");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(output.status.success());
+
+    let first_plan_payload =
+        pending_ralplan_plan_payload("sess-refine", "rp-before-refine", "first plan.");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        first_plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-refine.json");
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["phase"], "pending_approval");
+    assert_eq!(state["reviews"].as_array().unwrap().len(), 3);
+    assert!(state["plan_sha256"].as_str().is_some());
+
+    let refine_payload = br#"{"session_id":"sess-refine","prompt":"refine"}"#;
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        refine_payload,
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let refined = fs::read_to_string(&state_path).unwrap();
+    let refined: serde_json::Value = serde_json::from_str(&refined).unwrap();
+    assert_eq!(refined["phase"], "refining");
+    assert_eq!(refined["approval_status"], "refine_requested");
+    assert!(refined["reviews"].as_array().unwrap().is_empty());
+    assert!(refined.get("plan_sha256").is_none());
+    assert!(refined.get("plan_path").is_none());
+
+    let second_plan_payload =
+        pending_ralplan_plan_payload("sess-refine", "rp-after-refine", "second plan.");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        second_plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let blocked = fs::read_to_string(&state_path).unwrap();
+    let blocked: serde_json::Value = serde_json::from_str(&blocked).unwrap();
+    assert_eq!(blocked["phase"], "review_incomplete");
+    assert_eq!(blocked["approval_status"], "blocked");
+    assert!(blocked.get("plan_sha256").is_none());
+}
+
+#[test]
+fn projected_hook_runner_prioritizes_ralplan_decision_over_stale_interview_question() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let review_payload = ready_ralplan_reviews_payload("sess-stale-di");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(output.status.success());
+
+    let plan_payload = pending_ralplan_plan_payload("sess-stale-di", "rp-stale-di", "safe plan.");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let ralplan_state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-stale-di.json");
+    let ralplan_state = fs::read_to_string(&ralplan_state_path).unwrap();
+    let ralplan_state: serde_json::Value = serde_json::from_str(&ralplan_state).unwrap();
+    let plan_sha256 = ralplan_state["plan_sha256"].as_str().unwrap();
+
+    let stale_question_payload = br#"{
+  "session_id": "sess-stale-di",
+  "last_assistant_message": "Late stale question.\n\nMegara Question Gate:\n- id: di-stale\n- round: 1\n- component: stale\n- dimension: Stale state\n- question: This stale question should not consume plan approval.\n- options:\n  - stale\n- free_text: true\n\n"
+}"#;
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, stale_question_payload);
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let approve_prompt = format!(
+        "Megara Approval Gate:\n- plan_id: rp-stale-di\n- plan_sha256: {plan_sha256}\n- handoff_target: ultragoal\n"
+    );
+    let approve_payload = serde_json::json!({
+        "session_id": "sess-stale-di",
+        "prompt": approve_prompt,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        approve_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let approved = fs::read_to_string(&ralplan_state_path).unwrap();
+    let approved: serde_json::Value = serde_json::from_str(&approved).unwrap();
+    assert_eq!(approved["phase"], "approved");
+    assert_eq!(approved["approved_handoff_target"], "ultragoal");
+
+    let deep_state_path = dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/sess-stale-di.json");
+    let deep_state = fs::read_to_string(&deep_state_path).unwrap();
+    let deep_state: serde_json::Value = serde_json::from_str(&deep_state).unwrap();
+    assert_eq!(deep_state["pending_question"]["id"], "di-stale");
+    assert_eq!(deep_state["pending_question"]["status"], "pending");
 }
 
 #[test]

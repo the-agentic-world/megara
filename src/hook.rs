@@ -14,12 +14,21 @@ use sha2::{Digest, Sha256};
 use crate::cli::{HookArgs, ScopeArg};
 
 const DEEP_INTERVIEW: &str = "deep-interview";
+const RALPLAN: &str = "ralplan";
+const WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN];
 
 #[derive(Debug)]
 pub struct HookOptions {
     pub runtime: String,
     pub event: String,
     pub matcher: String,
+}
+
+struct WorkflowPaths {
+    session_id: String,
+    workflow_dir: PathBuf,
+    session_file: PathBuf,
+    events_file: PathBuf,
 }
 
 pub fn run(args: HookArgs) -> Result<i32> {
@@ -236,56 +245,38 @@ fn run_workflow_event(
     payload: &Value,
     payload_file: &Path,
 ) -> Result<i32> {
-    let (session_id, workflow_dir, session_file, events_file) = session_paths(state_dir, payload);
-
     match options.event.as_str() {
-        "Stop" => handle_stop(
-            timestamp,
-            payload,
-            payload_file,
-            &session_id,
-            &workflow_dir,
-            &session_file,
-            &events_file,
-        ),
-        "UserPromptSubmit" => handle_user_prompt(
-            timestamp,
-            payload,
-            payload_file,
-            &session_file,
-            &events_file,
-        ),
-        "PreToolUse" => handle_pre_tool_use(
-            timestamp,
-            payload,
-            payload_file,
-            &session_file,
-            &events_file,
-        ),
+        "Stop" => handle_stop(timestamp, state_dir, payload, payload_file),
+        "UserPromptSubmit" => handle_user_prompt(timestamp, state_dir, payload, payload_file),
+        "PreToolUse" => handle_pre_tool_use(timestamp, state_dir, payload, payload_file),
         _ => Ok(0),
     }
 }
 
-fn session_paths(state_dir: &Path, payload: &Value) -> (String, PathBuf, PathBuf, PathBuf) {
+fn workflow_paths(state_dir: &Path, payload: &Value, skill: &str) -> WorkflowPaths {
     let session_id = payload
         .get("session_id")
         .or_else(|| payload.get("thread_id"))
         .or_else(|| payload.get("turn_id"))
         .map(value_to_string)
         .unwrap_or_else(|| "unknown-session".to_string());
-
-    let workflow_dir = if state_dir.file_name().is_some_and(|name| name == "hooks") {
-        state_dir
-            .parent()
-            .unwrap_or(state_dir)
-            .join("workflows")
-            .join(DEEP_INTERVIEW)
-    } else {
-        state_dir.join("workflows").join(DEEP_INTERVIEW)
-    };
+    let workflow_dir = workflow_base_dir(state_dir).join(skill);
     let session_file = workflow_dir.join(format!("{}.json", safe_part(&session_id)));
     let events_file = workflow_dir.join("events.jsonl");
-    (session_id, workflow_dir, session_file, events_file)
+    WorkflowPaths {
+        session_id,
+        workflow_dir,
+        session_file,
+        events_file,
+    }
+}
+
+fn workflow_base_dir(state_dir: &Path) -> PathBuf {
+    if state_dir.file_name().is_some_and(|name| name == "hooks") {
+        state_dir.parent().unwrap_or(state_dir).join("workflows")
+    } else {
+        state_dir.join("workflows")
+    }
 }
 
 fn value_to_string(value: &Value) -> String {
@@ -297,80 +288,59 @@ fn value_to_string(value: &Value) -> String {
 
 fn handle_stop(
     timestamp: &str,
+    state_dir: &Path,
     payload: &Value,
     payload_file: &Path,
-    session_id: &str,
-    workflow_dir: &Path,
-    session_file: &Path,
-    events_file: &Path,
 ) -> Result<i32> {
     let text = payload
         .get("last_assistant_message")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let terminal = workflow_state_from_text(text);
-    let question = if terminal.is_some() {
-        None
-    } else {
-        question_from_text(timestamp, text, payload_file)
-    };
+    for review in review_passes_from_text(text) {
+        let paths = workflow_paths(state_dir, payload, RALPLAN);
+        let mut state = load_json(&paths.session_file)
+            .unwrap_or_else(|| new_state(RALPLAN, timestamp, &paths.session_id, payload));
+        persist_ralplan_review(timestamp, payload_file, &paths, review, &mut state)?;
+        write_json_atomic(&paths.session_file, &state)?;
+    }
 
-    if terminal.is_none() && question.is_none() {
+    let terminal = workflow_state_from_text(text);
+
+    if let Some(terminal) = terminal {
+        let paths = workflow_paths(state_dir, payload, &terminal.skill);
+        let mut state = load_json(&paths.session_file)
+            .unwrap_or_else(|| new_state(&terminal.skill, timestamp, &paths.session_id, payload));
+        match terminal.skill.as_str() {
+            DEEP_INTERVIEW => handle_deep_interview_terminal(
+                timestamp,
+                text,
+                payload_file,
+                &paths,
+                &terminal,
+                &mut state,
+            )?,
+            RALPLAN => handle_ralplan_terminal(
+                timestamp,
+                text,
+                payload_file,
+                &paths,
+                &terminal,
+                &mut state,
+            )?,
+            _ => return Ok(0),
+        }
+        write_json_atomic(&paths.session_file, &state)?;
         return Ok(0);
     }
 
-    let mut state =
-        load_json(session_file).unwrap_or_else(|| new_state(timestamp, session_id, payload));
-    if let Some(terminal) = terminal {
-        let spec = persist_crystallized_spec(
-            timestamp,
-            workflow_dir,
-            session_id,
-            &terminal,
-            text,
-            payload_file,
-        )?;
-        if terminal.status == "crystallized" && spec.is_none() {
-            reject_crystallized_without_spec(timestamp, &mut state);
-            append_jsonl(
-                events_file,
-                &json!({
-                    "timestamp": timestamp,
-                    "event": "spec_missing",
-                    "session_id": session_id,
-                    "status": terminal.status,
-                    "payload": payload_file,
-                }),
-            )?;
-        } else {
-            update_terminal_state(timestamp, &mut state, &terminal, spec.as_ref());
-            let mut entry = json!({
-                "timestamp": timestamp,
-                "event": "workflow_state",
-                "session_id": session_id,
-                "status": terminal.status,
-                "payload": payload_file,
-            });
-            if let Some(spec) = spec {
-                entry["spec_path"] = json!(spec.path);
-                entry["spec_sha256"] = json!(spec.sha256);
-                append_jsonl(
-                    events_file,
-                    &json!({
-                        "timestamp": timestamp,
-                        "event": "spec_persisted",
-                        "session_id": session_id,
-                        "path": spec.path,
-                        "sha256": spec.sha256,
-                        "payload": payload_file,
-                    }),
-                )?;
-            }
-            append_jsonl(events_file, &entry)?;
-        }
-    }
+    let Some(question) = question_from_text(timestamp, text, payload_file) else {
+        return Ok(0);
+    };
 
-    if let Some(question) = question {
+    let paths = workflow_paths(state_dir, payload, DEEP_INTERVIEW);
+    let mut state = load_json(&paths.session_file)
+        .unwrap_or_else(|| new_state(DEEP_INTERVIEW, timestamp, &paths.session_id, payload));
+    {
         let question_id = question
             .get("id")
             .and_then(Value::as_str)
@@ -381,11 +351,11 @@ fn handle_stop(
         let dimension = question.get("dimension").cloned().unwrap_or(Value::Null);
         upsert_question(timestamp, &mut state, question);
         append_jsonl(
-            events_file,
+            &paths.events_file,
             &json!({
                 "timestamp": timestamp,
                 "event": "question_pending",
-                "session_id": session_id,
+                "session_id": paths.session_id,
                 "question_id": question_id,
                 "round": round,
                 "component": component,
@@ -395,16 +365,15 @@ fn handle_stop(
         )?;
     }
 
-    write_json_atomic(session_file, &state)?;
+    write_json_atomic(&paths.session_file, &state)?;
     Ok(0)
 }
 
 fn handle_user_prompt(
     timestamp: &str,
+    state_dir: &Path,
     payload: &Value,
     payload_file: &Path,
-    session_file: &Path,
-    events_file: &Path,
 ) -> Result<i32> {
     let Some(prompt) = payload.get("prompt").and_then(Value::as_str) else {
         return Ok(0);
@@ -412,46 +381,72 @@ fn handle_user_prompt(
     if prompt.trim().is_empty() {
         return Ok(0);
     }
-    let Some(mut state) = load_json(session_file) else {
-        return Ok(0);
-    };
-    let Some(question_id) = answer_pending_question(timestamp, &mut state, prompt, payload_file)
-    else {
-        return Ok(0);
-    };
 
-    let session_id = state
-        .get("session_id")
-        .map(value_to_string)
-        .unwrap_or_else(|| "unknown-session".to_string());
-    write_json_atomic(session_file, &state)?;
-    append_jsonl(
-        events_file,
-        &json!({
-            "timestamp": timestamp,
-            "event": "question_answered",
-            "session_id": session_id,
-            "question_id": question_id,
-            "payload": payload_file,
-        }),
-    )?;
+    let ralplan_paths = workflow_paths(state_dir, payload, RALPLAN);
+    if let Some(mut state) = load_json(&ralplan_paths.session_file) {
+        if let Some(decision) =
+            apply_ralplan_prompt_decision(timestamp, &mut state, prompt, payload_file)
+        {
+            let session_id = state
+                .get("session_id")
+                .map(value_to_string)
+                .unwrap_or_else(|| "unknown-session".to_string());
+            write_json_atomic(&ralplan_paths.session_file, &state)?;
+            append_jsonl(
+                &ralplan_paths.events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": decision.event,
+                    "session_id": session_id,
+                    "handoff_target": decision.handoff_target,
+                    "plan_id": state.get("plan_id").cloned().unwrap_or(Value::Null),
+                    "plan_sha256": state.get("plan_sha256").cloned().unwrap_or(Value::Null),
+                    "payload": payload_file,
+                }),
+            )?;
+            return Ok(0);
+        }
+    }
+
+    let deep_paths = workflow_paths(state_dir, payload, DEEP_INTERVIEW);
+    if let Some(mut state) = load_json(&deep_paths.session_file) {
+        if let Some(question_id) =
+            answer_pending_question(timestamp, &mut state, prompt, payload_file)
+        {
+            let session_id = state
+                .get("session_id")
+                .map(value_to_string)
+                .unwrap_or_else(|| "unknown-session".to_string());
+            write_json_atomic(&deep_paths.session_file, &state)?;
+            append_jsonl(
+                &deep_paths.events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": "question_answered",
+                    "session_id": session_id,
+                    "question_id": question_id,
+                    "payload": payload_file,
+                }),
+            )?;
+            return Ok(0);
+        }
+    }
     Ok(0)
 }
 
 fn handle_pre_tool_use(
     timestamp: &str,
+    state_dir: &Path,
     payload: &Value,
     payload_file: &Path,
-    session_file: &Path,
-    events_file: &Path,
 ) -> Result<i32> {
     if env::var("MEGARA_MUTATION_GUARD").unwrap_or_else(|_| "block".to_string()) == "off" {
         return Ok(0);
     }
-    let Some(state) = current_active_state(session_file) else {
+    let Some(mutation) = mutation_signal(payload) else {
         return Ok(0);
     };
-    let Some(mutation) = mutation_signal(payload) else {
+    let Some((skill, state, events_file)) = active_workflow_state(state_dir, payload) else {
         return Ok(0);
     };
 
@@ -460,11 +455,12 @@ fn handle_pre_tool_use(
         .map(value_to_string)
         .unwrap_or_else(|| "unknown-session".to_string());
     append_jsonl(
-        events_file,
+        &events_file,
         &json!({
             "timestamp": timestamp,
             "event": "mutation_blocked",
             "session_id": session_id,
+            "skill": skill,
             "phase": state.get("phase").cloned().unwrap_or(Value::Null),
             "mutation_kind": mutation.kind,
             "mutation_value": mutation.value,
@@ -473,7 +469,7 @@ fn handle_pre_tool_use(
     )?;
 
     eprintln!(
-        "MEGARA mutation guard: deep-interview is active. Answer the pending question or crystallize/cancel the interview before mutating files."
+        "MEGARA mutation guard: {skill} is active. Approve, refine, complete, or cancel the workflow before mutating files."
     );
     if env::var("MEGARA_MUTATION_GUARD").unwrap_or_else(|_| "block".to_string()) == "warn" {
         Ok(0)
@@ -482,64 +478,628 @@ fn handle_pre_tool_use(
     }
 }
 
+fn handle_deep_interview_terminal(
+    timestamp: &str,
+    text: &str,
+    payload_file: &Path,
+    paths: &WorkflowPaths,
+    terminal: &TerminalState,
+    state: &mut Value,
+) -> Result<()> {
+    let spec = persist_crystallized_spec(
+        timestamp,
+        &paths.workflow_dir,
+        &paths.session_id,
+        terminal,
+        text,
+        payload_file,
+    )?;
+    if terminal.status == "crystallized" && spec.is_none() {
+        reject_crystallized_without_spec(timestamp, state);
+        append_jsonl(
+            &paths.events_file,
+            &json!({
+                "timestamp": timestamp,
+                "event": "spec_missing",
+                "session_id": paths.session_id,
+                "status": terminal.status,
+                "payload": payload_file,
+            }),
+        )?;
+        return Ok(());
+    }
+
+    update_terminal_state(timestamp, state, terminal, spec.as_ref());
+    let mut entry = json!({
+        "timestamp": timestamp,
+        "event": "workflow_state",
+        "session_id": paths.session_id,
+        "skill": terminal.skill,
+        "status": terminal.status,
+        "payload": payload_file,
+    });
+    if let Some(spec) = spec {
+        entry["spec_path"] = json!(spec.path);
+        entry["spec_sha256"] = json!(spec.sha256);
+        append_jsonl(
+            &paths.events_file,
+            &json!({
+                "timestamp": timestamp,
+                "event": "spec_persisted",
+                "session_id": paths.session_id,
+                "path": spec.path,
+                "sha256": spec.sha256,
+                "payload": payload_file,
+            }),
+        )?;
+    }
+    append_jsonl(&paths.events_file, &entry)
+}
+
+fn handle_ralplan_terminal(
+    timestamp: &str,
+    text: &str,
+    payload_file: &Path,
+    paths: &WorkflowPaths,
+    terminal: &TerminalState,
+    state: &mut Value,
+) -> Result<()> {
+    let plan_gate = plan_gate_from_text(text);
+    let plan_id = terminal
+        .plan_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .or_else(|| plan_gate.as_ref().map(|gate| gate.id.as_str()))
+        .unwrap_or("rp-plan")
+        .to_string();
+    if terminal.status == "pending_approval" {
+        if let Some(blocker) = active_deep_interview_state(paths) {
+            reject_ralplan_handoff_not_ready(timestamp, state, &plan_id, &blocker);
+            append_jsonl(
+                &paths.events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": "handoff_blocked",
+                    "session_id": paths.session_id,
+                    "plan_id": plan_id,
+                    "blocked_by": DEEP_INTERVIEW,
+                    "blocked_phase": blocker.get("phase").cloned().unwrap_or(Value::Null),
+                    "blocked_status": blocker.get("status").cloned().unwrap_or(Value::Null),
+                    "payload": payload_file,
+                }),
+            )?;
+            return Ok(());
+        }
+    }
+    let linked_spec = linked_deep_interview_spec(paths);
+    if terminal.status == "pending_approval" && !ralplan_reviews_ready(state) {
+        reject_ralplan_without_reviews(timestamp, state, &plan_id);
+        append_jsonl(
+            &paths.events_file,
+            &json!({
+                "timestamp": timestamp,
+                "event": "review_incomplete",
+                "session_id": paths.session_id,
+                "plan_id": plan_id,
+                "status": terminal.status,
+                "payload": payload_file,
+            }),
+        )?;
+        return Ok(());
+    }
+    let plan = persist_pending_plan(
+        timestamp,
+        paths,
+        &plan_id,
+        terminal,
+        text,
+        payload_file,
+        linked_spec.as_ref(),
+    )?;
+
+    if terminal.status == "pending_approval" && plan.is_none() {
+        reject_ralplan_without_plan(timestamp, state, &plan_id);
+        append_jsonl(
+            &paths.events_file,
+            &json!({
+                "timestamp": timestamp,
+                "event": "plan_missing",
+                "session_id": paths.session_id,
+                "plan_id": plan_id,
+                "status": terminal.status,
+                "payload": payload_file,
+            }),
+        )?;
+        return Ok(());
+    }
+
+    update_terminal_state(timestamp, state, terminal, None);
+    state["plan_id"] = json!(plan_id);
+    if terminal.status == "pending_approval" {
+        state["active"] = json!(true);
+        state["phase"] = json!("pending_approval");
+        state["approval_status"] = json!("pending");
+    }
+    if let Some(gate) = plan_gate {
+        state["plan_gate"] = json!({
+            "id": gate.id,
+            "status": gate.status,
+            "question": gate.question,
+            "options": gate.options,
+            "free_text": gate.free_text,
+        });
+    }
+    if let Some(spec) = &linked_spec {
+        state["input_spec_path"] = json!(spec.path);
+        state["input_spec_sha256"] = json!(spec.sha256);
+        state["input_spec_persisted_at"] = json!(spec.persisted_at);
+    }
+
+    let mut entry = json!({
+        "timestamp": timestamp,
+        "event": "workflow_state",
+        "session_id": paths.session_id,
+        "skill": terminal.skill,
+        "status": terminal.status,
+        "plan_id": plan_id,
+        "payload": payload_file,
+    });
+    if let Some(spec) = &linked_spec {
+        entry["input_spec_path"] = json!(spec.path);
+        entry["input_spec_sha256"] = json!(spec.sha256);
+    }
+    if let Some(plan) = plan {
+        state["plan_path"] = json!(plan.path);
+        state["plan_sha256"] = json!(plan.sha256);
+        state["plan_persisted_at"] = json!(plan.persisted_at);
+        state["plan_payload"] = json!(plan.payload);
+        entry["plan_path"] = json!(plan.path);
+        entry["plan_sha256"] = json!(plan.sha256);
+        append_jsonl(
+            &paths.events_file,
+            &json!({
+                "timestamp": timestamp,
+                "event": "plan_persisted",
+                "session_id": paths.session_id,
+                "plan_id": plan_id,
+                "path": plan.path,
+                "sha256": plan.sha256,
+                "input_spec_path": linked_spec.as_ref().map(|spec| spec.path.as_str()),
+                "input_spec_sha256": linked_spec.as_ref().map(|spec| spec.sha256.as_str()),
+                "payload": payload_file,
+            }),
+        )?;
+    }
+    append_jsonl(&paths.events_file, &entry)
+}
+
+fn persist_ralplan_review(
+    timestamp: &str,
+    payload_file: &Path,
+    paths: &WorkflowPaths,
+    review: ReviewPass,
+    state: &mut Value,
+) -> Result<()> {
+    let review_path = unique_review_path(
+        &paths.workflow_dir,
+        &paths.session_id,
+        &review.role,
+        review.round,
+        timestamp,
+    );
+    let mut content = [
+        "---".to_string(),
+        "skill: \"ralplan\"".to_string(),
+        format!("session_id: {}", yaml_string(&paths.session_id)),
+        format!("role: {}", yaml_string(&review.role)),
+        format!("round: {}", review.round),
+        format!("verdict: {}", yaml_string(&review.verdict)),
+        format!("persisted_at: {}", yaml_string(timestamp)),
+        format!("payload: {}", yaml_string(payload_file.display())),
+        "---".to_string(),
+        String::new(),
+        format!("# {} review", review.role),
+        String::new(),
+        format!("Verdict: `{}`", review.verdict),
+        String::new(),
+        "## Summary".to_string(),
+        String::new(),
+        review.summary.clone(),
+        String::new(),
+        "## Required Fixes".to_string(),
+        String::new(),
+        review
+            .required_fixes
+            .iter()
+            .map(|fix| format!("- {fix}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    ]
+    .join("\n");
+    content.push('\n');
+
+    write_text_atomic(&review_path, &content)?;
+    let sha256 = sha256_hex(content.as_bytes());
+    let review_entry = json!({
+        "timestamp": timestamp,
+        "event": "review_persisted",
+        "session_id": paths.session_id,
+        "skill": RALPLAN,
+        "role": review.role,
+        "round": review.round,
+        "verdict": review.verdict,
+        "summary": review.summary,
+        "required_fixes": review.required_fixes,
+        "path": review_path,
+        "sha256": sha256,
+        "payload": payload_file,
+    });
+    append_jsonl(
+        &paths.workflow_dir.join("reviews").join("index.jsonl"),
+        &review_entry,
+    )?;
+    append_jsonl(&paths.events_file, &review_entry)?;
+
+    let mut reviews = state
+        .get("reviews")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    reviews.push(json!({
+        "role": review_entry["role"].clone(),
+        "round": review_entry["round"].clone(),
+        "verdict": review_entry["verdict"].clone(),
+        "summary": review_entry["summary"].clone(),
+        "required_fixes": review_entry["required_fixes"].clone(),
+        "path": review_entry["path"].clone(),
+        "sha256": review_entry["sha256"].clone(),
+        "persisted_at": timestamp,
+        "payload": payload_file,
+    }));
+    state["reviews"] = json!(reviews);
+    state["active"] = json!(true);
+    state["phase"] = json!("reviewing");
+    state["status"] = json!("reviewing");
+    state["updated_at"] = json!(timestamp);
+    Ok(())
+}
+
+fn linked_deep_interview_spec(paths: &WorkflowPaths) -> Option<LinkedSpec> {
+    let state = deep_interview_state(paths)?;
+    if state.get("status").and_then(Value::as_str) != Some("crystallized") {
+        return None;
+    }
+    Some(LinkedSpec {
+        path: state.get("spec_path")?.as_str()?.to_string(),
+        sha256: state.get("spec_sha256")?.as_str()?.to_string(),
+        persisted_at: state
+            .get("spec_persisted_at")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+fn active_deep_interview_state(paths: &WorkflowPaths) -> Option<Value> {
+    let state = deep_interview_state(paths)?;
+    if state.get("active").and_then(Value::as_bool) == Some(true)
+        && state.get("status").and_then(Value::as_str) != Some("crystallized")
+    {
+        Some(state)
+    } else {
+        None
+    }
+}
+
+fn deep_interview_state(paths: &WorkflowPaths) -> Option<Value> {
+    let workflow_base = paths.workflow_dir.parent()?;
+    let deep_state_path = workflow_base
+        .join(DEEP_INTERVIEW)
+        .join(format!("{}.json", safe_part(&paths.session_id)));
+    let state = load_json(&deep_state_path)?;
+    if state.get("skill").and_then(Value::as_str) != Some(DEEP_INTERVIEW) {
+        return None;
+    }
+    Some(state)
+}
+
+fn ralplan_reviews_ready(state: &Value) -> bool {
+    let Some(reviews) = state.get("reviews").and_then(Value::as_array) else {
+        return false;
+    };
+    let mut latest = BTreeMap::<&str, &str>::new();
+    for review in reviews {
+        let Some(role) = review.get("role").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(verdict) = review.get("verdict").and_then(Value::as_str) else {
+            continue;
+        };
+        latest.insert(role, verdict);
+    }
+
+    let planner_ready = latest
+        .get("planner")
+        .is_some_and(|verdict| matches!(*verdict, "DRAFT" | "CLEAR" | "WATCH" | "OKAY"));
+    let architect_ready = latest
+        .get("architect")
+        .is_some_and(|verdict| matches!(*verdict, "CLEAR" | "WATCH" | "OKAY"));
+    let critic_ready = latest
+        .get("critic")
+        .is_some_and(|verdict| matches!(*verdict, "OKAY"));
+
+    planner_ready && architect_ready && critic_ready
+}
+
+fn active_workflow_state(
+    state_dir: &Path,
+    payload: &Value,
+) -> Option<(&'static str, Value, PathBuf)> {
+    for &skill in WORKFLOWS {
+        let paths = workflow_paths(state_dir, payload, skill);
+        if let Some(state) = load_json(&paths.session_file) {
+            if state.get("active").and_then(Value::as_bool) == Some(true) {
+                return Some((skill, state, paths.events_file));
+            }
+        }
+    }
+    None
+}
+
+struct RalplanPromptDecision {
+    event: &'static str,
+    handoff_target: Value,
+}
+
+struct ApprovalGate {
+    plan_id: String,
+    plan_sha256: String,
+    handoff_target: String,
+}
+
+#[derive(Debug)]
+struct LinkedSpec {
+    path: String,
+    sha256: String,
+    persisted_at: String,
+}
+
+fn apply_ralplan_prompt_decision(
+    timestamp: &str,
+    state: &mut Value,
+    prompt: &str,
+    payload_file: &Path,
+) -> Option<RalplanPromptDecision> {
+    if state.get("skill").and_then(Value::as_str) != Some(RALPLAN) {
+        return None;
+    }
+    if state.get("active").and_then(Value::as_bool) != Some(true) {
+        return None;
+    }
+    if state.get("phase").and_then(Value::as_str) != Some("pending_approval") {
+        return None;
+    }
+
+    if let Some(gate) = approval_gate_from_text(prompt) {
+        let current_plan_id = state
+            .get("plan_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let current_plan_sha256 = state
+            .get("plan_sha256")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if gate.plan_id == current_plan_id
+            && gate.plan_sha256 == current_plan_sha256
+            && matches!(gate.handoff_target.as_str(), "ultragoal" | "team")
+        {
+            let plan_sha256 = json!(gate.plan_sha256);
+            approve_ralplan(
+                timestamp,
+                state,
+                &gate.handoff_target,
+                plan_sha256,
+                payload_file,
+            );
+            return Some(RalplanPromptDecision {
+                event: "plan_approved",
+                handoff_target: json!(gate.handoff_target),
+            });
+        }
+
+        state["approval_status"] = json!("approval_gate_mismatch");
+        state["phase"] = json!("pending_approval");
+        state["updated_at"] = json!(timestamp);
+        state["last_approval_payload"] = json!(payload_file);
+        return Some(RalplanPromptDecision {
+            event: "plan_approval_rejected",
+            handoff_target: Value::Null,
+        });
+    }
+
+    let normalized = prompt.to_ascii_lowercase();
+    let plan_sha256 = state.get("plan_sha256").cloned().unwrap_or(Value::Null);
+    if normalized.contains("approve_ultragoal")
+        || (normalized.contains("approve") && normalized.contains("ultragoal"))
+        || normalized.contains("ultragoal 승인")
+    {
+        approve_ralplan(timestamp, state, "ultragoal", plan_sha256, payload_file);
+        return Some(RalplanPromptDecision {
+            event: "plan_approved",
+            handoff_target: json!("ultragoal"),
+        });
+    }
+    if normalized.contains("approve_team")
+        || (normalized.contains("approve") && normalized.contains("team"))
+        || normalized.contains("team 승인")
+    {
+        approve_ralplan(timestamp, state, "team", plan_sha256, payload_file);
+        return Some(RalplanPromptDecision {
+            event: "plan_approved",
+            handoff_target: json!("team"),
+        });
+    }
+    if normalized.contains("refine")
+        || normalized.contains("iterate")
+        || normalized.contains("보완")
+        || normalized.contains("수정")
+    {
+        state["reviews"] = json!([]);
+        remove_state_fields(
+            state,
+            &[
+                "plan_gate",
+                "plan_path",
+                "plan_sha256",
+                "plan_persisted_at",
+                "plan_payload",
+                "input_spec_path",
+                "input_spec_sha256",
+                "input_spec_persisted_at",
+            ],
+        );
+        state["approval_status"] = json!("refine_requested");
+        state["phase"] = json!("refining");
+        state["updated_at"] = json!(timestamp);
+        state["last_approval_payload"] = json!(payload_file);
+        return Some(RalplanPromptDecision {
+            event: "plan_refine_requested",
+            handoff_target: Value::Null,
+        });
+    }
+    if normalized.contains("stop_pending")
+        || normalized.contains("pending")
+        || normalized.contains("보류")
+    {
+        state["approval_status"] = json!("pending");
+        state["phase"] = json!("pending_approval");
+        state["updated_at"] = json!(timestamp);
+        state["last_approval_payload"] = json!(payload_file);
+        return Some(RalplanPromptDecision {
+            event: "plan_left_pending",
+            handoff_target: Value::Null,
+        });
+    }
+
+    None
+}
+
+fn approve_ralplan(
+    timestamp: &str,
+    state: &mut Value,
+    handoff_target: &str,
+    plan_sha256: Value,
+    payload_file: &Path,
+) {
+    state["active"] = json!(false);
+    state["phase"] = json!("approved");
+    state["status"] = json!("approved");
+    state["approval_status"] = json!("approved");
+    state["approved_handoff_target"] = json!(handoff_target);
+    if let Some(plan_id) = state.get("plan_id").cloned() {
+        state["approved_plan_id"] = plan_id;
+    }
+    state["approved_plan_sha256"] = plan_sha256;
+    state["approved_at"] = json!(timestamp);
+    state["closed_at"] = json!(timestamp);
+    state["last_approval_payload"] = json!(payload_file);
+    state["updated_at"] = json!(timestamp);
+}
+
+fn remove_state_fields(state: &mut Value, fields: &[&str]) {
+    let Some(object) = state.as_object_mut() else {
+        return;
+    };
+    for field in fields {
+        object.remove(*field);
+    }
+}
+
 #[derive(Debug)]
 struct Block {
     fields: BTreeMap<String, String>,
-    options: Vec<String>,
+    lists: BTreeMap<String, Vec<String>>,
 }
 
 fn parse_block(text: &str, marker: &str) -> Option<Block> {
-    if !text.contains(marker) {
-        return None;
-    }
+    parse_blocks(text, marker).into_iter().next()
+}
+
+fn parse_blocks(text: &str, marker: &str) -> Vec<Block> {
     let lines = text.lines().collect::<Vec<_>>();
-    let start = lines
-        .iter()
-        .position(|line| line.trim() == marker)
-        .map(|index| index + 1)?;
+    let mut blocks = Vec::new();
+    let mut index = 0;
 
-    let mut fields = BTreeMap::new();
-    let mut options = Vec::new();
-    let mut current_key = String::new();
-    let mut saw_field = false;
+    while index < lines.len() {
+        if lines[index].trim() != marker {
+            index += 1;
+            continue;
+        }
 
-    for raw in &lines[start..] {
-        if raw.trim().is_empty() {
-            if saw_field {
+        index += 1;
+        let mut fields = BTreeMap::new();
+        let mut lists = BTreeMap::<String, Vec<String>>::new();
+        let mut current_key = String::new();
+        let mut saw_field = false;
+
+        while index < lines.len() {
+            let raw = lines[index];
+            if raw.trim().is_empty() {
+                index += 1;
+                if saw_field {
+                    break;
+                }
+                continue;
+            }
+
+            if (raw.starts_with("  - ") || raw.starts_with("    - ")) && !current_key.is_empty() {
+                if let Some((_, value)) = raw.split_once("- ") {
+                    lists
+                        .entry(current_key.clone())
+                        .or_default()
+                        .push(value.trim().to_string());
+                }
+                index += 1;
+                continue;
+            }
+
+            let stripped = raw.trim();
+            if !stripped.starts_with("- ") {
                 break;
             }
-            continue;
-        }
 
-        if (raw.starts_with("  - ") || raw.starts_with("    - ")) && current_key == "options" {
-            if let Some((_, value)) = raw.split_once("- ") {
-                options.push(value.trim().to_string());
+            let Some((key, value)) = stripped[2..].split_once(':') else {
+                index += 1;
+                continue;
+            };
+            let key = key.trim().to_ascii_lowercase().replace('-', "_");
+            current_key = key.clone();
+            saw_field = true;
+            if value.trim().is_empty() {
+                lists.entry(key).or_default();
+            } else {
+                fields.insert(key, value.trim().to_string());
             }
-            continue;
+            index += 1;
         }
 
-        let stripped = raw.trim();
-        if !stripped.starts_with("- ") {
-            if saw_field {
-                break;
-            }
-            continue;
-        }
-
-        let Some((key, value)) = stripped[2..].split_once(':') else {
-            continue;
-        };
-        let key = key.trim().to_ascii_lowercase().replace('-', "_");
-        current_key = key.clone();
-        saw_field = true;
-        if key == "options" {
-            options.clear();
-        } else {
-            fields.insert(key, value.trim().to_string());
+        if saw_field {
+            blocks.push(Block { fields, lists });
         }
     }
 
-    saw_field.then_some(Block { fields, options })
+    blocks
+}
+
+fn block_list(block: &Block, key: &str) -> Vec<String> {
+    block
+        .lists
+        .get(key)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect()
 }
 
 fn question_from_text(timestamp: &str, text: &str, payload_file: &Path) -> Option<Value> {
@@ -556,7 +1116,7 @@ fn question_from_text(timestamp: &str, text: &str, payload_file: &Path) -> Optio
         "component": block.fields.get("component").map(String::as_str).unwrap_or("").trim(),
         "dimension": block.fields.get("dimension").map(String::as_str).unwrap_or("").trim(),
         "question": question,
-        "options": block.options.into_iter().filter(|option| !option.is_empty()).collect::<Vec<_>>(),
+        "options": block_list(&block, "options"),
         "free_text": parse_bool(block.fields.get("free_text").map(String::as_str).unwrap_or("false")),
         "status": "pending",
         "asked_at": timestamp,
@@ -584,14 +1144,126 @@ fn parse_bool(value: &str) -> bool {
 
 #[derive(Debug)]
 struct TerminalState {
+    skill: String,
     status: String,
     ambiguity: String,
     next: String,
+    plan_id: Option<String>,
+}
+
+struct PlanGate {
+    id: String,
+    status: String,
+    question: String,
+    options: Vec<String>,
+    free_text: bool,
+}
+
+struct ReviewPass {
+    role: String,
+    round: i64,
+    verdict: String,
+    summary: String,
+    required_fixes: Vec<String>,
+}
+
+fn review_passes_from_text(text: &str) -> Vec<ReviewPass> {
+    parse_blocks(text, "Megara Review Pass:")
+        .into_iter()
+        .filter_map(review_pass_from_block)
+        .collect()
+}
+
+fn review_pass_from_block(block: Block) -> Option<ReviewPass> {
+    let role = normalize_review_role(block.fields.get("role")?.trim())?;
+    let verdict = normalize_review_verdict(block.fields.get("verdict")?.trim())?;
+    let summary = block.fields.get("summary")?.trim();
+    if role.is_empty() || verdict.is_empty() || summary.is_empty() {
+        return None;
+    }
+    let round = block
+        .fields
+        .get("round")
+        .and_then(|round| round.trim().parse::<i64>().ok())
+        .filter(|round| *round > 0)?;
+    Some(ReviewPass {
+        role,
+        round,
+        verdict,
+        summary: summary.to_string(),
+        required_fixes: {
+            let fixes = block_list(&block, "required_fixes");
+            if fixes.is_empty() {
+                vec!["none".to_string()]
+            } else {
+                fixes
+            }
+        },
+    })
+}
+
+fn normalize_review_role(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    matches!(normalized.as_str(), "planner" | "architect" | "critic").then_some(normalized)
+}
+
+fn normalize_review_verdict(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_uppercase();
+    matches!(
+        normalized.as_str(),
+        "DRAFT" | "CLEAR" | "WATCH" | "BLOCK" | "OKAY" | "ITERATE" | "REJECT"
+    )
+    .then_some(normalized)
+}
+
+fn plan_gate_from_text(text: &str) -> Option<PlanGate> {
+    let block = parse_block(text, "Megara Plan Gate:")?;
+    let id = block.fields.get("id")?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some(PlanGate {
+        id: id.to_string(),
+        status: block
+            .fields
+            .get("status")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_else(|| "pending_approval".to_string()),
+        question: block
+            .fields
+            .get("question")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default(),
+        options: block_list(&block, "options"),
+        free_text: parse_bool(
+            block
+                .fields
+                .get("free_text")
+                .map(String::as_str)
+                .unwrap_or("false"),
+        ),
+    })
+}
+
+fn approval_gate_from_text(text: &str) -> Option<ApprovalGate> {
+    let block = parse_block(text, "Megara Approval Gate:")?;
+    let plan_id = block.fields.get("plan_id")?.trim();
+    let plan_sha256 = block.fields.get("plan_sha256")?.trim();
+    let handoff_target = block.fields.get("handoff_target")?.trim();
+    if plan_id.is_empty() || plan_sha256.len() != 64 || handoff_target.is_empty() {
+        return None;
+    }
+    Some(ApprovalGate {
+        plan_id: plan_id.to_string(),
+        plan_sha256: plan_sha256.to_string(),
+        handoff_target: handoff_target.to_ascii_lowercase(),
+    })
 }
 
 fn workflow_state_from_text(text: &str) -> Option<TerminalState> {
     let block = parse_block(text, "Megara Workflow State:")?;
-    if block.fields.get("skill")?.trim() != DEEP_INTERVIEW {
+    let skill = block.fields.get("skill")?.trim();
+    if !WORKFLOWS.contains(&skill) {
         return None;
     }
     let status = block.fields.get("status")?.trim().to_ascii_lowercase();
@@ -599,6 +1271,7 @@ fn workflow_state_from_text(text: &str) -> Option<TerminalState> {
         return None;
     }
     Some(TerminalState {
+        skill: skill.to_string(),
         status,
         ambiguity: block
             .fields
@@ -610,6 +1283,11 @@ fn workflow_state_from_text(text: &str) -> Option<TerminalState> {
             .get("next")
             .map(|value| value.trim().to_string())
             .unwrap_or_default(),
+        plan_id: block
+            .fields
+            .get("plan_id")
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
     })
 }
 
@@ -630,6 +1308,14 @@ fn text_before_block(text: &str, marker: &str) -> String {
 
 #[derive(Debug)]
 struct PersistedSpec {
+    path: String,
+    sha256: String,
+    persisted_at: String,
+    payload: String,
+}
+
+#[derive(Debug)]
+struct PersistedPlan {
     path: String,
     sha256: String,
     persisted_at: String,
@@ -692,8 +1378,106 @@ fn persist_crystallized_spec(
     }))
 }
 
+fn persist_pending_plan(
+    timestamp: &str,
+    paths: &WorkflowPaths,
+    plan_id: &str,
+    terminal: &TerminalState,
+    text: &str,
+    payload_file: &Path,
+    linked_spec: Option<&LinkedSpec>,
+) -> Result<Option<PersistedPlan>> {
+    if terminal.status != "pending_approval" || text.trim().is_empty() {
+        return Ok(None);
+    }
+    let plan_body = text_before_first_workflow_block(text);
+    if plan_body.is_empty() {
+        return Ok(None);
+    }
+
+    let mut header = vec![
+        "---".to_string(),
+        "skill: \"ralplan\"".to_string(),
+        format!("session_id: {}", yaml_string(&paths.session_id)),
+        format!("plan_id: {}", yaml_string(plan_id)),
+        "status: \"pending_approval\"".to_string(),
+        format!("next: {}", yaml_string(&terminal.next)),
+    ];
+    if let Some(spec) = linked_spec {
+        header.push(format!("input_spec_path: {}", yaml_string(&spec.path)));
+        header.push(format!("input_spec_sha256: {}", yaml_string(&spec.sha256)));
+    }
+    header.extend([
+        format!("persisted_at: {}", yaml_string(timestamp)),
+        format!("payload: {}", yaml_string(payload_file.display())),
+        "---".to_string(),
+        String::new(),
+        plan_body,
+    ]);
+    let mut content = header.join("\n");
+    content.push('\n');
+
+    let plan_path = unique_plan_path(&paths.workflow_dir, &paths.session_id, plan_id, timestamp);
+    write_text_atomic(&plan_path, &content)?;
+    let sha256 = sha256_hex(content.as_bytes());
+    append_jsonl(
+        &paths.workflow_dir.join("plans").join("index.jsonl"),
+        &json!({
+            "timestamp": timestamp,
+            "event": "plan_persisted",
+            "session_id": paths.session_id,
+            "skill": RALPLAN,
+            "status": "pending_approval",
+            "plan_id": plan_id,
+            "path": plan_path,
+            "sha256": sha256,
+            "input_spec_path": linked_spec.map(|spec| spec.path.as_str()),
+            "input_spec_sha256": linked_spec.map(|spec| spec.sha256.as_str()),
+            "payload": payload_file,
+        }),
+    )?;
+
+    Ok(Some(PersistedPlan {
+        path: plan_path.display().to_string(),
+        sha256,
+        persisted_at: timestamp.to_string(),
+        payload: payload_file.display().to_string(),
+    }))
+}
+
 fn yaml_string(value: impl std::fmt::Display) -> String {
     serde_json::to_string(&value.to_string()).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+fn text_before_first_workflow_block(text: &str) -> String {
+    let lines = text.lines().collect::<Vec<_>>();
+    let mut end = lines.len();
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim() == "Megara Plan Gate:" && marker_has_immediate_fields(&lines, index) {
+            let tail = lines[index..].join("\n");
+            if plan_gate_from_text(&tail).is_some() && workflow_state_from_text(&tail).is_some() {
+                end = index;
+                break;
+            }
+        }
+    }
+    lines
+        .into_iter()
+        .take(end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn marker_has_immediate_fields(lines: &[&str], marker_index: usize) -> bool {
+    let mut index = marker_index + 1;
+    while index < lines.len() && lines[index].trim().is_empty() {
+        index += 1;
+    }
+    lines
+        .get(index)
+        .is_some_and(|line| line.trim_start().starts_with("- "))
 }
 
 fn unique_spec_path(workflow_dir: &Path, session_id: &str, timestamp: &str) -> PathBuf {
@@ -708,6 +1492,52 @@ fn unique_spec_path(workflow_dir: &Path, session_id: &str, timestamp: &str) -> P
     while path.exists() {
         suffix += 1;
         path = specs_dir.join(format!("{base}-{suffix}.md"));
+    }
+    path
+}
+
+fn unique_plan_path(
+    workflow_dir: &Path,
+    session_id: &str,
+    plan_id: &str,
+    timestamp: &str,
+) -> PathBuf {
+    let plans_dir = workflow_dir.join("plans");
+    let base = format!(
+        "ralplan-{}-{}-{}",
+        safe_part(session_id),
+        safe_part(plan_id),
+        safe_part(timestamp)
+    );
+    let mut path = plans_dir.join(format!("{base}.md"));
+    let mut suffix = 0;
+    while path.exists() {
+        suffix += 1;
+        path = plans_dir.join(format!("{base}-{suffix}.md"));
+    }
+    path
+}
+
+fn unique_review_path(
+    workflow_dir: &Path,
+    session_id: &str,
+    role: &str,
+    round: i64,
+    timestamp: &str,
+) -> PathBuf {
+    let reviews_dir = workflow_dir.join("reviews");
+    let base = format!(
+        "ralplan-review-{}-{}-r{}-{}",
+        safe_part(session_id),
+        safe_part(role),
+        round,
+        safe_part(timestamp)
+    );
+    let mut path = reviews_dir.join(format!("{base}.md"));
+    let mut suffix = 0;
+    while path.exists() {
+        suffix += 1;
+        path = reviews_dir.join(format!("{base}-{suffix}.md"));
     }
     path
 }
@@ -771,10 +1601,10 @@ fn replace_file(tmp: &Path, path: &Path) -> Result<()> {
     }
 }
 
-fn new_state(timestamp: &str, session_id: &str, payload: &Value) -> Value {
+fn new_state(skill: &str, timestamp: &str, session_id: &str, payload: &Value) -> Value {
     json!({
         "version": 1,
-        "skill": DEEP_INTERVIEW,
+        "skill": skill,
         "session_id": session_id,
         "cwd": payload.get("cwd").cloned().unwrap_or(Value::Null),
         "active": true,
@@ -861,11 +1691,13 @@ fn update_terminal_state(
     spec: Option<&PersistedSpec>,
 ) {
     let terminal_statuses = HashSet::from([
+        "approved",
         "crystallized",
         "cancelled",
         "canceled",
         "complete",
         "completed",
+        "rejected",
     ]);
     let active = !terminal_statuses.contains(terminal.status.as_str());
     state["active"] = json!(active);
@@ -876,6 +1708,9 @@ fn update_terminal_state(
     }
     if !terminal.next.is_empty() {
         state["next"] = json!(terminal.next);
+    }
+    if let Some(plan_id) = &terminal.plan_id {
+        state["plan_id"] = json!(plan_id);
     }
     if let Some(spec) = spec {
         state["spec_path"] = json!(spec.path);
@@ -898,15 +1733,39 @@ fn reject_crystallized_without_spec(timestamp: &str, state: &mut Value) {
     state["updated_at"] = json!(timestamp);
 }
 
-fn current_active_state(session_file: &Path) -> Option<Value> {
-    let state = load_json(session_file)?;
-    if state.get("skill").and_then(Value::as_str) != Some(DEEP_INTERVIEW) {
-        return None;
-    }
-    if state.get("active").and_then(Value::as_bool) != Some(true) {
-        return None;
-    }
-    Some(state)
+fn reject_ralplan_without_plan(timestamp: &str, state: &mut Value, plan_id: &str) {
+    state["active"] = json!(true);
+    state["phase"] = json!("plan_missing");
+    state["status"] = json!("plan_missing");
+    state["plan_id"] = json!(plan_id);
+    state["approval_status"] = json!("blocked");
+    state["updated_at"] = json!(timestamp);
+}
+
+fn reject_ralplan_without_reviews(timestamp: &str, state: &mut Value, plan_id: &str) {
+    state["active"] = json!(true);
+    state["phase"] = json!("review_incomplete");
+    state["status"] = json!("review_incomplete");
+    state["plan_id"] = json!(plan_id);
+    state["approval_status"] = json!("blocked");
+    state["updated_at"] = json!(timestamp);
+}
+
+fn reject_ralplan_handoff_not_ready(
+    timestamp: &str,
+    state: &mut Value,
+    plan_id: &str,
+    blocker: &Value,
+) {
+    state["active"] = json!(true);
+    state["phase"] = json!("handoff_not_ready");
+    state["status"] = json!("handoff_not_ready");
+    state["plan_id"] = json!(plan_id);
+    state["approval_status"] = json!("blocked");
+    state["blocked_by"] = json!(DEEP_INTERVIEW);
+    state["blocked_phase"] = blocker.get("phase").cloned().unwrap_or(Value::Null);
+    state["blocked_status"] = blocker.get("status").cloned().unwrap_or(Value::Null);
+    state["updated_at"] = json!(timestamp);
 }
 
 #[derive(Debug)]
@@ -1041,4 +1900,35 @@ fn mutating_command_segment(segment: &str) -> bool {
         return true;
     }
     first == "perl" && tokens.get(1).is_some_and(|arg| arg.starts_with("-pi"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plan_body_extraction_preserves_marker_mentions() {
+        let text = "**Pending Execution Plan**\n\nMention this literal marker in the plan body:\n\nMegara Plan Gate:\nThis is documentation text, not the control block.\n\nContinue the actual plan here.\n\nMegara Plan Gate:\n- id: rp-marker-test\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-marker-test\n- next: approval\n";
+
+        let body = text_before_first_workflow_block(text);
+
+        assert!(body.contains("Megara Plan Gate:"));
+        assert!(body.contains("This is documentation text"));
+        assert!(body.contains("Continue the actual plan here."));
+        assert!(!body.contains("- id: rp-marker-test"));
+        assert!(!body.contains("Megara Workflow State:"));
+    }
+
+    #[test]
+    fn block_parser_does_not_steal_fields_after_prose() {
+        let text = "Megara Plan Gate:\nThis marker is only discussed in prose.\n\nMegara Plan Gate:\n- id: rp-real\n- status: pending_approval\n";
+
+        let blocks = parse_blocks(text, "Megara Plan Gate:");
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].fields.get("id").map(String::as_str),
+            Some("rp-real")
+        );
+    }
 }
