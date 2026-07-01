@@ -17,3 +17,7 @@ The installer compiles these files into the `megara` binary, writes them to the 
 - `planner`
 - `architect`
 - `critic`
+
+## Runtime Hooks
+
+- `hooks/megara-hook.sh`: portable hook runner used by runtime adapters to keep lightweight event state without breaking the agent runtime.

@@ -1,4 +1,8 @@
-use std::{fs, process::Command};
+use std::{
+    fs,
+    io::Write,
+    process::{Command, Stdio},
+};
 
 use tempfile::tempdir;
 
@@ -39,7 +43,12 @@ fn installs_project_scope_codex_harness() {
         .path()
         .join(".codex/skill-fragments/deep-interview/auto-research-greenfield.md")
         .exists());
+    assert!(dir.path().join(".agents/hooks/megara-hook.sh").exists());
+    assert!(dir.path().join(".codex/hooks/megara-hook.sh").exists());
+    assert!(dir.path().join(".codex/hooks.json").exists());
     assert!(dir.path().join(".codex/agents/executor.toml").exists());
+    let hook_script = fs::read_to_string(dir.path().join(".codex/hooks/megara-hook.sh")).unwrap();
+    assert!(hook_script.starts_with("#!/usr/bin/env sh\n# MEGARA:MANAGED"));
     let skill =
         fs::read_to_string(dir.path().join(".codex/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));
@@ -52,6 +61,9 @@ fn installs_project_scope_codex_harness() {
         &fs::read_to_string(dir.path().join(".codex/config.toml")).unwrap(),
     )
     .unwrap();
+    let hooks_json = fs::read_to_string(dir.path().join(".codex/hooks.json")).unwrap();
+    serde_json::from_str::<serde_json::Value>(&hooks_json).unwrap();
+    assert!(hooks_json.contains("megara-hook-UserPromptSubmit"));
 }
 
 #[test]
@@ -121,6 +133,52 @@ fn sync_refreshes_managed_projection() {
     assert!(content.contains("Megara Codex Harness"));
     let skill_content = fs::read_to_string(projected_skill).unwrap();
     assert!(skill_content.contains("SSOT EDIT TOKEN"));
+}
+
+#[test]
+fn projected_hook_runner_records_runtime_event() {
+    let dir = tempdir().unwrap();
+
+    let install = megara()
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(install.status.success());
+
+    let script = dir.path().join(".codex/hooks/megara-hook.sh");
+    let mut child = Command::new("sh")
+        .arg(script)
+        .arg("--runtime")
+        .arg("codex")
+        .arg("--event")
+        .arg("UserPromptSubmit")
+        .current_dir(dir.path())
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"prompt":"hello"}"#)
+        .unwrap();
+    let status = child.wait().unwrap();
+    assert!(status.success());
+
+    let log = fs::read_to_string(dir.path().join(".agents/state/hooks/events.jsonl")).unwrap();
+    assert!(log.contains("\"runtime\":\"codex\""));
+    assert!(log.contains("\"event\":\"UserPromptSubmit\""));
+    let payload = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/hooks/last-codex-UserPromptSubmit.json"),
+    )
+    .unwrap();
+    assert_eq!(payload, r#"{"prompt":"hello"}"#);
 }
 
 #[test]
@@ -209,4 +267,5 @@ fn lists_targets_and_templates() {
     let stdout = String::from_utf8_lossy(&templates.stdout);
     assert!(stdout.contains("deep-interview"));
     assert!(stdout.contains("deep-interview/auto-research-greenfield"));
+    assert!(stdout.contains("megara-hook"));
 }
