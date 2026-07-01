@@ -1,7 +1,7 @@
 # Megara
 
-[![CI](https://github.com/the-agentic-world/sisyphus/actions/workflows/ci.yml/badge.svg)](https://github.com/the-agentic-world/sisyphus/actions/workflows/ci.yml)
-[![Release](https://github.com/the-agentic-world/sisyphus/actions/workflows/release.yml/badge.svg)](https://github.com/the-agentic-world/sisyphus/actions/workflows/release.yml)
+[![CI](https://github.com/the-agentic-world/megara/actions/workflows/ci.yml/badge.svg)](https://github.com/the-agentic-world/megara/actions/workflows/ci.yml)
+[![Release](https://github.com/the-agentic-world/megara/actions/workflows/release.yml/badge.svg)](https://github.com/the-agentic-world/megara/actions/workflows/release.yml)
 
 Megara installs a portable agent harness at project or global scope, then projects it into supported agent runtimes. Its bundled harness source of truth lives in `.agents/` and is compiled into the installer.
 

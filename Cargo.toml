@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Project and global agent harness installer"
 license = "MIT"
-repository = "https://github.com/the-agentic-world/sisyphus"
+repository = "https://github.com/the-agentic-world/megara"
 
 [[bin]]
 name = "megara"
