@@ -29,7 +29,7 @@ case "$arch" in
     target="aarch64-apple-darwin"
     ;;
   x86_64|amd64)
-    target="x86_64-apple-darwin"
+    die "macOS Intel is not supported by Megara release artifacts"
     ;;
   *)
     die "unsupported macOS architecture: $arch"
