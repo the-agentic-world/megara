@@ -166,7 +166,7 @@ fn safe_part(value: impl AsRef<str>) -> String {
     }
 }
 
-fn append_jsonl(path: &Path, entry: &Value) -> Result<()> {
+pub(crate) fn append_jsonl(path: &Path, entry: &Value) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -982,10 +982,10 @@ struct RalplanPromptDecision {
     handoff_target: Value,
 }
 
-struct ApprovalGate {
-    plan_id: String,
-    plan_sha256: String,
-    handoff_target: String,
+pub(crate) struct ApprovalGate {
+    pub(crate) plan_id: String,
+    pub(crate) plan_sha256: String,
+    pub(crate) handoff_target: String,
 }
 
 #[derive(Debug)]
@@ -1147,8 +1147,8 @@ fn remove_state_fields(state: &mut Value, fields: &[&str]) {
 }
 
 #[derive(Debug)]
-struct Block {
-    fields: BTreeMap<String, String>,
+pub(crate) struct Block {
+    pub(crate) fields: BTreeMap<String, String>,
     lists: BTreeMap<String, Vec<String>>,
 }
 
@@ -1156,7 +1156,7 @@ fn parse_block(text: &str, marker: &str) -> Option<Block> {
     parse_blocks(text, marker).into_iter().next()
 }
 
-fn parse_blocks(text: &str, marker: &str) -> Vec<Block> {
+pub(crate) fn parse_blocks(text: &str, marker: &str) -> Vec<Block> {
     let lines = text.lines().collect::<Vec<_>>();
     let mut blocks = Vec::new();
     let mut index = 0;
@@ -1387,7 +1387,7 @@ fn plan_gate_from_text(text: &str) -> Option<PlanGate> {
     })
 }
 
-fn approval_gate_from_text(text: &str) -> Option<ApprovalGate> {
+pub(crate) fn approval_gate_from_text(text: &str) -> Option<ApprovalGate> {
     let block = parse_block(text, "Megara Approval Gate:")?;
     let plan_id = block.fields.get("plan_id")?.trim();
     let plan_sha256 = block.fields.get("plan_sha256")?.trim();
@@ -1591,7 +1591,7 @@ fn yaml_string(value: impl std::fmt::Display) -> String {
     serde_json::to_string(&value.to_string()).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-fn text_before_first_workflow_block(text: &str) -> String {
+pub(crate) fn text_before_first_workflow_block(text: &str) -> String {
     let lines = text.lines().collect::<Vec<_>>();
     let mut end = lines.len();
     for (index, line) in lines.iter().enumerate() {
@@ -2020,7 +2020,7 @@ fn normalized_tool_name(name: &str) -> String {
         .collect()
 }
 
-fn mutating_command(command: &str) -> bool {
+pub(crate) fn mutating_command(command: &str) -> bool {
     if command.trim().is_empty() {
         return false;
     }
@@ -2139,7 +2139,3 @@ fn mutating_command_segment(segment: &str) -> bool {
     }
     first == "perl" && tokens.get(1).is_some_and(|arg| arg.starts_with("-pi"))
 }
-
-#[cfg(test)]
-#[path = "../tests/unit/hook.rs"]
-mod tests;

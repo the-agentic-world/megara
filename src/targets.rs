@@ -1,3 +1,4 @@
+#[path = "targets/codex.rs"]
 pub mod codex;
 
 use serde::Serialize;

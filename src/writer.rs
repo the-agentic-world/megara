@@ -96,7 +96,3 @@ fn write_one(file: &PlannedFile) -> Result<()> {
         .with_context(|| format!("failed to write {}", file.path.display()))?;
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "../tests/unit/writer.rs"]
-mod tests;

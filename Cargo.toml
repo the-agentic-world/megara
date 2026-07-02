@@ -5,10 +5,19 @@ edition = "2021"
 description = "Project and global agent harness installer"
 license = "MIT"
 repository = "https://github.com/the-agentic-world/megara"
+autotests = false
 
 [[bin]]
 name = "megara"
 path = "src/main.rs"
+
+[[test]]
+name = "unit"
+path = "test/unit/main.rs"
+
+[[test]]
+name = "integration"
+path = "test/integration/main.rs"
 
 [dependencies]
 anyhow = "1"

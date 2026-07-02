@@ -111,9 +111,9 @@ struct GoalCounts {
     superseded: usize,
 }
 
-struct ParsedGoal {
-    title: String,
-    objective: String,
+pub(crate) struct ParsedGoal {
+    pub(crate) title: String,
+    pub(crate) objective: String,
 }
 
 struct BriefSource {
@@ -693,7 +693,7 @@ fn direct_source() -> UltragoalSource {
     }
 }
 
-fn parse_goals(brief: &str) -> Result<Vec<ParsedGoal>> {
+pub(crate) fn parse_goals(brief: &str) -> Result<Vec<ParsedGoal>> {
     let brief = strip_yaml_frontmatter(brief).trim();
     let mut sections = Vec::<(String, Vec<String>)>::new();
     for line in brief.lines() {
@@ -934,7 +934,7 @@ fn read_quality_gate(value_or_path: &str) -> Result<Value> {
     serde_json::from_str(&raw).context("failed to parse quality gate json")
 }
 
-fn validate_quality_gate(value: &Value, artifact_root: &Path) -> Result<()> {
+pub(crate) fn validate_quality_gate(value: &Value, artifact_root: &Path) -> Result<()> {
     require_object(value, "quality gate")?;
     let architect = section(value, "architectReview")?;
     require_str_eq(architect, "recommendation", "APPROVE")?;
@@ -1168,7 +1168,3 @@ fn replace_file(tmp: &Path, path: &Path) -> Result<()> {
         Err(error) => Err(error.into()),
     }
 }
-
-#[cfg(test)]
-#[path = "../tests/unit/ultragoal.rs"]
-mod tests;
