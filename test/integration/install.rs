@@ -29,6 +29,7 @@ fn installs_project_scope_codex_harness() {
         .path()
         .join(".codex/skills/deep-interview/SKILL.md")
         .exists());
+    assert!(dir.path().join(".codex/skills/caveman/SKILL.md").exists());
     assert!(dir
         .path()
         .join(".agents/skill-fragments/deep-interview/auto-research-greenfield.md")
@@ -61,6 +62,9 @@ fn installs_project_scope_codex_harness() {
     assert!(!skill.contains("Deep Interview threshold:"));
     assert!(!skill.contains("I'm reading this as"));
     assert!(!skill.contains("Restate gate"));
+    let caveman = fs::read_to_string(dir.path().join(".codex/skills/caveman/SKILL.md")).unwrap();
+    assert!(caveman.contains("ACTIVE EVERY RESPONSE"));
+    assert!(caveman.contains("stop caveman"));
     let ralplan = fs::read_to_string(dir.path().join(".codex/skills/ralplan/SKILL.md")).unwrap();
     assert!(ralplan.contains("Megara Review Pass:"));
     assert!(ralplan.contains("Megara Plan Gate:"));
@@ -112,6 +116,9 @@ fn installs_project_scope_codex_harness() {
     .unwrap();
     let hooks_json = fs::read_to_string(dir.path().join(".codex/hooks.json")).unwrap();
     let hooks: serde_json::Value = serde_json::from_str(&hooks_json).unwrap();
+    assert!(hooks_json.contains("megara-caveman-SessionStart"));
+    assert!(hooks_json.contains(r#""matcher": "startup|resume""#));
+    assert!(hooks_json.contains("CAVEMAN MODE ACTIVE"));
     assert!(hooks_json.contains("megara-hook-UserPromptSubmit"));
     assert!(hooks_json.contains("megara-hook-PreToolUse"));
     assert!(
@@ -128,9 +135,13 @@ fn installs_project_scope_codex_harness() {
     assert!(!hooks_json.contains(r#""matcher": "Bash""#));
     let megara_config = fs::read_to_string(dir.path().join(".agents/megara.toml")).unwrap();
     assert!(megara_config.contains("locale = \"ko-KR\""));
+    assert!(megara_config.contains("default_active_skills = [\"caveman\"]"));
     let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
     assert!(agents_md.contains("## Locale"));
     assert!(agents_md.contains("Locale: `ko-KR`"));
+    assert!(agents_md.contains("## Skills"));
+    assert!(agents_md.contains("## Default Active Skills"));
+    assert!(agents_md.contains("- `caveman`"));
     assert!(agents_md.contains("Do not mix languages in explanatory prose"));
     assert!(agents_md.contains("progress updates, clarification questions, option labels"));
     assert!(agents_md.contains("stock English workflow phrases"));

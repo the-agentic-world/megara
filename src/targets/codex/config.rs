@@ -9,6 +9,8 @@ use super::DEFAULT_LOCALE;
 pub(super) struct HarnessConfig {
     #[serde(default = "default_locale")]
     pub(super) locale: String,
+    #[serde(default)]
+    pub(super) default_active_skills: Vec<String>,
 }
 
 pub(super) fn default_locale() -> String {
@@ -20,6 +22,7 @@ impl HarnessConfig {
         let Some(template) = registry.config() else {
             return Ok(Self {
                 locale: default_locale(),
+                default_active_skills: Vec::new(),
             });
         };
         let mut config: Self = toml::from_str(&template.content)

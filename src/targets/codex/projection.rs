@@ -17,14 +17,14 @@ pub(super) fn projection_files(
         PlannedFile::new(root.join("config.toml"), codex_config()),
         PlannedFile::new(
             root.join("hooks.json"),
-            codex_hooks_json(scope, &root, &megara_bin),
+            codex_hooks_json(scope, &root, &megara_bin, registry)?,
         ),
     ];
 
-    for workflow in registry.workflows() {
+    for skill in registry.workflows().into_iter().chain(registry.skills()) {
         files.push(PlannedFile::new(
-            root.join("skills").join(&workflow.name).join("SKILL.md"),
-            workflow.content.clone(),
+            root.join("skills").join(&skill.name).join("SKILL.md"),
+            skill.content.clone(),
         ));
     }
     for fragment in registry.fragments() {

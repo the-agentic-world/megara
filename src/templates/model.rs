@@ -16,6 +16,7 @@ pub enum TemplateKind {
     Readme,
     Rule,
     Workflow,
+    Skill,
     SkillFragment,
     Agent,
 }

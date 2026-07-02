@@ -51,6 +51,13 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         content: include_str!("../../.agents/skills/team/SKILL.md"),
     },
     TemplateSpec {
+        name: "caveman",
+        kind: TemplateKind::Skill,
+        relative_path: "skills/caveman/SKILL.md",
+        description: "Always-on terse response compression mode",
+        content: include_str!("../../.agents/skills/caveman/SKILL.md"),
+    },
+    TemplateSpec {
         name: "deep-interview/auto-answer-uncertain",
         kind: TemplateKind::SkillFragment,
         relative_path: "skill-fragments/deep-interview/auto-answer-uncertain.md",

@@ -10,6 +10,7 @@ fn lists_targets_and_templates() {
     assert!(templates.status.success());
     let stdout = String::from_utf8_lossy(&templates.stdout);
     assert!(stdout.contains("deep-interview"));
+    assert!(stdout.contains("caveman"));
     assert!(stdout.contains("deep-interview/auto-research-greenfield"));
     assert!(!stdout.contains("megara-hook"));
 }

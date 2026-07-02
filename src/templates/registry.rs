@@ -65,6 +65,10 @@ impl TemplateRegistry {
         self.by_kind(TemplateKind::Workflow)
     }
 
+    pub fn skills(&self) -> Vec<&HarnessTemplate> {
+        self.by_kind(TemplateKind::Skill)
+    }
+
     pub fn fragments(&self) -> Vec<&HarnessTemplate> {
         self.by_kind(TemplateKind::SkillFragment)
     }
