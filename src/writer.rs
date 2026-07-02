@@ -15,6 +15,7 @@ pub struct WriteSummary {
     pub updated: Vec<PathBuf>,
     pub unchanged: Vec<PathBuf>,
     pub conflicts: Vec<PathBuf>,
+    pub removed: Vec<PathBuf>,
 }
 
 pub fn write_files(files: &[PlannedFile], dry_run: bool, force: bool) -> Result<WriteSummary> {
@@ -61,6 +62,31 @@ pub fn write_files(files: &[PlannedFile], dry_run: bool, force: bool) -> Result<
     }
 
     Ok(summary)
+}
+
+pub fn remove_managed_files(paths: &[PathBuf], dry_run: bool) -> Result<Vec<PathBuf>> {
+    let mut removed = Vec::new();
+    for path in paths {
+        if !path.exists() {
+            continue;
+        }
+        let current = fs::read_to_string(path)
+            .with_context(|| format!("failed to read existing file {}", path.display()))?;
+        if !current.contains(MANAGED_MARKER) {
+            continue;
+        }
+        removed.push(path.clone());
+    }
+
+    if !dry_run {
+        for path in &removed {
+            fs::remove_file(path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+            remove_empty_parent_dirs(path);
+        }
+    }
+
+    Ok(removed)
 }
 
 enum WriteAction {
@@ -122,4 +148,14 @@ fn ensure_mode(file: &PlannedFile) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn remove_empty_parent_dirs(path: &Path) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    let _ = fs::remove_dir(parent);
+    if let Some(grandparent) = parent.parent() {
+        let _ = fs::remove_dir(grandparent);
+    }
 }

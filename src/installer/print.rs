@@ -23,14 +23,16 @@ impl InstallResult {
             self.plan.target_root.display()
         );
         println!(
-            "created={}, updated={}, unchanged={}, conflicts={}",
+            "created={}, updated={}, unchanged={}, conflicts={}, removed={}",
             self.summary.created.len(),
             self.summary.updated.len(),
             self.summary.unchanged.len(),
-            self.summary.conflicts.len()
+            self.summary.conflicts.len(),
+            self.summary.removed.len()
         );
 
         print_conflicts(self);
+        print_removed(self);
         print_hook_trust(self);
         print_warnings(self);
         Ok(())
@@ -43,6 +45,16 @@ fn print_conflicts(result: &InstallResult) {
     }
     println!("conflicts:");
     for path in &result.summary.conflicts {
+        println!("- {}", path.display());
+    }
+}
+
+fn print_removed(result: &InstallResult) {
+    if result.summary.removed.is_empty() {
+        return;
+    }
+    println!("removed:");
+    for path in &result.summary.removed {
         println!("- {}", path.display());
     }
 }

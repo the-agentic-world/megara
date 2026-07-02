@@ -21,11 +21,13 @@ pub(super) fn projection_files(
         ),
     ];
 
-    for skill in registry.workflows().into_iter().chain(registry.skills()) {
-        files.push(PlannedFile::new(
-            root.join("skills").join(&skill.name).join("SKILL.md"),
-            skill.content.clone(),
-        ));
+    if scope == InstallScope::Global {
+        for skill in registry.workflows().into_iter().chain(registry.skills()) {
+            files.push(PlannedFile::new(
+                root.join("skills").join(&skill.name).join("SKILL.md"),
+                skill.content.clone(),
+            ));
+        }
     }
     for fragment in registry.fragments() {
         files.push(PlannedFile::new(
@@ -42,4 +44,20 @@ pub(super) fn projection_files(
     }
 
     Ok(files)
+}
+
+pub(super) fn obsolete_projection_files(
+    root: PathBuf,
+    scope: InstallScope,
+    registry: &TemplateRegistry,
+) -> Vec<PathBuf> {
+    if scope != InstallScope::Project {
+        return Vec::new();
+    }
+    registry
+        .workflows()
+        .into_iter()
+        .chain(registry.skills())
+        .map(|skill| root.join("skills").join(&skill.name).join("SKILL.md"))
+        .collect()
 }

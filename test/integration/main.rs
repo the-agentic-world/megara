@@ -90,3 +90,4 @@ mod install_sync;
 mod install_trust;
 mod ultragoal;
 mod ultragoal_support;
+mod update;

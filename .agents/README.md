@@ -21,7 +21,7 @@ The installer compiles these files into the `megara` binary, writes them to the 
 
 ## Skills
 
-- `caveman`: terse response compression mode adapted from `juliusbrussee/caveman`. It is projected into runtime skills and listed as a default active skill.
+- `caveman`: terse response compression mode adapted from `juliusbrussee/caveman`. It is installed as a Megara skill and listed as a default active skill.
 
 ## Agents
 
@@ -33,6 +33,7 @@ The installer compiles these files into the `megara` binary, writes them to the 
 ## Runtime Hooks
 
 - `megara hook`: portable Rust hook runner used by runtime adapters to keep lightweight event state without breaking the agent runtime.
+- Project-scope Codex installs keep skills under `.agents/skills`; Codex App reads that directory directly. Megara does not mirror those skills into `.codex/skills`, because doing so makes the same skill appear twice.
 - Hook state is append-only by default:
   - `.agents/state/hooks/events.jsonl` indexes every hook event.
   - `.agents/state/hooks/payloads/<runtime>/<event>/*.json` stores every raw payload.

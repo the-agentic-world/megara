@@ -33,6 +33,14 @@ pub fn projection_files(
     projection::projection_files(root, scope, registry)
 }
 
+pub fn obsolete_projection_files(
+    root: PathBuf,
+    scope: InstallScope,
+    registry: &TemplateRegistry,
+) -> Vec<PathBuf> {
+    projection::obsolete_projection_files(root, scope, registry)
+}
+
 pub fn runtime_dependency_issues() -> Vec<String> {
     Vec::new()
 }

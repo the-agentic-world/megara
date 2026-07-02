@@ -6,7 +6,7 @@ use crate::{
     paths::{InstallPaths, TargetRuntime},
     targets::codex,
     templates::TemplateRegistry,
-    writer::write_files,
+    writer::{remove_managed_files, write_files},
 };
 
 use super::model::*;
@@ -39,7 +39,14 @@ impl<'a> Planner<'a> {
                 self.options.scope,
                 &projection_registry,
             )?),
-        }
+        };
+        let obsolete_files = match self.options.target {
+            TargetRuntime::Codex => codex::obsolete_projection_files(
+                paths.target_root.clone(),
+                self.options.scope,
+                &projection_registry,
+            ),
+        };
 
         Ok(InstallPlan {
             scope: self.options.scope,
@@ -47,12 +54,17 @@ impl<'a> Planner<'a> {
             ssot_root: paths.ssot_root,
             target_root: paths.target_root,
             files,
+            obsolete_files,
         })
     }
 
     pub fn execute(&self) -> Result<InstallResult> {
         let plan = self.plan()?;
-        let summary = write_files(&plan.files, self.options.dry_run, self.options.force)?;
+        let mut summary = write_files(&plan.files, self.options.dry_run, self.options.force)?;
+        summary.removed.extend(remove_managed_files(
+            &plan.obsolete_files,
+            self.options.dry_run,
+        )?);
         let hook_trust = match self.options.target {
             TargetRuntime::Codex => Some(codex::ensure_hook_trust(
                 &plan.target_root.join("hooks.json"),

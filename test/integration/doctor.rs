@@ -30,10 +30,8 @@ fn doctor_reports_missing_then_ok() {
         .unwrap();
     assert!(install.status.success());
 
-    let ssot_skill = dir.path().join(".agents/skills/deep-interview/SKILL.md");
-    let mut ssot_content = fs::read_to_string(&ssot_skill).unwrap();
-    ssot_content.push_str("\nDOCTOR DRIFT TOKEN\n");
-    fs::write(&ssot_skill, ssot_content).unwrap();
+    let agents_md = dir.path().join(".codex/AGENTS.md");
+    fs::write(&agents_md, "# MEGARA:MANAGED\nstale").unwrap();
 
     let stale = megara()
         .arg("doctor")
@@ -48,7 +46,7 @@ fn doctor_reports_missing_then_ok() {
     assert!(stale.status.success());
     let stale_stdout = String::from_utf8_lossy(&stale.stdout);
     assert!(stale_stdout.contains("\"ok\": false"));
-    assert!(stale_stdout.contains(".codex/skills/deep-interview/SKILL.md"));
+    assert!(stale_stdout.contains(".codex/AGENTS.md"));
 
     let sync = megara_with_codex_home(codex_home.path())
         .arg("sync")

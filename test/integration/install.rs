@@ -27,9 +27,14 @@ fn installs_project_scope_codex_harness() {
     assert!(dir.path().join(".codex/AGENTS.md").exists());
     assert!(dir
         .path()
+        .join(".agents/skills/deep-interview/SKILL.md")
+        .exists());
+    assert!(dir.path().join(".agents/skills/caveman/SKILL.md").exists());
+    assert!(!dir
+        .path()
         .join(".codex/skills/deep-interview/SKILL.md")
         .exists());
-    assert!(dir.path().join(".codex/skills/caveman/SKILL.md").exists());
+    assert!(!dir.path().join(".codex/skills/caveman/SKILL.md").exists());
     assert!(dir
         .path()
         .join(".agents/skill-fragments/deep-interview/auto-research-greenfield.md")
@@ -42,7 +47,7 @@ fn installs_project_scope_codex_harness() {
     assert!(dir.path().join(".codex/hooks.json").exists());
     assert!(dir.path().join(".codex/agents/executor.toml").exists());
     let skill =
-        fs::read_to_string(dir.path().join(".codex/skills/deep-interview/SKILL.md")).unwrap();
+        fs::read_to_string(dir.path().join(".agents/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));
     assert!(skill.contains("MEGARA:MANAGED"));
     assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
@@ -62,10 +67,10 @@ fn installs_project_scope_codex_harness() {
     assert!(!skill.contains("Deep Interview threshold:"));
     assert!(!skill.contains("I'm reading this as"));
     assert!(!skill.contains("Restate gate"));
-    let caveman = fs::read_to_string(dir.path().join(".codex/skills/caveman/SKILL.md")).unwrap();
+    let caveman = fs::read_to_string(dir.path().join(".agents/skills/caveman/SKILL.md")).unwrap();
     assert!(caveman.contains("ACTIVE EVERY RESPONSE"));
     assert!(caveman.contains("stop caveman"));
-    let ralplan = fs::read_to_string(dir.path().join(".codex/skills/ralplan/SKILL.md")).unwrap();
+    let ralplan = fs::read_to_string(dir.path().join(".agents/skills/ralplan/SKILL.md")).unwrap();
     assert!(ralplan.contains("Megara Review Pass:"));
     assert!(ralplan.contains("Megara Plan Gate:"));
     assert!(ralplan.contains("Megara Approval Gate:"));
@@ -73,7 +78,7 @@ fn installs_project_scope_codex_harness() {
     assert!(ralplan.contains("plan_sha256"));
     assert!(ralplan.contains("pending_approval"));
     let ultragoal =
-        fs::read_to_string(dir.path().join(".codex/skills/ultragoal/SKILL.md")).unwrap();
+        fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
     assert!(ultragoal.contains(r#"MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}""#));
     assert!(ultragoal.contains(r#""$MEGARA_BIN" ultragoal"#));
     assert!(!ultragoal.contains("\nmegara ultragoal"));

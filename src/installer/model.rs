@@ -93,6 +93,7 @@ pub struct InstallPlan {
     pub ssot_root: PathBuf,
     pub target_root: PathBuf,
     pub files: Vec<PlannedFile>,
+    pub obsolete_files: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Serialize)]
