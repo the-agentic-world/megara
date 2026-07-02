@@ -8,7 +8,7 @@ pub(super) fn submit_question(project: &Path) {
     let payload = br#"{
   "session_id": "sess-di",
   "cwd": "/tmp/project",
-  "last_assistant_message": "Round 1 | Component: game | Targeting: Verification | Ambiguity: 42%\n\nWhat proves this is done?\n\nMegara Question Gate:\n- id: di-r1-verification\n- round: 1\n- component: game\n- dimension: Verification\n- question: What proves this is done?\n- options:\n  - Unit tests\n  - E2E tests\n- free_text: true\n\n"
+  "last_assistant_message": "What proves this is done?\n\n1. Unit tests\n2. E2E tests\n3. Direct input / not listed\n\n"
 }"#;
     assert_success(run_hook(project, project, "Stop", None, payload));
 }

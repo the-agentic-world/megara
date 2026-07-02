@@ -13,8 +13,18 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     let state = read_json(&state_path);
     assert_eq!(state["active"], true);
     assert_eq!(state["phase"], "question_pending");
-    assert_eq!(state["pending_question"]["id"], "di-r1-verification");
+    assert!(state["pending_question"]["id"]
+        .as_str()
+        .is_some_and(|id| id.starts_with("di-visible-")));
+    assert_eq!(
+        state["pending_question"]["question"],
+        "What proves this is done?"
+    );
     assert_eq!(state["pending_question"]["options"][0], "Unit tests");
+    assert_eq!(
+        state["pending_question"]["options"][2],
+        "Direct input / not listed"
+    );
 
     answer_question(dir.path());
     let state = read_json(&state_path);
@@ -75,6 +85,25 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(events.contains("\"event\":\"spec_persisted\""));
     assert!(events.contains("\"event\":\"next_workflow_suggested\""));
     assert!(!events.contains("di-old-transcript"));
+}
+
+#[test]
+fn visible_question_requires_deep_interview_catch_all_without_score_marker() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let payload = br#"{
+  "session_id": "ordinary-question",
+  "cwd": "/tmp/project",
+  "last_assistant_message": "Which package manager should we use?\n\n1. npm\n2. pnpm\n\n"
+}"#;
+    assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, payload));
+
+    assert!(!dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/ordinary-question.json")
+        .exists());
 }
 
 #[test]

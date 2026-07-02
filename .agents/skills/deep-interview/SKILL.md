@@ -18,10 +18,12 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Keep parseable block keys, file paths, commands, config keys, API names, and quoted source text unchanged.
 - In parseable blocks, free-text values such as `question`, `options`, `rationale`, and `summary` should use the configured locale unless they are technical literals.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
-- Do not copy English section headings into visible output. Translate labels such as `Round 0: Topology Confirmation`, `remaining ambiguity`, `weakest dimension`, and `next target` into the configured locale.
+- Do not copy English section headings into user-facing output. Translate final-spec labels such as `Round 0: Topology Confirmation`, `remaining ambiguity`, `weakest dimension`, and `next target` into the configured locale when they appear in the final artifact.
 - Inspect repository facts before asking the user about facts the repository can answer.
 - Start with Round 0 topology confirmation: identify top-level components or outcomes and ask whether the shape is correct.
 - Score remaining ambiguity after each answer as a percentage, not a 0-10 rating.
+- Keep active interview output compact for humans; do not include technical hook blocks in active user-facing answers.
+- End every visible option list with a configured-locale free-text catch-all option for answers outside the listed choices.
 - Target the weakest active component and dimension each round.
 - Continue until ambiguity is at or below the resolved threshold, or the user explicitly exits early.
 - End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
@@ -46,7 +48,7 @@ Resolve the ambiguity threshold before the first question.
 - If the user explicitly gives a stricter or looser threshold, use that and name it.
 - If project or runtime settings expose a deep-interview threshold, use that and name the source.
 
-Before the first topology question, report the threshold in configured-locale prose. Keep only numeric values and literal configuration/source names unchanged.
+Before the first topology question, resolve the threshold internally. Do not print a separate threshold line in active question output. Include the threshold and source in the final crystallized specification.
 
 ```text
 <configured-locale threshold label>: NN% <configured-locale remaining ambiguity> (source: default|user|project|runtime)
@@ -79,15 +81,9 @@ Use these weighted dimensions:
 Calculate weighted clarity as `sum(dimension_clarity_percent * weight) / 100`.
 Calculate ambiguity as `100 - weighted_clarity`.
 
-After each user answer, report at minimum using configured-locale prose:
+After each user answer, update the scores internally and carry them into the final crystallized specification. Do not show score details in active question turns. If you need a private score note, keep it out of the user-facing answer.
 
-```text
-<configured-locale ambiguity label>: NN% <configured-locale remaining>
-<configured-locale weakest dimension label>: <dimension> (MM%)
-<configured-locale next target label>: <component> / <dimension> — <configured-locale one-sentence rationale>
-```
-
-Ambiguity is bidirectional and non-monotonic. Later answers can increase ambiguity when they contradict established facts, add scope, expose internal inconsistency, or fail to answer the targeted gap. Surface the rise through the normal score report and target the next question at the affected component/dimension.
+Ambiguity is bidirectional and non-monotonic. Later answers can increase ambiguity when they contradict established facts, add scope, expose internal inconsistency, or fail to answer the targeted gap. Reflect the change in internal scoring and target the next question at the affected component/dimension.
 
 Do not stop the interview until:
 
@@ -114,9 +110,27 @@ Ask exactly one first-round topology confirmation question. Use configured-local
 2. ...
 
 <configured-locale single confirmation question about adding, removing, merging, splitting, or deferring components>
+
+1. <configured-locale accept as-is option>
+2. <configured-locale adjust components option>
+3. <configured-locale direct input / not in listed options>
 ```
 
-After the answer, carry this topology forward for every score, progress report, and final spec.
+After the answer, carry this topology forward for internal scoring and the final spec.
+
+## Compact Visible Output
+
+Active interview turns must be compact. Show only the information needed for the user to answer the next question:
+
+1. One short context sentence only when it materially helps the user answer.
+2. One targeted question.
+3. A short numbered option list.
+
+Do not print progress-score lines, technical hook-gate headers, parseable gate blocks, full score tables, full topology tables, all established facts, all open gaps, trigger history, lateral-review notes, transcript summaries, semantic ledger updates, or internal reasoning during active question turns. Keep those details in local records and the final crystallized lock artifact.
+
+Never include labels such as `remaining ambiguity`, `weakest dimension`, `next target`, `Interview ledger update`, `Established facts`, or `Open gaps` in an active question turn. The user only needs the next question and answer choices.
+
+Final crystallized output may be longer because it becomes the persisted markdown lock artifact. Even then, avoid duplicating round details beyond what is needed for `ralplan`.
 
 ## Phase 1: Context Setup
 
@@ -159,28 +173,28 @@ For each round:
 7. Update established facts, disputed facts, deferrals, and open gaps.
 8. Record the round locally.
 
-Every user-facing question must include a parseable gate block immediately after the question prose. Use this exact shape and leave a blank line after the block:
+Every user-facing question must show a short numbered visible option list, so the user can answer by number. The last visible option must be the configured-locale free-text catch-all.
+
+Do not include technical gate blocks in active question answers. Runtime hooks infer the pending question from the last visible question line and the following visible numbered options. Use this visible shape:
 
 ```text
-Megara Question Gate:
-- id: di-r<N>-<short-slug>
-- round: <N>
-- component: <component-slug>
-- dimension: <Outcome clarity|Scope boundary|User value|Technical constraints|Verification|Risk/context>
-- question: <single question text>
-- options:
-  - <option 1>
-  - <option 2>
-- free_text: true
+<single question text?>
+
+1. <option 1>
+2. <option 2>
+3. <configured-locale direct input / not in listed options>
 ```
 
 Rules:
 
-- `id` must be stable for the question and unique within the interview.
-- `options` may be empty only when the question requires free text.
-- `free_text` must be `true` when the user may answer outside the listed options.
-- Do not put implementation instructions inside the gate.
-- Do not ask another question outside the gate in the same assistant turn.
+- The visible question should be one line ending with a question mark.
+- Do not omit `options`; for free-text questions, provide a single catch-all option.
+- Number each option from 1 in order.
+- The user may answer with the option number or with free text.
+- The last option must always be a configured-locale catch-all such as "direct input / not in listed options". This option is visible UX, not a restriction on free-text answers.
+- Do not put implementation instructions in the visible options.
+- Legacy parseable gate blocks are supported by runtime hooks for backward compatibility only; do not emit them in new active question answers.
+- Do not ask another question in the same assistant turn.
 
 Question styles:
 
@@ -277,20 +291,9 @@ When a crystallized final response includes `Megara Workflow State:`, runtime ho
 
 The matching session JSON should reference `spec_path`, `spec_sha256`, and `spec_persisted_at`.
 
-Do not treat `last-*` files as durable interview history. If a semantic interview ledger is needed in your response, summarize from the conversation history and the append-only hook logs, not from `last-*`.
+Do not treat `last-*` files as durable interview history. If a semantic interview ledger is needed, summarize from the conversation history, persisted pending-question state, and append-only hook logs, not from `last-*`.
 
-At the end of every scored round, include a compact ledger update in the assistant message so the append-only hook log captures the semantic Q&A:
-
-```text
-Interview ledger update:
-- Round: N
-- Component: <component>
-- Question: <question summary>
-- Answer: <confirmed answer summary>
-- Ambiguity: <previous>% -> <current>%
-- Established facts: <added/disputed facts or none>
-- Open gaps: <remaining gaps>
-```
+Do not emit a visible ledger update during active interview turns. Runtime hooks already persist raw prompts, assistant messages, pending questions, answers, and workflow events locally. Put transcript summaries only in the final crystallized lock artifact.
 
 ## Output
 
