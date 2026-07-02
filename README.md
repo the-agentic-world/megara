@@ -9,6 +9,22 @@ V1 targets Codex only, but the code is structured around target adapters so addi
 
 ## Install
 
+Install the latest macOS release with the installer script:
+
+```bash
+curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/install.sh | sh
+```
+
+Install a specific version or directory:
+
+```bash
+curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/install.sh | MEGARA_VERSION=v0.1.0 MEGARA_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+The installer supports macOS arm64 and Intel. It installs to `/usr/local/bin` by default.
+
+Or install through Homebrew:
+
 ```bash
 brew install the-agentic-world/tap/megara
 ```
