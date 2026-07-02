@@ -54,6 +54,9 @@ pub fn write_files(files: &[PlannedFile], dry_run: bool, force: bool) -> Result<
             if matches!(action, WriteAction::Create | WriteAction::Update) {
                 write_one(file)?;
             }
+            if !matches!(action, WriteAction::Conflict) {
+                ensure_mode(file)?;
+            }
         }
     }
 
@@ -94,5 +97,29 @@ fn write_one(file: &PlannedFile) -> Result<()> {
     handle
         .write_all(file.content.as_bytes())
         .with_context(|| format!("failed to write {}", file.path.display()))?;
+    Ok(())
+}
+
+fn ensure_mode(file: &PlannedFile) -> Result<()> {
+    if !file.executable {
+        return Ok(());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let metadata = fs::metadata(&file.path)
+            .with_context(|| format!("failed to stat {}", file.path.display()))?;
+        let mut permissions = metadata.permissions();
+        let mode = permissions.mode();
+        if mode & 0o111 == 0o111 {
+            return Ok(());
+        }
+        permissions.set_mode(mode | 0o755);
+        fs::set_permissions(&file.path, permissions)
+            .with_context(|| format!("failed to chmod {}", file.path.display()))?;
+    }
+
     Ok(())
 }

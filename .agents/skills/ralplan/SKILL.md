@@ -22,7 +22,7 @@ Use this workflow after a request is clear enough to plan, but before implementa
 - The architect reviews system shape, boundaries, and tradeoffs.
 - The critic rejects vague, unverifiable, or internally inconsistent plans.
 - Iterate until the plan is executable, the user requests refinement, or a blocker is explicit.
-- Do not finish with a pending-approval plan until planner, architect, and critic passes have all been recorded and the critic verdict is `OKAY`.
+- Do not finish with a pending-approval plan until planner, architect, and critic passes have all been recorded, the planner and architect verdicts are approval-capable, and the critic verdict is `OKAY`.
 - Always finish approved planning with a pending-approval plan, clear execution options, and the parseable gate blocks below.
 - Write every user-facing sentence in the configured locale, including progress updates, plan headings, option labels, assumptions, risks, and final summaries.
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
@@ -50,9 +50,11 @@ Use this review order before producing the pending-approval plan:
 
 If the critic returns `ITERATE`, revise once and run the critic pass again. If the critic still blocks, stop with the blocker instead of inventing certainty.
 
+Planner `DRAFT` means the plan is still an intermediate draft. It may be recorded during review, but it is not approval-capable and must not be used in the final pending-approval response. Before asking for approval, the latest planner verdict must be `CLEAR`, `WATCH`, or `OKAY`.
+
 The pending-approval plan is allowed only after these review conditions are true:
 
-- Latest planner pass is present.
+- Latest planner pass is `CLEAR`, `WATCH`, or `OKAY`.
 - Latest architect pass is `CLEAR`, `WATCH`, or `OKAY`.
 - Latest critic pass is `OKAY`.
 

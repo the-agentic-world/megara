@@ -51,4 +51,6 @@ The installer compiles these files into the `megara` binary, writes them to the 
   - `ultragoal/<session-id>/goals.json` stores goal status, source metadata, evidence, and completion receipts.
   - `ultragoal/<session-id>/ledger.jsonl` records goal creation, start, checkpoint, and steering events.
 - During active `deep-interview`, `ralplan`, or `ultragoal` goal-planning, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.
-- `ultragoal` permits implementation mutation only after `megara ultragoal complete-goals` selects an active goal.
+- `ultragoal` permits implementation mutation only after `.agents/bin/megara ultragoal complete-goals` selects an active goal.
+- Codex App reads hooks at session start. After project-scope install, open a new saved-project or exact-directory session; projectless sessions may create a sibling directory without this harness.
+- `deep-interview` and `ralplan` lock artifacts are hook-managed. Agents must not directly edit `.agents/state/workflows/deep-interview/**` or `.agents/state/workflows/ralplan/**`; direct write attempts are guarded even when a workflow is no longer active.

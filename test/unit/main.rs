@@ -19,7 +19,11 @@ mod ultragoal;
 #[path = "../../src/writer.rs"]
 mod writer;
 
-pub(crate) use hook::*;
+pub(crate) use hook::fsutil::append_jsonl;
+pub(crate) use hook::mutation::mutating_command;
+pub(crate) use hook::parser::{
+    approval_gate_from_text, parse_blocks, text_before_first_workflow_block,
+};
 pub(crate) use installer::{PlannedFile, MANAGED_MARKER};
 pub(crate) use serde_json::{json, Value};
 pub(crate) use std::{fs, path::Path};

@@ -18,13 +18,16 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Keep parseable block keys, file paths, commands, config keys, API names, and quoted source text unchanged.
 - In parseable blocks, free-text values such as `question`, `options`, `rationale`, and `summary` should use the configured locale unless they are technical literals.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
+- Do not copy English section headings into visible output. Translate labels such as `Round 0: Topology Confirmation`, `remaining ambiguity`, `weakest dimension`, and `next target` into the configured locale.
 - Inspect repository facts before asking the user about facts the repository can answer.
 - Start with Round 0 topology confirmation: identify top-level components or outcomes and ask whether the shape is correct.
 - Score remaining ambiguity after each answer as a percentage, not a 0-10 rating.
 - Target the weakest active component and dimension each round.
 - Continue until ambiguity is at or below the resolved threshold, or the user explicitly exits early.
-- End with a pending-approval specification and a recommendation to continue through `ralplan`.
+- End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
 - Recording interview state is allowed and required; it is not implementation work.
+- Runtime hooks own `.agents/state/workflows/deep-interview/**` and `.agents/state/workflows/ralplan/**`. Do not inspect, edit, repair, or synthesize those files to force a handoff.
+- When the final crystallized spec is emitted, make it the final response of that assistant turn. Do not start `ralplan`, run tools, inspect state, or continue the workflow in the same turn.
 
 ## Use When
 
@@ -253,6 +256,8 @@ Megara Workflow State:
 
 The final pending-approval spec and the `Megara Workflow State` block must be in the same assistant response. Runtime hooks persist that full response as the locked markdown artifact for the interview. A standalone workflow-state block without the final spec body is not a valid crystallized handoff and should not be used except to diagnose a missing-artifact failure.
 
+Immediately before the `Megara Workflow State` block, include one short configured-locale next-step suggestion. It should tell the user or controller to continue with `ralplan` from the persisted spec lock and that implementation is still not allowed. Do not start `ralplan` or implementation in the same response. After emitting the block, stop; the next assistant turn may begin `ralplan` after the Stop hook persists the lock.
+
 If the user explicitly cancels the interview, use `status: cancelled`. If the interview is still active and asking more questions, do not emit this workflow state block.
 
 ## Local Record
@@ -303,6 +308,6 @@ Produce a pending-approval specification:
 - Technical context: repo evidence for brownfield work; chosen constraints for greenfield work.
 - Ontology: key entities, attributes, and relationships when applicable.
 - Interview transcript summary with all rounds.
-- Suggested next workflow: normally `ralplan`.
+- Suggested next workflow: normally `ralplan`, with a concrete configured-locale next-step sentence before the final workflow-state block.
 
 End in pending approval and include the `Megara Workflow State` block in the same response so the runtime can persist the markdown spec artifact. Do not start implementation from this workflow.

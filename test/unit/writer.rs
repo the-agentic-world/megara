@@ -42,3 +42,19 @@ fn force_updates_unmanaged_files() {
     assert_eq!(summary.updated, vec![path.clone()]);
     assert!(fs::read_to_string(path).unwrap().contains(MANAGED_MARKER));
 }
+
+#[cfg(unix)]
+#[test]
+fn writes_executable_shell_files() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("bin/megara");
+    let file = PlannedFile::new_executable_shell(path.clone(), "#!/bin/sh\nexit 0\n");
+
+    let summary = write_files(&[file], false, false).unwrap();
+
+    assert_eq!(summary.created, vec![path.clone()]);
+    let mode = fs::metadata(path).unwrap().permissions().mode();
+    assert_ne!(mode & 0o111, 0);
+}

@@ -14,7 +14,8 @@ Use this workflow when an approved plan should be executed to completion with du
 - Start from an approved `ralplan` handoff by default. Use direct execution only when the user request is already concrete enough and the direct run is explicitly recorded with `--allow-direct`.
 - If `deep-interview` is active and not crystallized, do not advance into ultragoal.
 - Keep one active goal at a time unless the work is explicitly split into independent lanes.
-- Record durable state through `megara ultragoal`; do not rely only on chat memory.
+- Record durable state through the Megara CLI; do not rely only on chat memory.
+- Resolve the CLI before running any command: `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"`. Do not rely on bare `megara` being present on `PATH`.
 - Record evidence before considering a goal complete.
 - Treat missing tests, shallow evidence, failed review, or plan/code mismatch as blockers.
 - Do not ask the user to resolve work the agent can investigate or fix.
@@ -27,7 +28,8 @@ Use this workflow when an approved plan should be executed to completion with du
 Use the project scope by default:
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> <command>
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> <command>
 ```
 
 The durable state lives under:
@@ -36,14 +38,15 @@ The durable state lives under:
 - `.agents/state/workflows/ultragoal/<session-id>/goals.json`
 - `.agents/state/workflows/ultragoal/<session-id>/ledger.jsonl`
 
-For global harnesses, use `--scope global`; the same files are stored under `~/.megara/state/workflows/ultragoal/<session-id>/`.
+For global harnesses, set `MEGARA_BIN="${MEGARA_BIN:-$HOME/.megara/bin/megara}"` and use `--scope global`; the same files are stored under `~/.megara/state/workflows/ultragoal/<session-id>/`.
 
 ## Goal Creation
 
 Create goals from the approved `ralplan` handoff for this session:
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> create-goals
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> create-goals
 ```
 
 The command reads `.agents/state/workflows/ralplan/<session-id>.json`, verifies that the approved handoff target is `ultragoal`, verifies the approved plan sha256, and then creates goals from the locked plan artifact.
@@ -63,19 +66,21 @@ If there are no `@goal` markers, Megara creates one goal from the whole brief.
 Do not overwrite an existing session unless intentionally restarting:
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> create-goals --force
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> create-goals --force
 ```
 
 For a concrete direct run without ralplan, make the bypass explicit:
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> create-goals --allow-direct --brief "<concrete approved goal>"
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> create-goals --allow-direct --brief "<concrete approved goal>"
 ```
 
 ## Execution Loop
 
-1. Run `megara ultragoal --scope project --session-id <session-id> status`.
-2. Run `megara ultragoal --scope project --session-id <session-id> complete-goals`.
+1. Run `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"; "$MEGARA_BIN" ultragoal --scope project --session-id <session-id> status`.
+2. Run `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"; "$MEGARA_BIN" ultragoal --scope project --session-id <session-id> complete-goals`.
 3. Execute the returned active goal with the smallest correct change.
 4. Run focused verification.
 5. Run review and cleanup gates.
@@ -87,7 +92,8 @@ megara ultragoal --scope project --session-id <session-id> create-goals --allow-
 Complete checkpoints require `--quality-gate-json`.
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> checkpoint \
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> checkpoint \
   --goal-id G001 \
   --status complete \
   --evidence "cargo test passed; changed src/game.rs and tests/game.rs" \
@@ -134,7 +140,8 @@ Megara stores a completion receipt containing sha256 values for the evidence, qu
 For non-complete checkpoints, still record evidence:
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> checkpoint \
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> checkpoint \
   --goal-id G001 \
   --status blocked \
   --evidence "Blocked because the required API key is absent."
@@ -143,7 +150,8 @@ megara ultragoal --scope project --session-id <session-id> checkpoint \
 When the approved goal needs a controlled addition, add a pending subgoal:
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> steer \
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> steer \
   --kind add-subgoal \
   --title "Add regression test" \
   --objective "Cover the discovered parser edge case before completion." \
@@ -153,7 +161,8 @@ megara ultragoal --scope project --session-id <session-id> steer \
 For important context that should not create a goal:
 
 ```bash
-megara ultragoal --scope project --session-id <session-id> steer \
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" ultragoal --scope project --session-id <session-id> steer \
   --kind annotate-ledger \
   --evidence "Manual QA covered Safari and Chrome."
 ```
@@ -169,4 +178,4 @@ Megara Workflow State:
 - next: <next action>
 ```
 
-The hook blocks product file mutation while status is `goal_planning`. After `megara ultragoal complete-goals` selects an active goal, report `status: active`; implementation edits are then expected and allowed.
+The hook blocks product file mutation while status is `goal_planning`. After `"$MEGARA_BIN" ultragoal complete-goals` selects an active goal, report `status: active`; implementation edits are then expected and allowed.

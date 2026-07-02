@@ -59,6 +59,12 @@ megara targets list
 
 Megara protects existing files by default. If a destination file exists and is not Megara-managed, the command reports a conflict and leaves it untouched. Use `--force` only when you intentionally want Megara to take ownership.
 
+## Codex App Notes
+
+For project-scope harnesses, run `megara install --scope project --target codex` in the project directory, then open a new Codex App session for that saved project or exact installed directory. Codex App loads hooks when a session starts, so installing Megara inside an already-running session does not retrofit that same session.
+
+Avoid relying on projectless Codex App sessions for preinstalled directories. Codex App may create a sibling directory such as `name-2`, which will not contain the `.agents/` and `.codex/` files you installed.
+
 ## Included Harness
 
 The repository's `.agents/` directory is the bundled harness source. `megara install` writes that source to the selected scope, then projects supported runtime files.

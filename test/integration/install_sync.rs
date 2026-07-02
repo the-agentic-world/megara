@@ -1,0 +1,59 @@
+use super::*;
+
+#[test]
+fn sync_refreshes_managed_projection() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    let agents = dir.path().join(".codex/AGENTS.md");
+    let ssot_skill = dir.path().join(".agents/skills/deep-interview/SKILL.md");
+    let projected_skill = dir.path().join(".codex/skills/deep-interview/SKILL.md");
+    let ssot_agent = dir.path().join(".agents/agents/executor.toml");
+    let projected_agent = dir.path().join(".codex/agents/executor.toml");
+    let ssot_config = dir.path().join(".agents/megara.toml");
+
+    install_project_harness(dir.path(), codex_home.path());
+    fs::write(&agents, "# MEGARA:MANAGED\nstale").unwrap();
+    let mut ssot_content = fs::read_to_string(&ssot_skill).unwrap();
+    ssot_content.push_str("\nSSOT EDIT TOKEN\n");
+    fs::write(&ssot_skill, ssot_content).unwrap();
+    update_executor_ssot(&ssot_agent);
+    let config_content = fs::read_to_string(&ssot_config).unwrap();
+    fs::write(&ssot_config, config_content.replace("ko-KR", "en-US")).unwrap();
+
+    let sync = megara_with_codex_home(codex_home.path())
+        .arg("sync")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        sync.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+    assert!(fs::read_to_string(agents)
+        .unwrap()
+        .contains("Locale: `en-US`"));
+    assert!(fs::read_to_string(projected_skill)
+        .unwrap()
+        .contains("SSOT EDIT TOKEN"));
+    assert!(fs::read_to_string(projected_agent)
+        .unwrap()
+        .contains("SSOT AGENT TOKEN"));
+}
+
+fn update_executor_ssot(ssot_agent: &Path) {
+    let ssot_agent_content = fs::read_to_string(ssot_agent).unwrap();
+    fs::write(
+        ssot_agent,
+        ssot_agent_content.replace(
+            "Report changed files, decisions, verification performed, and remaining blockers.",
+            "Report changed files, decisions, verification performed, and remaining blockers.\nSSOT AGENT TOKEN",
+        ),
+    )
+    .unwrap();
+}
