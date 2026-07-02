@@ -15,7 +15,9 @@ use crate::cli::{HookArgs, ScopeArg};
 
 const DEEP_INTERVIEW: &str = "deep-interview";
 const RALPLAN: &str = "ralplan";
-const WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN];
+const ULTRAGOAL: &str = "ultragoal";
+const WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN, ULTRAGOAL];
+const MUTATION_GUARD_WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN, ULTRAGOAL];
 
 #[derive(Debug)]
 pub struct HookOptions {
@@ -327,6 +329,9 @@ fn handle_stop(
                 &terminal,
                 &mut state,
             )?,
+            ULTRAGOAL => {
+                handle_generic_terminal(timestamp, payload_file, &paths, &terminal, &mut state)?
+            }
             _ => return Ok(0),
         }
         write_json_atomic(&paths.session_file, &state)?;
@@ -468,9 +473,12 @@ fn handle_pre_tool_use(
         }),
     )?;
 
-    eprintln!(
-        "MEGARA mutation guard: {skill} is active. Approve, refine, complete, or cancel the workflow before mutating files."
-    );
+    let guidance = if skill == ULTRAGOAL {
+        "run `megara ultragoal complete-goals` and enter an active goal before mutating files"
+    } else {
+        "approve, refine, complete, or cancel the workflow before mutating files"
+    };
+    eprintln!("MEGARA mutation guard: {skill} is active. {guidance}.");
     if env::var("MEGARA_MUTATION_GUARD").unwrap_or_else(|_| "block".to_string()) == "warn" {
         Ok(0)
     } else {
@@ -673,6 +681,27 @@ fn handle_ralplan_terminal(
     append_jsonl(&paths.events_file, &entry)
 }
 
+fn handle_generic_terminal(
+    timestamp: &str,
+    payload_file: &Path,
+    paths: &WorkflowPaths,
+    terminal: &TerminalState,
+    state: &mut Value,
+) -> Result<()> {
+    update_terminal_state(timestamp, state, terminal, None);
+    append_jsonl(
+        &paths.events_file,
+        &json!({
+            "timestamp": timestamp,
+            "event": "workflow_state",
+            "session_id": paths.session_id,
+            "skill": terminal.skill,
+            "status": terminal.status,
+            "payload": payload_file,
+        }),
+    )
+}
+
 fn persist_ralplan_review(
     timestamp: &str,
     payload_file: &Path,
@@ -835,15 +864,28 @@ fn active_workflow_state(
     state_dir: &Path,
     payload: &Value,
 ) -> Option<(&'static str, Value, PathBuf)> {
-    for &skill in WORKFLOWS {
+    for &skill in MUTATION_GUARD_WORKFLOWS {
         let paths = workflow_paths(state_dir, payload, skill);
         if let Some(state) = load_json(&paths.session_file) {
-            if state.get("active").and_then(Value::as_bool) == Some(true) {
+            if mutation_guard_applies(skill, &state) {
                 return Some((skill, state, paths.events_file));
             }
         }
     }
     None
+}
+
+fn mutation_guard_applies(skill: &'static str, state: &Value) -> bool {
+    if state.get("active").and_then(Value::as_bool) != Some(true) {
+        return false;
+    }
+    if skill != ULTRAGOAL {
+        return true;
+    }
+    matches!(
+        state.get("phase").and_then(Value::as_str),
+        Some("goal_planning" | "planning" | "initialized" | "handoff")
+    )
 }
 
 struct RalplanPromptDecision {

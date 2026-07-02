@@ -5,6 +5,7 @@ mod installer;
 mod paths;
 mod targets;
 mod templates;
+mod ultragoal;
 mod writer;
 
 use anyhow::Result;
@@ -39,6 +40,7 @@ fn main() -> Result<()> {
                 std::process::exit(exit_code);
             }
         }
+        Commands::Ultragoal(args) => ultragoal::run(args)?,
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {
                 let list = registry.template_names();

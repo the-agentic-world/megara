@@ -46,4 +46,9 @@ The installer compiles these files into the `megara` binary, writes them to the 
   - `ralplan/reviews/index.jsonl` indexes persisted review artifacts and sha256 values.
   - `ralplan/plans/ralplan-<session-id>-<plan-id>-<timestamp>.md` stores the pending plan as a durable lock artifact with the linked deep-interview input sha256 when present.
   - `ralplan/plans/index.jsonl` indexes persisted plan artifacts, input spec sha256 values, and plan sha256 values.
-- During active `deep-interview` or `ralplan`, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.
+  - `ultragoal/<session-id>.json` tracks runtime phase, active goal, source plan, and mutation-guard state for the hook.
+  - `ultragoal/<session-id>/brief.md` stores the approved execution brief.
+  - `ultragoal/<session-id>/goals.json` stores goal status, source metadata, evidence, and completion receipts.
+  - `ultragoal/<session-id>/ledger.jsonl` records goal creation, start, checkpoint, and steering events.
+- During active `deep-interview`, `ralplan`, or `ultragoal` goal-planning, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.
+- `ultragoal` permits implementation mutation only after `megara ultragoal complete-goals` selects an active goal.

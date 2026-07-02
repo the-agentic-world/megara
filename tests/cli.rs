@@ -84,6 +84,38 @@ fn pending_ralplan_plan_payload(session_id: &str, plan_id: &str, summary: &str) 
     .to_string()
 }
 
+fn passing_quality_gate_json() -> String {
+    serde_json::json!({
+        "architectReview": {
+            "recommendation": "APPROVE",
+            "architectureStatus": "CLEAR",
+            "productStatus": "CLEAR",
+            "codeStatus": "CLEAR",
+            "evidence": "Architecture, product behavior, and code boundaries reviewed.",
+            "reviewedFiles": ["reviewed.md"],
+            "blockers": []
+        },
+        "executorQa": {
+            "status": "passed",
+            "e2eStatus": "passed",
+            "redTeamStatus": "passed",
+            "evidence": "Focused tests and manual regression checks passed.",
+            "commands": ["cargo test"],
+            "artifactRefs": ["verification.log"],
+            "blockers": []
+        },
+        "iteration": {
+            "status": "passed",
+            "fullRerun": true,
+            "evidence": "Final verification reran after cleanup.",
+            "commands": ["cargo test"],
+            "artifactRefs": ["verification.log"],
+            "blockers": []
+        }
+    })
+    .to_string()
+}
+
 #[test]
 fn installs_project_scope_codex_harness() {
     let dir = tempdir().unwrap();
@@ -1146,6 +1178,300 @@ fn project_hook_rejects_cwd_outside_project_root() {
         .path()
         .join(".agents/state/hooks/events.jsonl")
         .exists());
+}
+
+#[test]
+fn ultragoal_cli_creates_goals_and_records_completion_receipt() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let brief = "@goal: Board shell\nBuild the playable board shell.\n\n@goal Score model\nTrack scores and losses.";
+    let direct = megara()
+        .arg("ultragoal")
+        .arg("--scope")
+        .arg("project")
+        .arg("--session-id")
+        .arg("sess-ug")
+        .arg("create-goals")
+        .arg("--brief")
+        .arg(brief)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(!direct.status.success());
+    assert!(String::from_utf8_lossy(&direct.stderr).contains("--allow-direct"));
+
+    let review_payload = ready_ralplan_reviews_payload("sess-ug");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let plan_id = "rp-ultragoal";
+    let plan_message = format!(
+        "**Pending Execution Plan**\n\n{brief}\n\nAcceptance criteria:\n- Both goals are verified before completion.\n\nMegara Plan Gate:\n- id: {plan_id}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {plan_id}\n- next: approval\n\n"
+    );
+    let plan_payload = serde_json::json!({
+        "session_id": "sess-ug",
+        "last_assistant_message": plan_message,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let ralplan_state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-ug.json");
+    let ralplan_state = fs::read_to_string(&ralplan_state_path).unwrap();
+    let ralplan_state: serde_json::Value = serde_json::from_str(&ralplan_state).unwrap();
+    let plan_sha256 = ralplan_state["plan_sha256"].as_str().unwrap();
+    let approval_prompt = format!(
+        "Megara Approval Gate:\n- plan_id: {plan_id}\n- plan_sha256: {plan_sha256}\n- handoff_target: ultragoal\n"
+    );
+    let approval_payload = serde_json::json!({
+        "session_id": "sess-ug",
+        "prompt": approval_prompt,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        approval_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let create = megara()
+        .arg("ultragoal")
+        .arg("--scope")
+        .arg("project")
+        .arg("--session-id")
+        .arg("sess-ug")
+        .arg("create-goals")
+        .arg("--json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        create.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    let state_dir = dir.path().join(".agents/state/workflows/ultragoal/sess-ug");
+    assert!(state_dir.join("brief.md").exists());
+    let goals_path = state_dir.join("goals.json");
+    let goals = fs::read_to_string(&goals_path).unwrap();
+    let goals: serde_json::Value = serde_json::from_str(&goals).unwrap();
+    assert_eq!(goals["source"]["kind"], "ralplan");
+    assert_eq!(goals["source"]["ralplan_plan_id"], plan_id);
+    assert_eq!(goals["goals"][0]["id"], "G001");
+    assert_eq!(goals["goals"][0]["title"], "Board shell");
+    assert_eq!(goals["goals"][1]["id"], "G002");
+    assert_eq!(goals["goals"][1]["status"], "pending");
+    let runtime_state_path = dir
+        .path()
+        .join(".agents/state/workflows/ultragoal/sess-ug.json");
+    let runtime_state = fs::read_to_string(&runtime_state_path).unwrap();
+    let runtime_state: serde_json::Value = serde_json::from_str(&runtime_state).unwrap();
+    assert_eq!(runtime_state["phase"], "goal_planning");
+
+    let next = megara()
+        .arg("ultragoal")
+        .arg("--scope")
+        .arg("project")
+        .arg("--session-id")
+        .arg("sess-ug")
+        .arg("complete-goals")
+        .arg("--json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        next.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&next.stderr)
+    );
+    let next: serde_json::Value = serde_json::from_slice(&next.stdout).unwrap();
+    assert_eq!(next["state"], "started");
+    assert_eq!(next["next_goal"]["id"], "G001");
+    let runtime_state = fs::read_to_string(&runtime_state_path).unwrap();
+    let runtime_state: serde_json::Value = serde_json::from_str(&runtime_state).unwrap();
+    assert_eq!(runtime_state["phase"], "active");
+    assert_eq!(runtime_state["active_goal_id"], "G001");
+
+    fs::write(
+        dir.path().join("reviewed.md"),
+        "Reviewed board and score boundaries.",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("verification.log"),
+        "cargo test passed; manual board smoke check passed",
+    )
+    .unwrap();
+    let quality_gate = dir.path().join("quality-gate.json");
+    fs::write(&quality_gate, passing_quality_gate_json()).unwrap();
+    let checkpoint = megara()
+        .arg("ultragoal")
+        .arg("--scope")
+        .arg("project")
+        .arg("--session-id")
+        .arg("sess-ug")
+        .arg("checkpoint")
+        .arg("--goal-id")
+        .arg("G001")
+        .arg("--status")
+        .arg("complete")
+        .arg("--evidence")
+        .arg("cargo test passed; manual board smoke check passed")
+        .arg("--quality-gate-json")
+        .arg(&quality_gate)
+        .arg("--json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        checkpoint.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&checkpoint.stderr)
+    );
+    let checkpoint: serde_json::Value = serde_json::from_slice(&checkpoint.stdout).unwrap();
+    assert_eq!(checkpoint["goal"]["status"], "complete");
+    assert_eq!(checkpoint["goal"]["completion_receipt"]["goal_id"], "G001");
+    assert_eq!(checkpoint["next_goal_started"]["id"], "G002");
+
+    let goals = fs::read_to_string(&goals_path).unwrap();
+    let goals: serde_json::Value = serde_json::from_str(&goals).unwrap();
+    assert_eq!(goals["goals"][0]["status"], "complete");
+    assert_eq!(
+        goals["goals"][0]["completion_receipt"]["receipt_id"]
+            .as_str()
+            .unwrap()
+            .len(),
+        19
+    );
+    assert_eq!(goals["goals"][1]["status"], "active");
+
+    let status = megara()
+        .arg("ultragoal")
+        .arg("--scope")
+        .arg("project")
+        .arg("--session-id")
+        .arg("sess-ug")
+        .arg("status")
+        .arg("--json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["counts"]["complete"], 1);
+    assert_eq!(status["counts"]["active"], 1);
+    assert_eq!(status["active_goal"]["id"], "G002");
+
+    let ledger = fs::read_to_string(state_dir.join("ledger.jsonl")).unwrap();
+    assert!(ledger.contains("\"event\":\"goals_created\""));
+    assert!(ledger.contains("\"event\":\"goal_started\""));
+    assert!(ledger.contains("\"event\":\"goal_checkpointed\""));
+}
+
+#[test]
+fn hook_blocks_ultragoal_goal_planning_but_allows_active_goal_mutations() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let planning_payload = br#"{
+  "session_id": "sess-ug-hook",
+  "last_assistant_message": "Megara Workflow State:\n- skill: ultragoal\n- status: goal_planning\n- next: create goals\n\n"
+}"#;
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, planning_payload);
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/ultragoal/sess-ug-hook.json");
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["active"], true);
+    assert_eq!(state["phase"], "goal_planning");
+
+    let mutation_payload =
+        br#"{"session_id":"sess-ug-hook","tool_input":{"command":"echo changed > app.js"}}"#;
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "PreToolUse",
+        Some("Bash"),
+        mutation_payload,
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("complete-goals"));
+
+    let active_payload = br#"{
+  "session_id": "sess-ug-hook",
+  "last_assistant_message": "Megara Workflow State:\n- skill: ultragoal\n- status: active\n- next: execute G001\n\n"
+}"#;
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, active_payload);
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["active"], true);
+    assert_eq!(state["phase"], "active");
+    assert_eq!(state["next"], "execute G001");
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "PreToolUse",
+        Some("Bash"),
+        mutation_payload,
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/workflows/ultragoal/events.jsonl"),
+    )
+    .unwrap();
+    assert!(events.contains("\"event\":\"workflow_state\""));
+    assert!(events.contains("\"event\":\"mutation_blocked\""));
 }
 
 #[test]
