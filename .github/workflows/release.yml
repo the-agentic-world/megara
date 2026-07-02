@@ -137,6 +137,36 @@ jobs:
           "${RUNNER_TEMP}/bin/megara" --version
           "${RUNNER_TEMP}/bin/megara" targets list | grep -qx codex
 
+  prune-releases:
+    name: Keep latest 5 releases
+    runs-on: ubuntu-latest
+    needs: smoke-install
+    timeout-minutes: 10
+    steps:
+      - name: Delete older GitHub releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t old_tags < <(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .published_at != null) | [.published_at, .tag_name] | @tsv' |
+              sort -r |
+              awk -F '\t' 'NR > 5 {print $2}'
+          )
+
+          if ((${#old_tags[@]} == 0)); then
+            echo "No old releases to delete."
+            exit 0
+          fi
+
+          echo "Deleting old releases, keeping 5 newest:"
+          printf ' - %s\n' "${old_tags[@]}"
+          for tag in "${old_tags[@]}"; do
+            gh release delete "${tag}" --yes
+          done
+
   homebrew:
     name: Update Homebrew tap
     runs-on: ubuntu-latest
