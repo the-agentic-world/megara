@@ -13,4 +13,8 @@ fn lists_targets_and_templates() {
     assert!(stdout.contains("caveman"));
     assert!(stdout.contains("deep-interview/auto-research-greenfield"));
     assert!(!stdout.contains("megara-hook"));
+
+    let update_help = megara().arg("update").arg("--help").output().unwrap();
+    assert!(update_help.status.success());
+    assert!(String::from_utf8_lossy(&update_help.stdout).contains("Update the Megara binary"));
 }

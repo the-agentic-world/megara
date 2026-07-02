@@ -6,6 +6,7 @@ mod paths;
 mod targets;
 mod templates;
 mod ultragoal;
+mod update;
 mod writer;
 
 use anyhow::Result;
@@ -16,6 +17,7 @@ use templates::TemplateRegistry;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    update::maybe_notify(&cli.command);
     let registry = TemplateRegistry::default();
 
     match cli.command {
@@ -41,6 +43,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::Ultragoal(args) => ultragoal::run(args)?,
+        Commands::Update(args) => update::run(args)?,
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {
                 let list = registry.template_names();

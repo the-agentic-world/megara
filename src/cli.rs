@@ -10,6 +10,8 @@ mod resolve;
 mod templates;
 #[path = "cli/ultragoal.rs"]
 mod ultragoal;
+#[path = "cli/update.rs"]
+mod update;
 
 pub use common::{ScopeArg, TargetArg};
 pub use install::{DoctorArgs, HookArgs, InstallArgs};
@@ -20,6 +22,9 @@ pub use ultragoal::{
     UltragoalCreateGoalsArgs, UltragoalGoalStatusArg, UltragoalStatusArgs, UltragoalSteerArgs,
     UltragoalSteerKindArg,
 };
+pub use update::UpdateArgs;
+#[allow(unused_imports)]
+pub(crate) use update::UpdateScopeArg;
 
 #[derive(Debug, Parser)]
 #[command(name = "megara", version, about = "Install portable agent harnesses")]
@@ -48,6 +53,8 @@ pub enum Commands {
     },
     /// Manage durable goal execution state.
     Ultragoal(UltragoalArgs),
+    /// Update the Megara binary and installed harness files.
+    Update(UpdateArgs),
     /// Internal runtime hook entrypoint.
     #[command(hide = true)]
     Hook(HookArgs),

@@ -8,7 +8,9 @@ use std::{
 use tempfile::tempdir;
 
 fn megara() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_megara"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_megara"));
+    command.env("MEGARA_NO_UPDATE_CHECK", "1");
+    command
 }
 
 fn megara_with_codex_home(codex_home: &Path) -> Command {

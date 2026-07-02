@@ -84,6 +84,19 @@ megara install --scope global --target codex
 megara doctor --scope project --target codex
 ```
 
+Megara 바이너리와 설치된 하네스를 최신 릴리스 기준으로 업데이트합니다.
+
+```bash
+megara update
+```
+
+특정 범위만 업데이트할 수 있습니다.
+
+```bash
+megara update --scope project
+megara update --scope global
+```
+
 `.agents/` source of truth에서 런타임 파일을 다시 투영합니다.
 
 ```bash
@@ -103,6 +116,8 @@ megara templates list
 - `global`: `~/.megara`에 SSOT를 쓰고 `~/.codex/`로 Codex 파일을 투영합니다.
 
 Megara는 기본적으로 기존 사용자 파일을 보호합니다. 목적지가 Megara 관리 파일이 아니면 충돌을 보고하고 그대로 둡니다. Megara가 파일 소유권을 가져가야 할 때만 `--force`를 사용하세요.
+
+Megara는 일반 CLI 명령 사용 시 하루에 한 번 최신 릴리스를 확인합니다. 새 버전이 있으면 stderr에 `megara update` 안내만 표시하고 자동으로 변경하지 않습니다. 런타임 hook 실행 중에는 업데이트 체크를 하지 않으며, 자동 체크를 끄려면 `MEGARA_NO_UPDATE_CHECK=1`을 설정하세요.
 
 ### 프롬프트로 하네스 사용하기
 
