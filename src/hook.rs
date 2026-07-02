@@ -170,12 +170,13 @@ fn append_jsonl(path: &Path, entry: &Value) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let mut line = serde_json::to_vec(entry)?;
+    line.push(b'\n');
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
-    serde_json::to_writer(&mut file, entry)?;
-    file.write_all(b"\n")?;
+    file.write_all(&line)?;
     Ok(())
 }
 
@@ -413,6 +414,28 @@ fn handle_user_prompt(
         }
     }
 
+    if is_deep_interview_approval_for_ralplan(prompt) {
+        let mut state = load_json(&ralplan_paths.session_file)
+            .unwrap_or_else(|| new_state(RALPLAN, timestamp, &ralplan_paths.session_id, payload));
+        require_ralplan_input_lock(timestamp, &mut state, payload_file);
+        let session_id = state
+            .get("session_id")
+            .map(value_to_string)
+            .unwrap_or_else(|| "unknown-session".to_string());
+        write_json_atomic(&ralplan_paths.session_file, &state)?;
+        append_jsonl(
+            &ralplan_paths.events_file,
+            &json!({
+                "timestamp": timestamp,
+                "event": "input_lock_required",
+                "session_id": session_id,
+                "required_workflow": DEEP_INTERVIEW,
+                "payload": payload_file,
+            }),
+        )?;
+        return Ok(0);
+    }
+
     let deep_paths = workflow_paths(state_dir, payload, DEEP_INTERVIEW);
     if let Some(mut state) = load_json(&deep_paths.session_file) {
         if let Some(question_id) =
@@ -580,6 +603,23 @@ fn handle_ralplan_terminal(
         }
     }
     let linked_spec = linked_deep_interview_spec(paths);
+    if terminal.status == "pending_approval" {
+        if let Some(reason) = ralplan_input_lock_blocker(state, linked_spec.as_ref(), text) {
+            reject_ralplan_input_lock(timestamp, state, &plan_id, reason);
+            append_jsonl(
+                &paths.events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": "input_lock_blocked",
+                    "session_id": paths.session_id,
+                    "plan_id": plan_id,
+                    "reason": reason,
+                    "payload": payload_file,
+                }),
+            )?;
+            return Ok(());
+        }
+    }
     if terminal.status == "pending_approval" && !ralplan_reviews_ready(state) {
         reject_ralplan_without_reviews(timestamp, state, &plan_id);
         append_jsonl(
@@ -809,6 +849,26 @@ fn linked_deep_interview_spec(paths: &WorkflowPaths) -> Option<LinkedSpec> {
     })
 }
 
+fn ralplan_input_lock_blocker(
+    state: &Value,
+    linked_spec: Option<&LinkedSpec>,
+    text: &str,
+) -> Option<&'static str> {
+    if state.get("requires_input_lock").and_then(Value::as_bool) != Some(true) {
+        return None;
+    }
+    let Some(spec) = linked_spec else {
+        return Some("missing_persisted_deep_interview_lock");
+    };
+    let Some(input_sha256) = workflow_state_field(text, "input_spec_sha256") else {
+        return Some("missing_input_spec_sha256");
+    };
+    if input_sha256 != spec.sha256 {
+        return Some("input_spec_sha256_mismatch");
+    }
+    None
+}
+
 fn active_deep_interview_state(paths: &WorkflowPaths) -> Option<Value> {
     let state = deep_interview_state(paths)?;
     if state.get("active").and_then(Value::as_bool) == Some(true)
@@ -830,6 +890,35 @@ fn deep_interview_state(paths: &WorkflowPaths) -> Option<Value> {
         return None;
     }
     Some(state)
+}
+
+fn is_deep_interview_approval_for_ralplan(prompt: &str) -> bool {
+    parse_blocks(prompt, "Megara Approval Gate:")
+        .into_iter()
+        .any(|block| {
+            field_eq(&block, "approved_workflow", DEEP_INTERVIEW)
+                && field_eq(&block, "next_workflow", RALPLAN)
+                && field_eq(&block, "approved_status", "crystallized")
+        })
+}
+
+fn workflow_state_field(text: &str, key: &str) -> Option<String> {
+    let block = parse_block(text, "Megara Workflow State:")?;
+    let value = block.fields.get(key)?.trim().trim_matches('"').to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+fn field_eq(block: &Block, key: &str, expected: &str) -> bool {
+    block
+        .fields
+        .get(key)
+        .map(|value| {
+            value
+                .trim()
+                .trim_matches('"')
+                .eq_ignore_ascii_case(expected)
+        })
+        .unwrap_or(false)
 }
 
 fn ralplan_reviews_ready(state: &Value) -> bool {
@@ -1099,7 +1188,7 @@ fn parse_blocks(text: &str, marker: &str) -> Vec<Block> {
                     lists
                         .entry(current_key.clone())
                         .or_default()
-                        .push(value.trim().to_string());
+                        .push(clean_block_value(value));
                 }
                 index += 1;
                 continue;
@@ -1120,7 +1209,7 @@ fn parse_blocks(text: &str, marker: &str) -> Vec<Block> {
             if value.trim().is_empty() {
                 lists.entry(key).or_default();
             } else {
-                fields.insert(key, value.trim().to_string());
+                fields.insert(key, clean_block_value(value));
             }
             index += 1;
         }
@@ -1131,6 +1220,17 @@ fn parse_blocks(text: &str, marker: &str) -> Vec<Block> {
     }
 
     blocks
+}
+
+fn clean_block_value(value: &str) -> String {
+    let mut value = value.trim();
+    while let Some(stripped) = value
+        .strip_suffix("</input>")
+        .or_else(|| value.strip_suffix("</codex_delegation>"))
+    {
+        value = stripped.trim_end();
+    }
+    value.to_string()
 }
 
 fn block_list(block: &Block, key: &str) -> Vec<String> {
@@ -1767,6 +1867,17 @@ fn update_terminal_state(
     state["updated_at"] = json!(timestamp);
 }
 
+fn require_ralplan_input_lock(timestamp: &str, state: &mut Value, payload_file: &Path) {
+    state["active"] = json!(true);
+    state["phase"] = json!("input_lock_required");
+    state["status"] = json!("input_lock_required");
+    state["requires_input_lock"] = json!(true);
+    state["required_input_workflow"] = json!(DEEP_INTERVIEW);
+    state["approval_status"] = json!("awaiting_plan");
+    state["last_input_lock_payload"] = json!(payload_file);
+    state["updated_at"] = json!(timestamp);
+}
+
 fn reject_crystallized_without_spec(timestamp: &str, state: &mut Value) {
     state["active"] = json!(true);
     state["phase"] = json!("crystallization_missing_spec");
@@ -1781,6 +1892,36 @@ fn reject_ralplan_without_plan(timestamp: &str, state: &mut Value, plan_id: &str
     state["status"] = json!("plan_missing");
     state["plan_id"] = json!(plan_id);
     state["approval_status"] = json!("blocked");
+    state["updated_at"] = json!(timestamp);
+}
+
+fn reject_ralplan_input_lock(
+    timestamp: &str,
+    state: &mut Value,
+    plan_id: &str,
+    reason: &'static str,
+) {
+    remove_state_fields(
+        state,
+        &[
+            "plan_gate",
+            "plan_path",
+            "plan_sha256",
+            "plan_persisted_at",
+            "plan_payload",
+            "input_spec_path",
+            "input_spec_sha256",
+            "input_spec_persisted_at",
+        ],
+    );
+    state["active"] = json!(true);
+    state["phase"] = json!("input_lock_blocked");
+    state["status"] = json!("input_lock_blocked");
+    state["plan_id"] = json!(plan_id);
+    state["requires_input_lock"] = json!(true);
+    state["required_input_workflow"] = json!(DEEP_INTERVIEW);
+    state["approval_status"] = json!("blocked");
+    state["input_lock_status"] = json!(reason);
     state["updated_at"] = json!(timestamp);
 }
 
@@ -1883,7 +2024,7 @@ fn mutating_command(command: &str) -> bool {
     if command.trim().is_empty() {
         return false;
     }
-    if command.contains(">>") || command.contains('>') {
+    if has_mutating_redirection(command) {
         return true;
     }
 
@@ -1892,6 +2033,61 @@ fn mutating_command(command: &str) -> bool {
         .map(str::trim)
         .filter(|segment| !segment.is_empty())
         .any(mutating_command_segment)
+}
+
+fn has_mutating_redirection(command: &str) -> bool {
+    let bytes = command.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'>' {
+            index += 1;
+            continue;
+        }
+
+        let mut fd_start = index;
+        while fd_start > 0 && bytes[fd_start - 1].is_ascii_digit() {
+            fd_start -= 1;
+        }
+        let fd = &command[fd_start..index];
+        let mut target_start = index + 1;
+        if bytes.get(target_start) == Some(&b'>') {
+            target_start += 1;
+        }
+        while bytes
+            .get(target_start)
+            .is_some_and(|byte| byte.is_ascii_whitespace())
+        {
+            target_start += 1;
+        }
+        let target_end = if bytes.get(target_start) == Some(&b'&') {
+            let mut end = target_start + 1;
+            while bytes.get(end).is_some_and(|byte| byte.is_ascii_digit()) {
+                end += 1;
+            }
+            end
+        } else {
+            command[target_start..]
+                .find(|ch: char| ch.is_ascii_whitespace() || matches!(ch, ';' | '|' | '&'))
+                .map(|offset| target_start + offset)
+                .unwrap_or(command.len())
+        };
+        let target = &command[target_start..target_end];
+
+        if !is_non_mutating_redirection_target(fd, target) {
+            return true;
+        }
+        index = target_end.max(index + 1);
+    }
+    false
+}
+
+fn is_non_mutating_redirection_target(fd: &str, target: &str) -> bool {
+    let stream_redirect = target
+        .strip_prefix('&')
+        .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit()));
+    let discard = target == "/dev/null";
+
+    stream_redirect || (discard && matches!(fd, "" | "1" | "2"))
 }
 
 fn mutating_command_segment(segment: &str) -> bool {
@@ -1947,6 +2143,74 @@ fn mutating_command_segment(segment: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn append_jsonl_keeps_concurrent_records_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events.jsonl");
+        let threads = (0..16)
+            .map(|thread_id| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for record_id in 0..50 {
+                        append_jsonl(
+                            &path,
+                            &json!({
+                                "thread": thread_id,
+                                "record": record_id,
+                                "event": "PreToolUse",
+                            }),
+                        )
+                        .unwrap();
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for thread in threads {
+            thread.join().unwrap();
+        }
+
+        let contents = fs::read_to_string(&path).unwrap();
+        let lines = contents.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 800);
+        for line in lines {
+            serde_json::from_str::<Value>(line).unwrap();
+        }
+    }
+
+    #[test]
+    fn mutation_guard_allows_read_commands_with_discarded_stderr() {
+        assert!(!mutating_command(
+            "find .agents/state/workflows/deep-interview/specs -maxdepth 1 -type f -print 2>/dev/null | sort"
+        ));
+        assert!(!mutating_command(
+            "tail -20 .agents/state/workflows/deep-interview/specs/index.jsonl 2>/dev/null"
+        ));
+        assert!(!mutating_command("grep needle file 2>&1"));
+        assert!(!mutating_command("cat file > /dev/null"));
+    }
+
+    #[test]
+    fn mutation_guard_blocks_file_redirection() {
+        assert!(mutating_command("echo hello > output.txt"));
+        assert!(mutating_command("printf hello >> output.txt"));
+        assert!(mutating_command("command 2> error.log"));
+    }
+
+    #[test]
+    fn approval_gate_ignores_delegation_closing_tag() {
+        let text = "Megara Approval Gate:\n- plan_id: rp-dashboard-menu\n- plan_sha256: b3e252bef44736571b1d6aeeddf6105aef3d357ca1089d443d52fd188c738984\n- handoff_target: ultragoal</input>\n</codex_delegation>\n";
+
+        let gate = approval_gate_from_text(text).unwrap();
+
+        assert_eq!(gate.plan_id, "rp-dashboard-menu");
+        assert_eq!(
+            gate.plan_sha256,
+            "b3e252bef44736571b1d6aeeddf6105aef3d357ca1089d443d52fd188c738984"
+        );
+        assert_eq!(gate.handoff_target, "ultragoal");
+    }
 
     #[test]
     fn plan_body_extraction_preserves_marker_mentions() {

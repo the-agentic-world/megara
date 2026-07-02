@@ -84,6 +84,27 @@ fn pending_ralplan_plan_payload(session_id: &str, plan_id: &str, summary: &str) 
     .to_string()
 }
 
+fn pending_ralplan_plan_payload_with_input_spec(
+    session_id: &str,
+    plan_id: &str,
+    summary: &str,
+    input_spec_sha256: &str,
+) -> String {
+    let message = format!(
+        "**Pending Execution Plan**\n\nSummary: {summary}\n\nInput lock: {input_spec_sha256}\n\nSteps:\n- Keep the change small.\n- Verify the expected behavior.\n\nAcceptance criteria:\n- Existing tests pass.\n\nMegara Plan Gate:\n- id: {plan_id}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {plan_id}\n- input_spec_sha256: {input_spec_sha256}\n- next: approval\n\n"
+    );
+    serde_json::json!({
+        "session_id": session_id,
+        "last_assistant_message": message,
+    })
+    .to_string()
+}
+
+fn deep_interview_approval_prompt() -> String {
+    "Megara Approval Gate:\n- approved_workflow: deep-interview\n- approved_status: crystallized\n- approved_ambiguity: 9%\n- next_workflow: ralplan\n- implementation_allowed_now: false\n"
+        .to_string()
+}
+
 fn passing_quality_gate_json() -> String {
     serde_json::json!({
         "architectReview": {
@@ -196,12 +217,18 @@ fn installs_project_scope_codex_harness() {
     )
     .unwrap();
     let hooks_json = fs::read_to_string(dir.path().join(".codex/hooks.json")).unwrap();
-    serde_json::from_str::<serde_json::Value>(&hooks_json).unwrap();
+    let hooks: serde_json::Value = serde_json::from_str(&hooks_json).unwrap();
     assert!(hooks_json.contains("megara-hook-UserPromptSubmit"));
     assert!(hooks_json.contains("megara-hook-PreToolUse"));
-    assert!(hooks_json
-        .contains("megara hook --managed-marker MEGARA:MANAGED --scope project --project-root"));
+    assert!(
+        hooks_json.contains("hook --managed-marker MEGARA:MANAGED --scope project --project-root")
+    );
     assert!(hooks_json.contains("--runtime codex --event UserPromptSubmit"));
+    let command = hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
+    assert!(command.starts_with('"'));
+    assert!(!command.starts_with("megara hook"));
     assert!(!hooks_json.contains("megara-hook.sh"));
     assert!(!hooks_json.contains("python3"));
     assert!(!hooks_json.contains(r#""matcher": "Bash""#));
@@ -818,6 +845,206 @@ fn projected_hook_runner_allows_direct_ralplan_without_interview() {
     assert_eq!(state["plan_id"], "rp-direct");
     assert!(state["plan_sha256"].as_str().is_some());
     assert!(state.get("input_spec_sha256").is_none());
+}
+
+#[test]
+fn projected_hook_runner_blocks_deep_interview_handoff_without_current_lock() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let stale_interview_message = "**Pending Approval Specification**\n\nGoal: add Yacht to dice poker.\n\nAcceptance criteria:\n- Yacht is scored.\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 8%\n- next: ralplan\n\n";
+    let stale_interview_payload = serde_json::json!({
+        "session_id": "sess-old-di",
+        "last_assistant_message": stale_interview_message,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        stale_interview_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let approval_payload = serde_json::json!({
+        "session_id": "sess-dashboard",
+        "prompt": deep_interview_approval_prompt(),
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        approval_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-dashboard.json");
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["requires_input_lock"], true);
+    assert_eq!(state["phase"], "input_lock_required");
+
+    let review_payload = ready_ralplan_reviews_payload("sess-dashboard");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let plan_payload = pending_ralplan_plan_payload_with_input_spec(
+        "sess-dashboard",
+        "rp-dashboard",
+        "add a dashboard from conversation-only deep-interview output.",
+        "none",
+    );
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["phase"], "input_lock_blocked");
+    assert_eq!(state["approval_status"], "blocked");
+    assert_eq!(
+        state["input_lock_status"],
+        "missing_persisted_deep_interview_lock"
+    );
+    assert!(state.get("plan_path").is_none());
+    assert!(state.get("plan_sha256").is_none());
+
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/workflows/ralplan/events.jsonl"),
+    )
+    .unwrap();
+    assert!(events.contains("\"event\":\"input_lock_required\""));
+    assert!(events.contains("\"event\":\"input_lock_blocked\""));
+    assert!(events.contains("missing_persisted_deep_interview_lock"));
+}
+
+#[test]
+fn projected_hook_runner_accepts_deep_interview_handoff_with_matching_lock() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let interview_message = "**Pending Approval Specification**\n\nGoal: add a dashboard launcher.\n\nAcceptance criteria:\n- Dashboard is the default screen.\n- Cards enter each game.\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 9%\n- next: ralplan\n\n";
+    let interview_payload = serde_json::json!({
+        "session_id": "sess-locked-rp",
+        "last_assistant_message": interview_message,
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        interview_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let deep_state_path = dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/sess-locked-rp.json");
+    let deep_state = fs::read_to_string(&deep_state_path).unwrap();
+    let deep_state: serde_json::Value = serde_json::from_str(&deep_state).unwrap();
+    let spec_sha256 = deep_state["spec_sha256"].as_str().unwrap().to_string();
+
+    let approval_payload = serde_json::json!({
+        "session_id": "sess-locked-rp",
+        "prompt": deep_interview_approval_prompt(),
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        approval_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let review_payload = ready_ralplan_reviews_payload("sess-locked-rp");
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        review_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let plan_payload = pending_ralplan_plan_payload_with_input_spec(
+        "sess-locked-rp",
+        "rp-dashboard-locked",
+        "add a dashboard using the persisted deep-interview lock.",
+        &spec_sha256,
+    );
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        plan_payload.as_bytes(),
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/ralplan/sess-locked-rp.json");
+    let state = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(state["phase"], "pending_approval");
+    assert_eq!(state["approval_status"], "pending");
+    assert_eq!(state["requires_input_lock"], true);
+    assert_eq!(state["input_spec_sha256"], spec_sha256);
+    assert!(state["plan_sha256"].as_str().is_some());
 }
 
 #[test]

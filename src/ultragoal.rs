@@ -694,6 +694,7 @@ fn direct_source() -> UltragoalSource {
 }
 
 fn parse_goals(brief: &str) -> Result<Vec<ParsedGoal>> {
+    let brief = strip_yaml_frontmatter(brief).trim();
     let mut sections = Vec::<(String, Vec<String>)>::new();
     for line in brief.lines() {
         if let Some(title) = goal_marker(line) {
@@ -749,10 +750,38 @@ fn goal_marker(line: &str) -> Option<String> {
 fn title_from_objective(objective: &str) -> String {
     let first = objective
         .lines()
-        .map(|line| line.trim().trim_start_matches('#').trim())
+        .map(normalize_title_line)
         .find(|line| !line.is_empty())
-        .unwrap_or("Complete ultragoal brief");
+        .unwrap_or_else(|| "Complete ultragoal brief".to_string());
     first.chars().take(96).collect()
+}
+
+fn normalize_title_line(line: &str) -> String {
+    line.trim()
+        .trim_start_matches('#')
+        .trim()
+        .trim_matches('*')
+        .trim()
+        .to_string()
+}
+
+fn strip_yaml_frontmatter(input: &str) -> &str {
+    let input = input.strip_prefix('\u{feff}').unwrap_or(input);
+    let Some(after_open) = input
+        .strip_prefix("---\n")
+        .or_else(|| input.strip_prefix("---\r\n"))
+    else {
+        return input;
+    };
+
+    let mut cursor = input.len() - after_open.len();
+    for line in after_open.split_inclusive('\n') {
+        cursor += line.len();
+        if line.trim() == "---" {
+            return &input[cursor..];
+        }
+    }
+    input
 }
 
 fn next_goal_index(goals: &[UltragoalGoal], retry_failed: bool) -> Option<usize> {
@@ -1151,6 +1180,30 @@ mod tests {
         assert_eq!(goals.len(), 1);
         assert_eq!(goals[0].title, "Ship a stable game");
         assert!(goals[0].objective.contains("add tests"));
+    }
+
+    #[test]
+    fn parses_single_goal_after_frontmatter() {
+        let goals = parse_goals(
+            r#"---
+skill: "ralplan"
+plan_id: "rp-dashboard-menu"
+---
+
+**Ralplan 실행 계획: 카드형 게임 대시보드 추가**
+
+목표: 게임 선택 화면을 추가하고 2048 진입 흐름을 유지한다.
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(goals.len(), 1);
+        assert_eq!(
+            goals[0].title,
+            "Ralplan 실행 계획: 카드형 게임 대시보드 추가"
+        );
+        assert!(goals[0].objective.contains("목표: 게임 선택 화면"));
+        assert!(!goals[0].objective.starts_with("---"));
     }
 
     #[test]

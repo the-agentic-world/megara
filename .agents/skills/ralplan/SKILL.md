@@ -14,8 +14,10 @@ Use this workflow after a request is clear enough to plan, but before implementa
 
 - Ralplan is planning-only until execution is explicitly approved.
 - Do not edit files, run mutating commands, commit, or push while Ralplan is active.
-- If a crystallized `deep-interview` specification exists, treat that markdown artifact as the input lock. Reference it in the plan and do not contradict it without calling out the conflict.
-- When an input lock exists, include the spec path or sha256 in the plan body so reviewers can trace the plan back to the crystallized requirement.
+- If this `ralplan` run follows an approved `deep-interview` handoff, the current session must have a persisted crystallized markdown artifact. Treat only that artifact as the input lock.
+- Do not use conversation-only `deep-interview` content as a substitute for the persisted lock after a `deep-interview` approval. If the current-session lock is missing, stale, or mismatched, stop with a blocker instead of producing a pending-approval plan.
+- When a `deep-interview` input lock is required, include the current-session spec path and exact sha256 in the plan body and in the final `Megara Workflow State` block.
+- `input_spec_sha256: none` is allowed only for direct `ralplan` runs that did not follow an approved `deep-interview` handoff.
 - The planner creates the first plan.
 - The architect reviews system shape, boundaries, and tradeoffs.
 - The critic rejects vague, unverifiable, or internally inconsistent plans.
@@ -56,6 +58,8 @@ The pending-approval plan is allowed only after these review conditions are true
 
 After each planner, architect, or critic pass, append one review block. Do not write review notes to files directly; the hook records these blocks as durable review artifacts.
 
+When producing the final pending-approval plan, include the latest planner, architect, and critic review blocks in the same final assistant message after the workflow state block. Progress/commentary messages are not durable hook input; if a review block appears only there, the plan will be rejected as `review_incomplete`.
+
 ```text
 Megara Review Pass:
 - role: planner|architect|critic
@@ -70,7 +74,14 @@ Do not put this block inside code fences in the actual response.
 
 ## Plan Gate
 
-The final pending-approval response must contain the full markdown plan first. After the plan, append both parseable blocks exactly once. The hook records the markdown before these blocks as the locked plan artifact and computes `plan_sha256`.
+The final pending-approval response must contain, in order:
+
+1. The full markdown plan.
+2. `Megara Plan Gate` exactly once.
+3. `Megara Workflow State` exactly once.
+4. Latest `Megara Review Pass` blocks for planner, architect, and critic.
+
+The hook records the markdown before the plan/workflow gate blocks as the locked plan artifact and computes `plan_sha256`.
 
 Use stable ids within the session:
 
@@ -95,6 +106,18 @@ Megara Workflow State:
 ```
 
 Do not put these blocks inside code fences in the actual response.
+
+If a `deep-interview` handoff was approved but no matching persisted lock exists for the current session, do not emit `Megara Plan Gate`. End with:
+
+```text
+Megara Blocker Gate:
+- workflow: ralplan
+- status: blocked
+- reason: persisted_deep_interview_lock_missing_or_mismatched
+- implementation_allowed_now: false
+```
+
+Do not put this block inside code fences in the actual response.
 
 ## Approval Gate
 
