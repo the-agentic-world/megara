@@ -12,3 +12,7 @@
 /.github/skills/
 /.agents/results/
 /.agents/state/
+
+# Local graph analysis output.
+/graphify-out/
+/graph-out/
