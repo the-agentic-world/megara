@@ -47,4 +47,4 @@ jobs:
           set -euo pipefail
           bin="target/${{ matrix.target }}/release/megara"
           "$bin" --version
-          "$bin" targets list | grep -qx codex
+          "$bin" targets list --json | grep -q '"name": "codex"'

@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           bin="target/${{ matrix.target }}/release/megara"
           "$bin" --version
-          "$bin" targets list | grep -qx codex
+          "$bin" targets list --json | grep -q '"name": "codex"'
       - name: Package
         shell: bash
         run: |
@@ -130,7 +130,7 @@ jobs:
           curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/install.sh" -o "${RUNNER_TEMP}/install.sh"
           MEGARA_VERSION="${GITHUB_REF_NAME}" MEGARA_INSTALL_DIR="${RUNNER_TEMP}/bin" sh "${RUNNER_TEMP}/install.sh"
           "${RUNNER_TEMP}/bin/megara" --version
-          "${RUNNER_TEMP}/bin/megara" targets list | grep -qx codex
+          "${RUNNER_TEMP}/bin/megara" targets list --json | grep -q '"name": "codex"'
 
   prune-releases:
     name: Keep latest 5 releases
