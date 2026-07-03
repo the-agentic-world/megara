@@ -1,5 +1,7 @@
 use anyhow::Result;
 
+use crate::ui::{self, Section};
+
 use super::model::{InstallAction, InstallResult};
 
 impl InstallResult {
@@ -15,69 +17,73 @@ impl InstallResult {
             (InstallAction::Sync, true) => "sync planned",
             (InstallAction::Sync, false) => "synced",
         };
-        println!(
-            "megara {verb}: scope={}, target={}, ssot={}, projection={}",
-            self.plan.scope,
-            self.plan.target,
-            self.plan.ssot_root.display(),
-            self.plan.target_root.display()
-        );
-        println!(
-            "created={}, updated={}, unchanged={}, conflicts={}, removed={}",
-            self.summary.created.len(),
-            self.summary.updated.len(),
-            self.summary.unchanged.len(),
-            self.summary.conflicts.len(),
-            self.summary.removed.len()
-        );
+        let rows = [
+            ("scope", self.plan.scope.to_string()),
+            ("target", self.plan.target.to_string()),
+            ("ssot", self.plan.ssot_root.display().to_string()),
+            ("projection", self.plan.target_root.display().to_string()),
+        ];
+        let mut sections = vec![Section::new(
+            "Run",
+            vec![
+                format!(
+                    "megara {verb}: scope={}, target={}, ssot={}, projection={}",
+                    self.plan.scope,
+                    self.plan.target,
+                    self.plan.ssot_root.display(),
+                    self.plan.target_root.display()
+                ),
+                format!(
+                    "created={}, updated={}, unchanged={}, conflicts={}, removed={}",
+                    self.summary.created.len(),
+                    self.summary.updated.len(),
+                    self.summary.unchanged.len(),
+                    self.summary.conflicts.len(),
+                    self.summary.removed.len()
+                ),
+            ],
+        )];
 
-        print_conflicts(self);
-        print_removed(self);
-        print_hook_trust(self);
-        print_warnings(self);
+        if !self.summary.conflicts.is_empty() {
+            sections.push(Section::new(
+                "Conflicts",
+                self.summary
+                    .conflicts
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect(),
+            ));
+        }
+
+        if !self.summary.removed.is_empty() {
+            sections.push(Section::new(
+                "Removed",
+                self.summary
+                    .removed
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect(),
+            ));
+        }
+
+        if let Some(hook_trust) = &self.hook_trust {
+            sections.push(Section::new(
+                "Hook Trust",
+                vec![format!(
+                    "hook trust: registered={}, unchanged={}, skipped={}, config={}",
+                    hook_trust.registered,
+                    hook_trust.unchanged,
+                    hook_trust.skipped,
+                    hook_trust.config_path.display()
+                )],
+            ));
+        }
+
+        if !self.warnings.is_empty() {
+            sections.push(Section::new("Warnings", self.warnings.clone()));
+        }
+
+        ui::print_dashboard("Install", verb, &rows, &sections)?;
         Ok(())
-    }
-}
-
-fn print_conflicts(result: &InstallResult) {
-    if result.summary.conflicts.is_empty() {
-        return;
-    }
-    println!("conflicts:");
-    for path in &result.summary.conflicts {
-        println!("- {}", path.display());
-    }
-}
-
-fn print_removed(result: &InstallResult) {
-    if result.summary.removed.is_empty() {
-        return;
-    }
-    println!("removed:");
-    for path in &result.summary.removed {
-        println!("- {}", path.display());
-    }
-}
-
-fn print_hook_trust(result: &InstallResult) {
-    let Some(hook_trust) = &result.hook_trust else {
-        return;
-    };
-    println!(
-        "hook trust: registered={}, unchanged={}, skipped={}, config={}",
-        hook_trust.registered,
-        hook_trust.unchanged,
-        hook_trust.skipped,
-        hook_trust.config_path.display()
-    );
-}
-
-fn print_warnings(result: &InstallResult) {
-    if result.warnings.is_empty() {
-        return;
-    }
-    println!("warnings:");
-    for warning in &result.warnings {
-        println!("- {warning}");
     }
 }

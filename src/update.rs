@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     cli::{Commands, UpdateArgs, UpdateScopeArg},
     paths::{home_dir, InstallPaths, InstallScope, TargetRuntime},
+    ui::{self, Section},
 };
 
 const REPO: &str = "the-agentic-world/megara";
@@ -39,17 +40,18 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     let latest = fetch_latest_release()?;
     let current = current_tag();
     let install_dir = current_install_dir()?;
+    let mut messages = Vec::new();
 
     if is_newer_tag(&latest.tag_name, &current) || args.force {
-        println!(
+        messages.push(format!(
             "Updating Megara binary: current={}, latest={}, install_dir={}",
             current,
             latest.tag_name,
             install_dir.display()
-        );
+        ));
         install_release(&latest.tag_name, &install_dir)?;
     } else {
-        println!("Megara binary is current: {current}");
+        messages.push(format!("Megara binary is current: {current}"));
     }
 
     if let Ok(path) = state_path() {
@@ -62,8 +64,9 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         );
     }
 
-    refresh_harnesses(args, &install_dir.join("megara"))?;
-    println!("Megara update complete.");
+    messages.extend(refresh_harnesses(args, &install_dir.join("megara"))?);
+    messages.push("Megara update complete.".to_string());
+    ui::print_dashboard("Update", "complete", &[], &[Section::new("Run", messages)])?;
     Ok(())
 }
 
@@ -145,16 +148,19 @@ fn install_release(tag: &str, install_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn refresh_harnesses(args: UpdateArgs, megara_bin: &Path) -> Result<()> {
+fn refresh_harnesses(args: UpdateArgs, megara_bin: &Path) -> Result<Vec<String>> {
+    let mut messages = Vec::new();
     let target: TargetRuntime = args.target.into();
     let scopes = selected_installed_scopes(args.scope, target)?;
     if scopes.is_empty() {
-        println!("No installed Megara harness found; skipped harness update.");
-        return Ok(());
+        messages.push("No installed Megara harness found; skipped harness update.".to_string());
+        return Ok(messages);
     }
 
     for scope in scopes {
-        println!("Refreshing harness: scope={scope}, target={target}");
+        messages.push(format!(
+            "Refreshing harness: scope={scope}, target={target}"
+        ));
         let mut command = Command::new(megara_bin);
         command
             .arg("install")
@@ -173,7 +179,7 @@ fn refresh_harnesses(args: UpdateArgs, megara_bin: &Path) -> Result<()> {
             bail!("failed to refresh {scope} harness");
         }
     }
-    Ok(())
+    Ok(messages)
 }
 
 fn selected_installed_scopes(

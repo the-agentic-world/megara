@@ -68,6 +68,36 @@ fn projected_hook_runner_tracks_ralplan_gate_and_approval() {
     assert!(events.contains(plan_path.to_str().unwrap()));
 }
 
+#[test]
+fn projected_hook_runner_tracks_visible_only_plan_and_numeric_approval() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_crystallized_interview(dir.path(), "sess-visible-rp", "improve 2048 UI clarity.");
+    let message = "**Pending Execution Plan**\n\nSummary: improve the 2048 UI without changing rules.\n\nScope:\n- Update layout, spacing, and controls.\n- Keep scoring and board mechanics unchanged.\n\nSteps:\n- Inspect current UI structure.\n- Adjust responsive layout.\n- Verify keyboard and touch interaction.\n\nAcceptance criteria:\n- Existing tests pass.\n- The board does not overflow on mobile.\n\nRisks:\n- Avoid changing saved game state.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n";
+    assert_success(&stop_message(dir.path(), "sess-visible-rp", message));
+
+    let state_path = workflow_state_path(dir.path(), RALPLAN, "sess-visible-rp");
+    let state = read_json(&state_path);
+    assert_eq!(state["phase"], "pending_approval");
+    assert_eq!(state["plan_id"], "rp-plan");
+    assert_eq!(state["review_source"], "runtime_visible_plan_inference");
+    assert_eq!(state["reviews"][0]["role"], "planner");
+    assert!(state["plan_sha256"].as_str().unwrap().len() == 64);
+
+    let plan = fs::read_to_string(state["plan_path"].as_str().unwrap()).unwrap();
+    assert!(plan.contains("Summary: improve the 2048 UI"));
+    assert!(!plan.contains("Megara Plan Gate"));
+    assert!(!plan.contains("Megara Workflow State"));
+    assert!(!plan.contains("<!--"));
+
+    assert_success(&user_prompt(dir.path(), "sess-visible-rp", "2"));
+    let approved = read_json(&state_path);
+    assert_eq!(approved["phase"], "approved");
+    assert_eq!(approved["approved_handoff_target"], "ultragoal");
+}
+
 fn submit_early_plan_without_reviews(project: &Path) {
     let message = "**Pending Execution Plan**\n\nSummary: this should wait for review coverage.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: rp-too-early\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-too-early\n- next: approval\n-->\n";
     assert_success(&stop_message(project, "sess-rp", message));

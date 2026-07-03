@@ -6,13 +6,25 @@ pub(super) struct RalplanPromptDecision {
 }
 
 pub(super) fn is_deep_interview_approval_for_ralplan(prompt: &str) -> bool {
-    parse_blocks(prompt, "Megara Approval Gate:")
+    if parse_blocks(prompt, "Megara Approval Gate:")
         .into_iter()
         .any(|block| {
             field_eq(&block, "approved_workflow", DEEP_INTERVIEW)
                 && field_eq(&block, "next_workflow", RALPLAN)
                 && field_eq(&block, "approved_status", "crystallized")
         })
+    {
+        return true;
+    }
+
+    let normalized = prompt.to_ascii_lowercase();
+    normalized.contains("ralplan")
+        && (normalized.contains("proceed")
+            || normalized.contains("continue")
+            || normalized.contains("approve")
+            || normalized.contains("진행")
+            || normalized.contains("계속")
+            || normalized.contains("승인"))
 }
 
 pub(super) fn apply_ralplan_prompt_decision(
@@ -39,7 +51,9 @@ pub(super) fn apply_ralplan_prompt_decision(
 
     let normalized = prompt.to_ascii_lowercase();
     let plan_sha256 = state.get("plan_sha256").cloned().unwrap_or(Value::Null);
-    if normalized.contains("approve_ultragoal")
+    let trimmed = prompt.trim();
+    if trimmed == "2"
+        || normalized.contains("approve_ultragoal")
         || (normalized.contains("approve") && normalized.contains("ultragoal"))
         || normalized.contains("ultragoal 승인")
     {
@@ -49,14 +63,16 @@ pub(super) fn apply_ralplan_prompt_decision(
             json!("ultragoal"),
         ));
     }
-    if normalized.contains("approve_team")
+    if trimmed == "3"
+        || normalized.contains("approve_team")
         || (normalized.contains("approve") && normalized.contains("team"))
         || normalized.contains("team 승인")
     {
         ralplan_approval::approve_ralplan(timestamp, state, "team", plan_sha256, payload_file);
         return Some(ralplan_approval::decision("plan_approved", json!("team")));
     }
-    if normalized.contains("refine")
+    if trimmed == "1"
+        || normalized.contains("refine")
         || normalized.contains("iterate")
         || normalized.contains("보완")
         || normalized.contains("수정")
@@ -72,7 +88,8 @@ pub(super) fn apply_ralplan_prompt_decision(
             Value::Null,
         ));
     }
-    if normalized.contains("stop_pending")
+    if trimmed == "4"
+        || normalized.contains("stop_pending")
         || normalized.contains("pending")
         || normalized.contains("보류")
     {

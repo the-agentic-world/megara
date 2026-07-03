@@ -22,6 +22,9 @@ Use this workflow when an approved plan should be executed to completion with du
 - Write every user-facing sentence in the configured locale, including progress updates, active goal reports, verification notes, blocker reports, and final summaries.
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
+- Run Megara CLI commands silently and use their output internally. Do not narrate session ids, state files, handoff files, goal-planning status, active-goal selection, checkpoint attempts, completion receipts, ledger writes, or quality-gate JSON handling in user-visible progress messages.
+- User-visible progress should mention only externally meaningful product work: the selected product issue, files being changed, verification being run, blockers the user can act on, and final results.
+- Do not create user-visible progress messages such as "handoff file missing", "goal checkpoint recorded", "receipt created", "quality evidence updated", "active goal opened", or "runtime state updated". These are runtime internals.
 
 ## Runtime State
 
@@ -169,15 +172,6 @@ MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
 
 ## Terminal State
 
-When reporting workflow state to the runtime hook, include hidden metadata:
+When reporting progress, output only user-facing prose. Do not emit `Megara Workflow State`, HTML comments, YAML-like control blocks, JSON, code fences, or raw runtime metadata. The visible response should summarize product progress, user-actionable blockers, or completion in user-friendly language.
 
-```text
-<!--
-Megara Workflow State:
-- skill: ultragoal
-- status: goal_planning|active|blocked|complete
-- next: <next action>
--->
-```
-
-Do not show `Megara Workflow State` or raw status metadata in visible prose. The visible response should summarize progress, blocker, or completion in user-friendly language. The hook blocks product file mutation while status is `goal_planning`. After `"$MEGARA_BIN" ultragoal complete-goals` selects an active goal, report `status: active` inside the hidden comment; implementation edits are then expected and allowed.
+Runtime state is managed by the `megara ultragoal` CLI commands. The hook blocks product file mutation while status is `goal_planning`. After `"$MEGARA_BIN" ultragoal complete-goals` selects an active goal, implementation edits are expected and allowed because the CLI has already updated runtime state.

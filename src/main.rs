@@ -5,6 +5,7 @@ mod installer;
 mod paths;
 mod targets;
 mod templates;
+mod ui;
 mod ultragoal;
 mod update;
 mod writer;
@@ -50,9 +51,7 @@ fn main() -> Result<()> {
                 if args.json {
                     println!("{}", serde_json::to_string_pretty(&list)?);
                 } else {
-                    for name in list {
-                        println!("{name}");
-                    }
+                    ui::print_list("Templates", "Bundled harness templates", &list)?;
                 }
             }
             TemplateCommands::Show(args) => {
@@ -68,9 +67,11 @@ fn main() -> Result<()> {
                 if args.json {
                     println!("{}", serde_json::to_string_pretty(&targets)?);
                 } else {
-                    for target in targets {
-                        println!("{}", target.name);
-                    }
+                    let rows = targets
+                        .into_iter()
+                        .map(|target| format!("{} · {}", target.name, target.status))
+                        .collect::<Vec<_>>();
+                    ui::print_list("Targets", "Supported agent runtimes", &rows)?;
                 }
             }
         },

@@ -70,8 +70,8 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     let spec = fs::read_to_string(&spec_path).unwrap();
     assert!(spec.starts_with("---\n"));
     assert!(spec.contains("Goal: build the verified game."));
-    assert!(spec.contains("Megara Workflow State:"));
-    assert!(spec.contains("<!--\nMegara Workflow State:"));
+    assert!(!spec.contains("Megara Workflow State:"));
+    assert!(!spec.contains("<!--"));
     assert!(!spec.contains("Transcript summary:"));
 
     let spec_index = fs::read_to_string(
@@ -95,6 +95,82 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(events.contains("\"event\":\"spec_persisted\""));
     assert!(events.contains("\"event\":\"next_workflow_suggested\""));
     assert!(!events.contains("di-old-transcript"));
+}
+
+#[test]
+fn projected_hook_runner_persists_visible_only_crystallized_spec() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let final_spec = "**Requirements Summary**\n\nAmbiguity: 8%\n\nGoal: improve the game UI without changing game rules.\n\nScope:\n- Keep the existing 2048 mechanics.\n- Improve layout, spacing, and controls.\n\nDecisions:\n- Prioritize mobile readability first.\n\nAcceptance criteria:\n- Layout does not overflow.\n- Existing game flow still works.\n\nConstraints and risks:\n- Avoid changing save data or scoring.\n\nNext step: continue with `ralplan` from this summary. Implementation is still not allowed.\n";
+    let payload = serde_json::json!({
+        "session_id": "visible-final",
+        "cwd": dir.path().display().to_string(),
+        "last_assistant_message": final_spec,
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        payload.as_bytes(),
+    ));
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/visible-final.json");
+    let state = read_json(&state_path);
+    assert_eq!(state["active"], false);
+    assert_eq!(state["phase"], "crystallized");
+    assert_eq!(state["ambiguity"], "8%");
+    assert_eq!(state["next"], "ralplan");
+    assert_eq!(state["next_workflow_suggestion"]["workflow"], "ralplan");
+
+    let spec_path = PathBuf::from(state["spec_path"].as_str().unwrap());
+    let spec = fs::read_to_string(spec_path).unwrap();
+    assert!(spec.contains("Goal: improve the game UI"));
+    assert!(!spec.contains("Megara Workflow State"));
+    assert!(!spec.contains("Megara Plan Gate"));
+    assert!(!spec.contains("<!--"));
+}
+
+#[test]
+fn projected_hook_runner_persists_zero_ambiguity_visible_spec() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let final_spec = "**요약**\n\n모호성: 0%\n\n목표: 게임 프로젝트에서 재현 가능한 작은 버그 하나를 테스트로 고치기.\n\n범위:\n- Galaga 탄환 충돌 로직만 수정한다.\n- 게임 규칙과 UI는 바꾸지 않는다.\n\n결정사항:\n- 단위 테스트로 먼저 재현한다.\n\n인수 기준:\n- 재현 테스트와 경계 테스트가 통과한다.\n- 전체 테스트가 통과한다.\n\n제약과 위험:\n- 점수 체계는 변경하지 않는다.\n\n다음 단계: 이 잠긴 요약에서 바로 `ralplan`을 시작한다. 구현은 아직 허용되지 않는다.\n";
+    let payload = serde_json::json!({
+        "session_id": "visible-zero-final",
+        "cwd": dir.path().display().to_string(),
+        "last_assistant_message": final_spec,
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        payload.as_bytes(),
+    ));
+
+    let state_path = dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/visible-zero-final.json");
+    let state = read_json(&state_path);
+    assert_eq!(state["active"], false);
+    assert_eq!(state["phase"], "crystallized");
+    assert_eq!(state["ambiguity"], "0%");
+    assert_eq!(state["next"], "ralplan");
+    assert_eq!(state["next_workflow_suggestion"]["workflow"], "ralplan");
+
+    let spec = fs::read_to_string(PathBuf::from(state["spec_path"].as_str().unwrap())).unwrap();
+    assert!(spec.contains("모호성: 0%"));
+    assert!(!spec.contains("Megara Workflow State"));
+    assert!(!spec.contains("<!--"));
 }
 
 #[test]

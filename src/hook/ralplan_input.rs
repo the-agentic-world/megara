@@ -34,10 +34,9 @@ pub(super) fn ralplan_input_lock_blocker(
     let Some(spec) = linked_spec else {
         return Some("missing_persisted_deep_interview_lock");
     };
-    let Some(input_sha256) = workflow_state_field(text, "input_spec_sha256") else {
-        return Some("missing_input_spec_sha256");
-    };
-    (input_sha256 != spec.sha256).then_some("input_spec_sha256_mismatch")
+    workflow_state_field(text, "input_spec_sha256")
+        .is_some_and(|input_sha256| input_sha256 != spec.sha256)
+        .then_some("input_spec_sha256_mismatch")
 }
 
 pub(super) fn active_deep_interview_state(paths: &WorkflowPaths) -> Option<Value> {

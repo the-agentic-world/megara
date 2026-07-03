@@ -58,6 +58,10 @@ pub(super) fn handle_ralplan_terminal(
         }
     }
 
+    if terminal.status == "pending_approval" {
+        ralplan_reviews::infer_ready_from_visible_plan(timestamp, payload_file, state, text);
+    }
+
     if terminal.status == "pending_approval" && !ralplan_reviews::ready(state) {
         reject_ralplan_without_reviews(timestamp, state, &plan_id);
         append_jsonl(

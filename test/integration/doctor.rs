@@ -74,6 +74,20 @@ fn doctor_reports_missing_then_ok() {
     assert!(ok_stdout.contains("\"ok\": true"));
     assert!(ok_stdout.contains("\"warnings\": []"));
     assert!(ok_stdout.contains("Codex hook events have not been observed yet"));
+
+    let human = megara()
+        .arg("doctor")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(human.status.success());
+    let human_stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(human_stdout.contains("Megara / Doctor"));
+    assert!(human_stdout.contains("megara doctor: scope=project, target=codex, ok=true"));
 }
 
 #[test]

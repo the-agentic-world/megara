@@ -21,6 +21,7 @@ fn installs_project_scope_codex_harness() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Megara / Install"));
     assert!(stdout.contains("open a new session after install"));
     assert!(dir.path().join(".agents/megara.toml").exists());
     assert!(dir.path().join(".agents/bin/megara").exists());
@@ -58,8 +59,10 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("At `5%`, stop asking ordinary interview questions"));
     assert!(skill.contains("At `2%`, stop asking ordinary interview questions"));
     assert!(skill.contains("At `0%`, do not ask another milestone decision"));
+    assert!(skill.contains("show `0%` as the final visible ambiguity score"));
     assert!(skill.contains("Continue deep-interview to the next ambiguity target"));
     assert!(skill.contains("reaching the active target opens the milestone decision step"));
+    assert!(skill.contains("do not crystallize at `1%`"));
     assert!(skill.contains("Codex Plan-Mode Preflight"));
     assert!(
         skill.contains("The preflight question must have exactly three visible numbered options")
@@ -87,12 +90,14 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Do not include technical gate blocks"));
     assert!(skill.contains("Runtime hooks infer the pending question"));
     assert!(skill.contains("Do not emit a visible ledger update"));
-    assert!(skill.contains("hidden `Megara Workflow State` comment"));
+    assert!(skill.contains("output only the user-facing markdown spec"));
     assert!(skill.contains("Produce a user-friendly pending-approval summary"));
+    assert!(skill.contains("For a `0%` target completion, this must be exactly `0%`"));
     assert!(skill.contains("Do not show raw labels such as `Metadata`"));
     assert!(!skill.contains("Interview ledger update:"));
     assert!(!skill.contains("Megara Question Gate:"));
-    assert!(skill.contains("Megara Workflow State:"));
+    assert!(!skill.contains("Megara Workflow State:"));
+    assert!(skill.contains("Do not emit `Megara Workflow State`"));
     assert!(skill.contains("locked markdown artifact"));
     assert!(skill.contains("spec_path"));
     assert!(skill.contains("Write every user-facing sentence in the configured locale"));
@@ -107,21 +112,31 @@ fn installs_project_scope_codex_harness() {
     assert!(caveman.contains("ACTIVE EVERY RESPONSE"));
     assert!(caveman.contains("stop caveman"));
     let ralplan = fs::read_to_string(dir.path().join(".agents/skills/ralplan/SKILL.md")).unwrap();
-    assert!(ralplan.contains("Megara Review Pass:"));
-    assert!(ralplan.contains("Megara Plan Gate:"));
-    assert!(ralplan.contains("Megara Approval Gate:"));
-    assert!(ralplan.contains("hidden runtime metadata comments"));
-    assert!(ralplan.contains("Do not show these metadata blocks in visible prose"));
+    assert!(!ralplan.contains("Megara Review Pass:"));
+    assert!(!ralplan.contains("Megara Plan Gate:"));
+    assert!(!ralplan.contains("Megara Approval Gate:"));
+    assert!(ralplan.contains("Do not output runtime metadata"));
+    assert!(ralplan.contains("Runtime hooks infer review coverage"));
+    assert!(ralplan
+        .contains("Do not send progress messages that merely narrate internal workflow mechanics"));
+    assert!(ralplan.contains(
+        "begin planning from the locked spec without asking another transition question"
+    ));
     assert!(ralplan.contains("Normal user approval should be a number or natural-language choice"));
     assert!(ralplan.contains("input_spec_sha256"));
     assert!(ralplan.contains("plan_sha256"));
-    assert!(ralplan.contains("pending_approval"));
+    assert!(ralplan.contains("pending-approval plan"));
     let ultragoal =
         fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
     assert!(ultragoal.contains(r#"MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}""#));
     assert!(ultragoal.contains(r#""$MEGARA_BIN" ultragoal"#));
-    assert!(ultragoal.contains("include hidden metadata"));
-    assert!(ultragoal.contains("Do not show `Megara Workflow State`"));
+    assert!(ultragoal.contains("output only user-facing prose"));
+    assert!(ultragoal.contains("Run Megara CLI commands silently"));
+    assert!(ultragoal.contains("Do not narrate session ids"));
+    assert!(ultragoal.contains("checkpoint attempts"));
+    assert!(ultragoal
+        .contains("User-visible progress should mention only externally meaningful product work"));
+    assert!(ultragoal.contains("Runtime state is managed by the `megara ultragoal` CLI commands"));
     assert!(!ultragoal.contains("\nmegara ultragoal"));
     assert!(megara_with_codex_home(codex_home.path())
         .arg("--version")
@@ -185,6 +200,8 @@ fn installs_project_scope_codex_harness() {
     let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
     assert!(agents_md.contains("## Locale"));
     assert!(agents_md.contains("Locale: `ko-KR`"));
+    assert!(agents_md.contains("Hook output and Megara CLI state are runtime internals"));
+    assert!(agents_md.contains("quality-gate JSON"));
     assert!(agents_md.contains("## Codex Runtime Adapter"));
     assert!(agents_md.contains("This projected harness is running inside Codex"));
     assert!(agents_md.contains("Codex native Plan mode is available through `/plan` or Shift+Tab"));

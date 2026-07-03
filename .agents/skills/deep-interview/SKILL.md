@@ -69,7 +69,7 @@ Each target means the interview has enough clarity for that precision level only
 - At `15%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `5%`.
 - At `5%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `2%`.
 - At `2%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `0%`.
-- At `0%`, do not ask another milestone decision. Crystallize immediately for `ralplan` after closure gates pass.
+- At `0%`, do not ask another milestone decision. Crystallize immediately for `ralplan` after closure gates pass, and show `0%` as the final visible ambiguity score in the crystallized spec.
 
 Milestone decision questions are still active interview questions. They must show the current ambiguity score and exactly four visible numbered options:
 
@@ -78,7 +78,7 @@ Milestone decision questions are still active interview questions. They must sho
 3. Continue deep-interview only on a named component or risk.
 4. Direct input / not in the listed options.
 
-If the user chooses option 2, lower the active target to the next ladder step and continue interviewing the weakest active gap. If the user chooses option 3, keep the next stricter target unless the user explicitly names a different target. If the user chooses option 1, write the final pending-approval spec and hidden workflow state as the final response of that assistant turn.
+If the user chooses option 2, lower the active target to the next ladder step and continue interviewing the weakest active gap. If the user chooses option 3, keep the next stricter target unless the user explicitly names a different target. If the user chooses option 1, write the final pending-approval spec as the final response of that assistant turn.
 
 ## Ambiguity Scoring
 
@@ -126,6 +126,8 @@ Do not stop ordinary interview questions until:
 - acceptance criteria and verification are concrete enough for `ralplan`.
 
 At `15%`, `5%`, and `2%`, reaching the active target opens the milestone decision step; it does not automatically crystallize. At `0%`, reaching the active target crystallizes immediately after closure gates pass.
+
+When the active target is `0%`, do not crystallize at `1%` or any other non-zero score. If final restatement confirmation removes the last meaningful planning assumption, explicitly set the final score to `0%` and include that score in the final spec. If it does not remove the last assumption, ask one more compact targeted question instead of finalizing.
 
 ## Codex Plan-Mode Preflight
 
@@ -325,23 +327,15 @@ Only crystallize the spec after both gates pass and either:
 - the interview reaches `0%`, or
 - the user explicitly exits early with known ambiguity.
 
-When the final pending-approval spec is crystallized, include this parseable state block at the end inside an HTML comment so it is available to runtime hooks but hidden from normal rendered chat:
+If the original user request already asked for the full `deep-interview -> ralplan` pipeline, the crystallized spec should make the next step unmistakable: say that the next assistant turn should start `ralplan` from this locked summary. Do not ask the user for another deep-interview approval once the requested `0%` target is reached.
 
-```text
-<!--
-Megara Workflow State:
-- skill: deep-interview
-- status: crystallized
-- ambiguity: <NN%>
-- next: ralplan
--->
-```
+When the final pending-approval spec is crystallized, output only the user-facing markdown spec. Do not emit `Megara Workflow State`, HTML comments, YAML-like control blocks, JSON, code fences, or any parseable runtime metadata. Runtime hooks infer the crystallized state from the visible final spec and persist runtime state internally.
 
-The final pending-approval spec and the hidden `Megara Workflow State` comment must be in the same assistant response. Runtime hooks persist that full response as the locked markdown artifact for the interview. A standalone workflow-state comment without the final spec body is not a valid crystallized handoff and should not be used except to diagnose a missing-artifact failure.
+The final pending-approval spec must be the same assistant response that ends deep-interview. Runtime hooks persist the visible final response as the locked markdown artifact for the interview. A standalone state report is never valid.
 
-Immediately before the hidden workflow-state comment, include one short configured-locale next-step suggestion. It should tell the user they can continue with `ralplan` from this summary and that implementation is still not allowed. Do not start `ralplan` or implementation in the same response. After emitting the hidden comment, stop; the next assistant turn may begin `ralplan` after the Stop hook persists the lock.
+End the visible spec with one short configured-locale next-step suggestion. It should tell the user they can continue with `ralplan` from this summary and that implementation is still not allowed. Do not start `ralplan` or implementation in the same response. After the final visible spec, stop; the next assistant turn may begin `ralplan` after the Stop hook persists the lock.
 
-If the user explicitly cancels the interview, use `status: cancelled`. If the interview is still active and asking more questions, do not emit this workflow state block.
+If the user explicitly cancels the interview, say so in normal user-facing prose only. If the interview is still active and asking more questions, keep asking compact visible questions.
 
 ## Local Record
 
@@ -353,7 +347,7 @@ Runtime hooks should persist raw prompts and assistant messages locally under `.
 - `conversation-events.jsonl`: chronological user/assistant event index.
 - `conversation.jsonl`: extracted user prompt and assistant message text when the hook runtime can parse JSON.
 
-When a crystallized final response includes hidden `Megara Workflow State:` metadata, runtime hooks should also persist the full final response as a markdown lock artifact:
+When a crystallized final response is visible-only and points to `ralplan` as the next step, runtime hooks persist the visible final response as a markdown lock artifact:
 
 - `.agents/state/workflows/deep-interview/specs/deep-interview-<session-id>-<timestamp>.md`
 - `.agents/state/workflows/deep-interview/specs/index.jsonl`
@@ -370,13 +364,14 @@ Produce a user-friendly pending-approval summary, not a raw metadata report.
 
 Visible output should use concise configured-locale headings only:
 
+- Ambiguity: the final percentage. For a `0%` target completion, this must be exactly `0%`.
 - Goal: one confirmed sentence plus essential detail.
 - Scope: in-scope, out-of-scope, and deferrals.
 - Decisions: the important choices made during the interview.
 - Acceptance criteria: concrete checks for success.
 - Constraints and risks: only items that matter for planning.
-- Next step: normally `ralplan`, with a concrete configured-locale sentence before the hidden workflow-state comment.
+- Next step: normally `ralplan`, with a concrete configured-locale sentence.
 
-Do not show raw labels such as `Metadata`, `Clarity breakdown`, `Topology`, `Trigger history`, `Ontology`, `Interview transcript summary`, `spec_path`, `spec_sha256`, `payload`, `persisted_at`, or hook event names in the visible final response. If internal details are useful for audit, place a compact summary inside the hidden HTML comment, not in visible prose.
+Do not show raw labels such as `Metadata`, `Clarity breakdown`, `Topology`, `Trigger history`, `Ontology`, `Interview transcript summary`, `spec_path`, `spec_sha256`, `payload`, `persisted_at`, hook event names, or any `Megara ... Gate`/`Megara Workflow State` labels in the visible final response. Internal details belong only in runtime state files managed by hooks.
 
-End in pending approval and include the hidden `Megara Workflow State` comment in the same response so the runtime can persist the markdown spec artifact. Do not start implementation from this workflow.
+End in pending approval with visible prose only so the runtime can persist the markdown spec artifact. Do not start implementation from this workflow.

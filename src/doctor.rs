@@ -9,6 +9,7 @@ use crate::{
     paths::{InstallPaths, TargetRuntime},
     targets::codex,
     templates::TemplateRegistry,
+    ui::{self, Section},
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -91,16 +92,26 @@ impl DoctorReport {
             return Ok(());
         }
 
-        println!(
-            "megara doctor: scope={}, target={}, ok={}",
-            self.scope, self.target, self.ok
-        );
+        let rows = [
+            ("scope", self.scope.clone()),
+            ("target", self.target.clone()),
+            ("ok", self.ok.to_string()),
+        ];
+        let mut sections = vec![Section::new(
+            "Run",
+            vec![format!(
+                "megara doctor: scope={}, target={}, ok={}",
+                self.scope, self.target, self.ok
+            )],
+        )];
+        push_group(&mut sections, "Missing", &self.missing);
+        push_group(&mut sections, "Unmanaged", &self.unmanaged);
+        push_group(&mut sections, "Stale", &self.stale);
+        push_group(&mut sections, "Warnings", &self.warnings);
+        push_group(&mut sections, "Observations", &self.observations);
 
-        print_group("missing", &self.missing);
-        print_group("unmanaged", &self.unmanaged);
-        print_group("stale", &self.stale);
-        print_group("warnings", &self.warnings);
-        print_group("observations", &self.observations);
+        let status = if self.ok { "OK" } else { "issues found" };
+        ui::print_dashboard("Doctor", status, &rows, &sections)?;
         Ok(())
     }
 }
@@ -111,13 +122,9 @@ fn runtime_dependency_issues(target: TargetRuntime) -> Vec<String> {
     }
 }
 
-fn print_group(label: &str, paths: &[String]) {
-    if paths.is_empty() {
-        return;
-    }
-    println!("{label}:");
-    for path in paths {
-        println!("- {path}");
+fn push_group(sections: &mut Vec<Section>, label: &str, paths: &[String]) {
+    if !paths.is_empty() {
+        sections.push(Section::new(label, paths.to_vec()));
     }
 }
 

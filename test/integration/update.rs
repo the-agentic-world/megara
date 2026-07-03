@@ -56,6 +56,7 @@ fn update_refreshes_project_harness_and_removes_legacy_codex_skills() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Megara / Update"));
     assert!(stdout.contains("Megara binary is current"));
     assert!(stdout.contains("Refreshing harness: scope=project, target=codex"));
     assert!(stdout.contains("Megara update complete."));

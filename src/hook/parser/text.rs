@@ -1,4 +1,4 @@
-use super::{plan_gate_from_text, workflow_state_from_text};
+use super::{plan_gate_metadata_from_text, workflow_state_metadata_from_text};
 
 pub(crate) fn text_before_block(text: &str, marker: &str) -> String {
     for (index, line) in text.lines().enumerate() {
@@ -21,7 +21,9 @@ pub(crate) fn text_before_first_workflow_block(text: &str) -> String {
     for (index, line) in lines.iter().enumerate() {
         if line.trim() == "Megara Plan Gate:" && marker_has_immediate_fields(&lines, index) {
             let tail = lines[index..].join("\n");
-            if plan_gate_from_text(&tail).is_some() && workflow_state_from_text(&tail).is_some() {
+            if plan_gate_metadata_from_text(&tail).is_some()
+                && workflow_state_metadata_from_text(&tail).is_some()
+            {
                 end = metadata_body_end(&lines, index);
                 break;
             }

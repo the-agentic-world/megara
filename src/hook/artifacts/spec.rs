@@ -25,7 +25,8 @@ pub(crate) fn persist_crystallized_spec(
     if terminal.status != "crystallized" || text.trim().is_empty() {
         return Ok(None);
     }
-    if visible_text_before_workflow_state(text).is_empty() {
+    let visible_text = visible_spec_text(text);
+    if visible_text.is_empty() {
         return Ok(None);
     }
 
@@ -40,7 +41,7 @@ pub(crate) fn persist_crystallized_spec(
         format!("payload: {}", yaml_string(payload_file.display())),
         "---".to_string(),
         String::new(),
-        text.trim().to_string(),
+        visible_text,
     ]
     .join("\n");
     content.push('\n');
@@ -70,7 +71,7 @@ pub(crate) fn persist_crystallized_spec(
     }))
 }
 
-fn visible_text_before_workflow_state(text: &str) -> String {
+fn visible_spec_text(text: &str) -> String {
     strip_html_comments(&text_before_block(text, "Megara Workflow State:"))
         .trim()
         .to_string()

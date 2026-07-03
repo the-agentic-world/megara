@@ -14,6 +14,8 @@ mod paths;
 mod targets;
 #[path = "../../src/templates.rs"]
 mod templates;
+#[path = "../../src/ui.rs"]
+mod ui;
 #[path = "../../src/ultragoal.rs"]
 mod ultragoal;
 #[path = "../../src/writer.rs"]
