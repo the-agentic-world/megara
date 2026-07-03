@@ -57,12 +57,12 @@ pub(super) fn submit_ready_reviews(project: &Path, session_id: &str) {
 }
 
 pub(super) fn deep_interview_approval_prompt() -> String {
-    "Megara Approval Gate:\n- approved_workflow: deep-interview\n- approved_status: crystallized\n- approved_ambiguity: 9%\n- next_workflow: ralplan\n- implementation_allowed_now: false\n"
+    "<!--\nMegara Approval Gate:\n- approved_workflow: deep-interview\n- approved_status: crystallized\n- approved_ambiguity: 9%\n- next_workflow: ralplan\n- implementation_allowed_now: false\n-->\n"
         .to_string()
 }
 
 fn ready_ralplan_reviews_payload(session_id: &str) -> String {
-    let message = "Review coverage complete.\n\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: CLEAR\n- summary: Planner pass is ready.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Architecture pass is clear.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: Critic pass approves planning quality.\n- required_fixes:\n  - none\n\n";
+    let message = "Review coverage complete.\n\n<!--\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: CLEAR\n- summary: Planner pass is ready.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Architecture pass is clear.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: Critic pass approves planning quality.\n- required_fixes:\n  - none\n-->\n";
     serde_json::json!({
         "session_id": session_id,
         "last_assistant_message": message,
@@ -72,7 +72,7 @@ fn ready_ralplan_reviews_payload(session_id: &str) -> String {
 
 fn pending_ralplan_plan_payload(session_id: &str, plan_id: &str, summary: &str) -> String {
     let message = format!(
-        "**Pending Execution Plan**\n\nSummary: {summary}\n\nSteps:\n- Keep the change small.\n- Verify the expected behavior.\n\nAcceptance criteria:\n- Existing tests pass.\n\nMegara Plan Gate:\n- id: {plan_id}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {plan_id}\n- next: approval\n\n"
+        "**Pending Execution Plan**\n\nSummary: {summary}\n\nSteps:\n- Keep the change small.\n- Verify the expected behavior.\n\nAcceptance criteria:\n- Existing tests pass.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: {plan_id}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {plan_id}\n- next: approval\n-->\n"
     );
     serde_json::json!({
         "session_id": session_id,
@@ -88,7 +88,7 @@ fn pending_ralplan_plan_payload_with_input_spec(
     input_spec_sha256: &str,
 ) -> String {
     let message = format!(
-        "**Pending Execution Plan**\n\nSummary: {summary}\n\nInput lock: {input_spec_sha256}\n\nSteps:\n- Keep the change small.\n- Verify the expected behavior.\n\nAcceptance criteria:\n- Existing tests pass.\n\nMegara Plan Gate:\n- id: {plan_id}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {plan_id}\n- input_spec_sha256: {input_spec_sha256}\n- next: approval\n\n"
+        "**Pending Execution Plan**\n\nSummary: {summary}\n\nSteps:\n- Keep the change small.\n- Verify the expected behavior.\n\nAcceptance criteria:\n- Existing tests pass.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: {plan_id}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {plan_id}\n- input_spec_sha256: {input_spec_sha256}\n- next: approval\n-->\n"
     );
     serde_json::json!({
         "session_id": session_id,
@@ -122,7 +122,7 @@ pub(super) fn submit_crystallized_interview(
     goal: &str,
 ) -> serde_json::Value {
     let message = format!(
-        "**Pending Approval Specification**\n\nGoal: {goal}\n\nAcceptance criteria:\n- The requested behavior works.\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 8%\n- next: ralplan\n\n"
+        "**Requirements Summary**\n\nGoal: {goal}\n\nAcceptance criteria:\n- The requested behavior works.\n\nNext: continue with `ralplan` from this summary.\n\n<!--\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 8%\n- next: ralplan\n-->\n"
     );
     let output = stop_message(project, session_id, &message);
     assert_success(&output);

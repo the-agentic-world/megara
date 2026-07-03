@@ -169,13 +169,15 @@ MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
 
 ## Terminal State
 
-When reporting workflow state to the runtime hook, include:
+When reporting workflow state to the runtime hook, include hidden metadata:
 
 ```text
+<!--
 Megara Workflow State:
 - skill: ultragoal
 - status: goal_planning|active|blocked|complete
 - next: <next action>
+-->
 ```
 
-The hook blocks product file mutation while status is `goal_planning`. After `"$MEGARA_BIN" ultragoal complete-goals` selects an active goal, report `status: active`; implementation edits are then expected and allowed.
+Do not show `Megara Workflow State` or raw status metadata in visible prose. The visible response should summarize progress, blocker, or completion in user-friendly language. The hook blocks product file mutation while status is `goal_planning`. After `"$MEGARA_BIN" ultragoal complete-goals` selects an active goal, report `status: active` inside the hidden comment; implementation edits are then expected and allowed.

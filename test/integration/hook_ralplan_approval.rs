@@ -42,8 +42,9 @@ fn projected_hook_runner_tracks_ralplan_gate_and_approval() {
     let plan = fs::read_to_string(&plan_path).unwrap();
     assert!(plan.contains("This sentence is plan content, not the control block."));
     assert!(!plan.contains("- id: rp-add-tetris"));
+    assert!(!plan.contains("<!--"));
 
-    let reject_prompt = "Megara Approval Gate:\n- plan_id: rp-add-tetris\n- plan_sha256: 0000000000000000000000000000000000000000000000000000000000000000\n- handoff_target: ultragoal\n";
+    let reject_prompt = "<!--\nMegara Approval Gate:\n- plan_id: rp-add-tetris\n- plan_sha256: 0000000000000000000000000000000000000000000000000000000000000000\n- handoff_target: ultragoal\n-->\n";
     assert_success(&user_prompt(dir.path(), "sess-rp", reject_prompt));
     assert_eq!(
         read_json(&state_path)["approval_status"],
@@ -51,7 +52,7 @@ fn projected_hook_runner_tracks_ralplan_gate_and_approval() {
     );
 
     let approve_prompt = format!(
-        "Megara Approval Gate:\n- plan_id: rp-add-tetris\n- plan_sha256: {}\n- handoff_target: ultragoal\n",
+        "<!--\nMegara Approval Gate:\n- plan_id: rp-add-tetris\n- plan_sha256: {}\n- handoff_target: ultragoal\n-->\n",
         state["plan_sha256"].as_str().unwrap()
     );
     assert_success(&user_prompt(dir.path(), "sess-rp", &approve_prompt));
@@ -68,12 +69,12 @@ fn projected_hook_runner_tracks_ralplan_gate_and_approval() {
 }
 
 fn submit_early_plan_without_reviews(project: &Path) {
-    let message = "**Pending Execution Plan**\n\nSummary: this should wait for review coverage.\n\nMegara Plan Gate:\n- id: rp-too-early\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-too-early\n- next: approval\n\n";
+    let message = "**Pending Execution Plan**\n\nSummary: this should wait for review coverage.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: rp-too-early\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-too-early\n- next: approval\n-->\n";
     assert_success(&stop_message(project, "sess-rp", message));
 }
 
 fn submit_review_coverage(project: &Path) {
-    let message = "Planner, architect, and critic passes complete.\n\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: CLEAR\n- summary: Initial sequence is ready for approval.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Runtime boundaries are acceptable for this plan.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: The plan is specific and verifiable enough to ask for approval.\n- required_fixes:\n  - none\n\n";
+    let message = "Planner, architect, and critic passes complete.\n\n<!--\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: CLEAR\n- summary: Initial sequence is ready for approval.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Runtime boundaries are acceptable for this plan.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: The plan is specific and verifiable enough to ask for approval.\n- required_fixes:\n  - none\n-->\n";
     assert_success(&stop_message(project, "sess-rp", message));
 }
 
@@ -83,7 +84,7 @@ fn projected_hook_runner_blocks_pending_plan_when_planner_is_still_draft() {
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
 
-    let message = "Draft planner pass should not approve.\n\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: DRAFT\n- summary: Initial sequence still needs revision.\n- required_fixes:\n  - Revise the plan before approval.\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Runtime boundaries are acceptable for this plan.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: The plan would be verifiable after planner revision.\n- required_fixes:\n  - none\n\n";
+    let message = "Draft planner pass should not approve.\n\n<!--\nMegara Review Pass:\n- role: planner\n- round: 1\n- verdict: DRAFT\n- summary: Initial sequence still needs revision.\n- required_fixes:\n  - Revise the plan before approval.\n\nMegara Review Pass:\n- role: architect\n- round: 1\n- verdict: CLEAR\n- summary: Runtime boundaries are acceptable for this plan.\n- required_fixes:\n  - none\n\nMegara Review Pass:\n- role: critic\n- round: 1\n- verdict: OKAY\n- summary: The plan would be verifiable after planner revision.\n- required_fixes:\n  - none\n-->\n";
     assert_success(&stop_message(dir.path(), "sess-draft-planner", message));
 
     submit_plan(
@@ -101,6 +102,6 @@ fn projected_hook_runner_blocks_pending_plan_when_planner_is_still_draft() {
 }
 
 fn submit_plan_with_marker_mention(project: &Path) {
-    let message = "**Pending Execution Plan**\n\nSummary: add a Tetris mode without changing the current menu contract.\n\nNotes:\nThe plan body may mention this literal marker before the actual trailer.\n\nMegara Plan Gate:\nThis sentence is plan content, not the control block.\n\nSteps:\n- Add content routing.\n- Add Tetris state and rendering.\n\nAcceptance criteria:\n- Existing 2048 flow still works.\n- Tetris can start and restart.\n\nMegara Plan Gate:\n- id: rp-add-tetris\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-add-tetris\n- next: approval\n\n";
+    let message = "**Pending Execution Plan**\n\nSummary: add a Tetris mode without changing the current menu contract.\n\nNotes:\nThe plan body may mention this literal marker before the actual trailer.\n\nMegara Plan Gate:\nThis sentence is plan content, not the control block.\n\nSteps:\n- Add content routing.\n- Add Tetris state and rendering.\n\nAcceptance criteria:\n- Existing 2048 flow still works.\n- Tetris can start and restart.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: rp-add-tetris\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-add-tetris\n- next: approval\n-->\n";
     assert_success(&stop_message(project, "sess-rp", message));
 }

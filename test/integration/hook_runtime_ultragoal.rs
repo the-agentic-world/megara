@@ -44,7 +44,7 @@ fn hook_blocks_ultragoal_goal_planning_but_allows_active_goal_mutations() {
 
 fn submit_ultragoal_state(project: &Path, status: &str, next: &str) {
     let payload = format!(
-        "{{\"session_id\":\"sess-ug-hook\",\"last_assistant_message\":\"Megara Workflow State:\\n- skill: ultragoal\\n- status: {status}\\n- next: {next}\\n\\n\"}}"
+        "{{\"session_id\":\"sess-ug-hook\",\"last_assistant_message\":\"Status update.\\n\\n<!--\\nMegara Workflow State:\\n- skill: ultragoal\\n- status: {status}\\n- next: {next}\\n-->\\n\"}}"
     );
     let output = run_hook(project, project, "Stop", None, payload.as_bytes());
     assert!(

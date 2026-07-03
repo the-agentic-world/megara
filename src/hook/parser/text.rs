@@ -22,7 +22,7 @@ pub(crate) fn text_before_first_workflow_block(text: &str) -> String {
         if line.trim() == "Megara Plan Gate:" && marker_has_immediate_fields(&lines, index) {
             let tail = lines[index..].join("\n");
             if plan_gate_from_text(&tail).is_some() && workflow_state_from_text(&tail).is_some() {
-                end = index;
+                end = metadata_body_end(&lines, index);
                 break;
             }
         }
@@ -34,6 +34,18 @@ pub(crate) fn text_before_first_workflow_block(text: &str) -> String {
         .join("\n")
         .trim()
         .to_string()
+}
+
+fn metadata_body_end(lines: &[&str], marker_index: usize) -> usize {
+    let mut index = marker_index;
+    while index > 0 && lines[index - 1].trim().is_empty() {
+        index -= 1;
+    }
+    if index > 0 && lines[index - 1].trim() == "<!--" {
+        index - 1
+    } else {
+        marker_index
+    }
 }
 
 fn marker_has_immediate_fields(lines: &[&str], marker_index: usize) -> bool {

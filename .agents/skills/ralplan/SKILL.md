@@ -16,14 +16,14 @@ Use this workflow after a request is clear enough to plan, but before implementa
 - Do not edit files, run mutating commands, commit, or push while Ralplan is active.
 - If this `ralplan` run follows an approved `deep-interview` handoff, the current session must have a persisted crystallized markdown artifact. Treat only that artifact as the input lock.
 - Do not use conversation-only `deep-interview` content as a substitute for the persisted lock after a `deep-interview` approval. If the current-session lock is missing, stale, or mismatched, stop with a blocker instead of producing a pending-approval plan.
-- When a `deep-interview` input lock is required, include the current-session spec path and exact sha256 in the plan body and in the final `Megara Workflow State` block.
+- When a `deep-interview` input lock is required, use the current-session spec path and exact sha256 only in hidden runtime metadata. Do not show `spec_path`, `spec_sha256`, or `input_spec_sha256` in visible plan prose.
 - `input_spec_sha256: none` is allowed only for direct `ralplan` runs that did not follow an approved `deep-interview` handoff.
 - The planner creates the first plan.
 - The architect reviews system shape, boundaries, and tradeoffs.
 - The critic rejects vague, unverifiable, or internally inconsistent plans.
 - Iterate until the plan is executable, the user requests refinement, or a blocker is explicit.
 - Do not finish with a pending-approval plan until planner, architect, and critic passes have all been recorded, the planner and architect verdicts are approval-capable, and the critic verdict is `OKAY`.
-- Always finish approved planning with a pending-approval plan, clear execution options, and the parseable gate blocks below.
+- Always finish approved planning with a pending-approval plan, clear execution options, and hidden runtime metadata comments.
 - Write every user-facing sentence in the configured locale, including progress updates, plan headings, option labels, assumptions, risks, and final summaries.
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
@@ -58,11 +58,12 @@ The pending-approval plan is allowed only after these review conditions are true
 - Latest architect pass is `CLEAR`, `WATCH`, or `OKAY`.
 - Latest critic pass is `OKAY`.
 
-After each planner, architect, or critic pass, append one review block. Do not write review notes to files directly; the hook records these blocks as durable review artifacts.
+After each planner, architect, or critic pass, append one hidden review comment. Do not write review notes to files directly; the hook records these blocks as durable review artifacts.
 
-When producing the final pending-approval plan, include the latest planner, architect, and critic review blocks in the same final assistant message after the workflow state block. Progress/commentary messages are not durable hook input; if a review block appears only there, the plan will be rejected as `review_incomplete`.
+When producing the final pending-approval plan, include the latest planner, architect, and critic review blocks in the same final assistant message inside hidden HTML comments after the workflow state comment. Progress/commentary messages are not durable hook input; if a review block appears only there, the plan will be rejected as `review_incomplete`.
 
 ```text
+<!--
 Megara Review Pass:
 - role: planner|architect|critic
 - round: 1
@@ -70,24 +71,27 @@ Megara Review Pass:
 - summary: <configured-locale concise review summary>
 - required_fixes:
   - <configured-locale required fix, or none>
+-->
 ```
 
-Do not put this block inside code fences in the actual response.
+Do not show this metadata in visible prose. In the actual response, put each review block inside an HTML comment, not inside code fences.
 
 ## Plan Gate
 
 The final pending-approval response must contain, in order:
 
 1. The full markdown plan.
-2. `Megara Plan Gate` exactly once.
-3. `Megara Workflow State` exactly once.
-4. Latest `Megara Review Pass` blocks for planner, architect, and critic.
+2. A concise visible approval question with numbered choices.
+3. Hidden `Megara Plan Gate` exactly once.
+4. Hidden `Megara Workflow State` exactly once.
+5. Hidden latest `Megara Review Pass` blocks for planner, architect, and critic.
 
-The hook records the markdown before the plan/workflow gate blocks as the locked plan artifact and computes `plan_sha256`.
+The hook records the visible markdown before the hidden plan/workflow metadata as the locked plan artifact and computes `plan_sha256`.
 
 Use stable ids within the session:
 
 ```text
+<!--
 Megara Plan Gate:
 - id: rp-<short-purpose>
 - status: pending_approval
@@ -105,21 +109,24 @@ Megara Workflow State:
 - plan_id: rp-<short-purpose>
 - input_spec_sha256: <sha256 or none>
 - next: approval
+-->
 ```
 
-Do not put these blocks inside code fences in the actual response.
+Do not show these metadata blocks in visible prose. In the actual response, put them inside one HTML comment, not inside code fences.
 
 If a `deep-interview` handoff was approved but no matching persisted lock exists for the current session, do not emit `Megara Plan Gate`. End with:
 
 ```text
+<!--
 Megara Blocker Gate:
 - workflow: ralplan
 - status: blocked
 - reason: persisted_deep_interview_lock_missing_or_mismatched
 - implementation_allowed_now: false
+-->
 ```
 
-Do not put this block inside code fences in the actual response.
+Do not show this metadata in visible prose. In the actual response, put the blocker gate inside an HTML comment, not inside code fences. The visible output should explain the blocker in user-friendly language without raw gate labels.
 
 ## Approval Gate
 
@@ -130,13 +137,15 @@ Offer these terminal choices:
 - Approve execution via `team`.
 - Stop with the plan pending approval.
 
-When an external controller or user provides a parseable approval gate, it must bind to the exact locked plan:
+When an external controller provides a parseable approval gate, it must bind to the exact locked plan and should be hidden from normal rendered chat:
 
 ```text
+<!--
 Megara Approval Gate:
 - plan_id: rp-<short-purpose>
 - plan_sha256: <64-char sha256>
 - handoff_target: ultragoal|team
+-->
 ```
 
-Do not put this block inside code fences in the actual approval response.
+Normal user approval should be a number or natural-language choice. Do not show this metadata in visible prose. If an agent/controller must emit it, put it inside an HTML comment, not inside code fences.

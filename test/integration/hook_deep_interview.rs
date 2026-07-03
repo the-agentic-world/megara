@@ -71,6 +71,8 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(spec.starts_with("---\n"));
     assert!(spec.contains("Goal: build the verified game."));
     assert!(spec.contains("Megara Workflow State:"));
+    assert!(spec.contains("<!--\nMegara Workflow State:"));
+    assert!(!spec.contains("Transcript summary:"));
 
     let spec_index = fs::read_to_string(
         dir.path()
@@ -232,7 +234,7 @@ fn terminal_deep_interview_closes_same_cwd_ghost_pending_state() {
         ghost_payload.as_bytes(),
     ));
 
-    let final_spec = "**Pending Approval Specification**\n\nGoal: improve the game UI.\n\nAcceptance criteria:\n- Layout does not overflow.\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 9%\n- next: ralplan\n\n";
+    let final_spec = "**Requirements Summary**\n\nGoal: improve the game UI.\n\nAcceptance criteria:\n- Layout does not overflow.\n\n<!--\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 9%\n- next: ralplan\n-->\n\n";
     let visible_payload = serde_json::json!({
         "session_id": "visible-session",
         "cwd": dir.path().display().to_string(),

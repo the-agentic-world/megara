@@ -51,6 +51,23 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.starts_with("---\n"));
     assert!(skill.contains("MEGARA:MANAGED"));
     assert!(skill.contains("Do not print a separate threshold line"));
+    assert!(skill.contains("Default ladder: `15% -> 5% -> 2% -> 0% remaining ambiguity`"));
+    assert!(skill.contains("Ambiguity Target Ladder"));
+    assert!(skill.contains("15% -> 5% -> 2% -> 0%"));
+    assert!(skill.contains("At `15%`, stop asking ordinary interview questions"));
+    assert!(skill.contains("At `5%`, stop asking ordinary interview questions"));
+    assert!(skill.contains("At `2%`, stop asking ordinary interview questions"));
+    assert!(skill.contains("At `0%`, do not ask another milestone decision"));
+    assert!(skill.contains("Continue deep-interview to the next ambiguity target"));
+    assert!(skill.contains("reaching the active target opens the milestone decision step"));
+    assert!(skill.contains("Codex Plan-Mode Preflight"));
+    assert!(
+        skill.contains("The preflight question must have exactly three visible numbered options")
+    );
+    assert!(skill.contains("Restart with `/plan <same request>`"));
+    assert!(skill.contains("Continue here without `/plan`"));
+    assert!(!skill.contains("Continue here, but keep questions extra compact"));
+    assert!(skill.contains("begin Round 0 in the next assistant turn using the original request"));
     assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
     assert!(skill.contains("Calculate ambiguity as `100 - weighted_clarity`"));
     assert!(skill.contains("Ambiguity is bidirectional and non-monotonic"));
@@ -70,6 +87,9 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Do not include technical gate blocks"));
     assert!(skill.contains("Runtime hooks infer the pending question"));
     assert!(skill.contains("Do not emit a visible ledger update"));
+    assert!(skill.contains("hidden `Megara Workflow State` comment"));
+    assert!(skill.contains("Produce a user-friendly pending-approval summary"));
+    assert!(skill.contains("Do not show raw labels such as `Metadata`"));
     assert!(!skill.contains("Interview ledger update:"));
     assert!(!skill.contains("Megara Question Gate:"));
     assert!(skill.contains("Megara Workflow State:"));
@@ -90,6 +110,9 @@ fn installs_project_scope_codex_harness() {
     assert!(ralplan.contains("Megara Review Pass:"));
     assert!(ralplan.contains("Megara Plan Gate:"));
     assert!(ralplan.contains("Megara Approval Gate:"));
+    assert!(ralplan.contains("hidden runtime metadata comments"));
+    assert!(ralplan.contains("Do not show these metadata blocks in visible prose"));
+    assert!(ralplan.contains("Normal user approval should be a number or natural-language choice"));
     assert!(ralplan.contains("input_spec_sha256"));
     assert!(ralplan.contains("plan_sha256"));
     assert!(ralplan.contains("pending_approval"));
@@ -97,6 +120,8 @@ fn installs_project_scope_codex_harness() {
         fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
     assert!(ultragoal.contains(r#"MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}""#));
     assert!(ultragoal.contains(r#""$MEGARA_BIN" ultragoal"#));
+    assert!(ultragoal.contains("include hidden metadata"));
+    assert!(ultragoal.contains("Do not show `Megara Workflow State`"));
     assert!(!ultragoal.contains("\nmegara ultragoal"));
     assert!(megara_with_codex_home(codex_home.path())
         .arg("--version")
@@ -160,6 +185,10 @@ fn installs_project_scope_codex_harness() {
     let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
     assert!(agents_md.contains("## Locale"));
     assert!(agents_md.contains("Locale: `ko-KR`"));
+    assert!(agents_md.contains("## Codex Runtime Adapter"));
+    assert!(agents_md.contains("This projected harness is running inside Codex"));
+    assert!(agents_md.contains("Codex native Plan mode is available through `/plan` or Shift+Tab"));
+    assert!(agents_md.contains("Codex Plan-Mode Preflight before Round 0"));
     assert!(agents_md.contains("## Skills"));
     assert!(agents_md.contains("## Default Active Skills"));
     assert!(agents_md.contains("- `caveman`"));

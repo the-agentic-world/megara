@@ -19,6 +19,7 @@ Use this workflow when approved work benefits from multiple coordinated roles.
 - Write every user-facing sentence in the configured locale, including progress updates, lane assignments, status reports, review findings, and final summaries.
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
+- Do not show raw runtime metadata, hook fields, state paths, sha256 values, or workflow gate labels in visible prose. Runtime metadata is internal-only.
 
 ## Default Lanes
 

@@ -82,6 +82,18 @@ fn plan_body_extraction_preserves_marker_mentions() {
 }
 
 #[test]
+fn plan_body_extraction_hides_metadata_comment() {
+    let text = "**Pending Execution Plan**\n\nSummary: add a dashboard.\n\nAcceptance criteria:\n- Existing flow still works.\n\n<!--\nMegara Plan Gate:\n- id: rp-dashboard\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-dashboard\n- next: approval\n-->\n";
+
+    let body = text_before_first_workflow_block(text);
+
+    assert!(body.contains("Summary: add a dashboard."));
+    assert!(!body.contains("<!--"));
+    assert!(!body.contains("Megara Plan Gate:"));
+    assert!(!body.contains("Megara Workflow State:"));
+}
+
+#[test]
 fn block_parser_does_not_steal_fields_after_prose() {
     let text = "Megara Plan Gate:\nThis marker is only discussed in prose.\n\nMegara Plan Gate:\n- id: rp-real\n- status: pending_approval\n";
 

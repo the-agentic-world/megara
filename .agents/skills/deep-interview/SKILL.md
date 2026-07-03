@@ -26,7 +26,7 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Show the current ambiguity score on every active interview question.
 - Use exactly four visible options on every active interview question: three concrete choices plus one configured-locale free-text catch-all option for answers outside the listed choices.
 - Target the weakest active component and dimension each round.
-- Continue until ambiguity is at or below the resolved threshold, or the user explicitly exits early.
+- Continue until ambiguity reaches the active ambiguity target, then ask whether to crystallize for `ralplan` or continue to the next stricter target.
 - End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
 - Recording interview state is allowed and required; it is not implementation work.
 - Runtime hooks own `.agents/state/workflows/deep-interview/**` and `.agents/state/workflows/ralplan/**`. Do not inspect, edit, repair, or synthesize those files to force a handoff.
@@ -45,15 +45,40 @@ Do not use this when the request already has concrete files, behavior, constrain
 
 Resolve the ambiguity threshold before the first question.
 
-- Default threshold: `15% remaining ambiguity`.
-- If the user explicitly gives a stricter or looser threshold, use that and name it.
+- Default ladder: `15% -> 5% -> 2% -> 0% remaining ambiguity`.
+- Start with `15%` as the active ambiguity target.
+- If the user explicitly gives a stricter or looser threshold, use that as an explicit override and name it.
 - If project or runtime settings expose a deep-interview threshold, use that and name the source.
 
-Before the first topology question, resolve the threshold internally. Do not print a separate threshold line in active question output. Include the threshold and source in the final crystallized specification.
+Before the first topology question, resolve the active target internally. Do not print a separate threshold line in active question output. Include the final target and source in the final crystallized specification.
 
 ```text
 <configured-locale threshold label>: NN% <configured-locale remaining ambiguity> (source: default|user|project|runtime)
 ```
+
+## Ambiguity Target Ladder
+
+Use the default ambiguity target ladder unless the user or project configuration explicitly overrides it:
+
+```text
+15% -> 5% -> 2% -> 0%
+```
+
+Each target means the interview has enough clarity for that precision level only after the closure gates also pass.
+
+- At `15%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `5%`.
+- At `5%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `2%`.
+- At `2%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `0%`.
+- At `0%`, do not ask another milestone decision. Crystallize immediately for `ralplan` after closure gates pass.
+
+Milestone decision questions are still active interview questions. They must show the current ambiguity score and exactly four visible numbered options:
+
+1. Proceed to `ralplan` with the current crystallized spec.
+2. Continue deep-interview to the next ambiguity target.
+3. Continue deep-interview only on a named component or risk.
+4. Direct input / not in the listed options.
+
+If the user chooses option 2, lower the active target to the next ladder step and continue interviewing the weakest active gap. If the user chooses option 3, keep the next stricter target unless the user explicitly names a different target. If the user chooses option 1, write the final pending-approval spec and hidden workflow state as the final response of that assistant turn.
 
 ## Ambiguity Scoring
 
@@ -94,11 +119,34 @@ Do not show dimension-level score details in active question turns. If you need 
 
 Ambiguity is bidirectional and non-monotonic. Later answers can increase ambiguity when they contradict established facts, add scope, expose internal inconsistency, or fail to answer the targeted gap. Reflect the change in internal scoring and target the next question at the affected component/dimension.
 
-Do not stop the interview until:
+Do not stop ordinary interview questions until:
 
-- overall ambiguity is at or below the resolved threshold,
+- overall ambiguity is at or below the active ambiguity target,
 - no dimension has more than `25%` remaining ambiguity,
 - acceptance criteria and verification are concrete enough for `ralplan`.
+
+At `15%`, `5%`, and `2%`, reaching the active target opens the milestone decision step; it does not automatically crystallize. At `0%`, reaching the active target crystallizes immediately after closure gates pass.
+
+## Codex Plan-Mode Preflight
+
+When running under the Codex runtime adapter, prefer native Codex Plan mode for the first deep-interview turn.
+
+On the first assistant response that would start deep-interview, if the user did not already start the request with `/plan`, do not begin Round 0 yet. Instead, ask one compact preflight question in the configured locale:
+
+- Explain that Codex Plan mode is recommended for deep-interview because it lets Codex gather context and ask clarifying questions before implementation.
+- Ask whether the user wants to restart the same request with `/plan <same request>` or continue here without native Plan mode.
+- Do not show an ambiguity score.
+- Do not record a pending interview question.
+- Do not emit `Megara Workflow State`.
+- Do not inspect files, run tools, or start implementation.
+
+The preflight question must have exactly three visible numbered options:
+
+1. Restart with `/plan <same request>`.
+2. Continue here without `/plan`.
+3. Direct input / not in the listed options.
+
+If the user chooses option 2, or clearly says to continue as-is, begin Round 0 in the next assistant turn using the original request from the previous turn. If the user chooses option 1, stop and wait for the restarted `/plan` request. Skip this preflight when the current request already starts with `/plan`, when the user explicitly says to continue without `/plan`, or when this conversation has already completed the Codex Plan-mode preflight for the current request.
 
 ## Round 0: Topology Confirmation
 
@@ -250,8 +298,8 @@ Use milestone bands:
 |------|-----------|
 | initial | >60% |
 | progress | 60%-31% |
-| refined | above threshold through 30% |
-| ready | <= threshold |
+| refined | above active target through 30% |
+| target reached | <= active target |
 
 At milestone transitions, briefly run an internal lateral review before the next question. Use the existing internal fragments when available:
 
@@ -271,21 +319,27 @@ Before writing the final spec:
 1. Closure audit: confirm every active component has outcome, scope, constraints, verification, and risk/context coverage. If a material gap remains, explain the gap and ask one more targeted question.
 2. Final restatement confirmation: collapse the intended outcome into one sentence and ask the user to confirm whether that sentence alone would lead to the desired result. Use configured-locale wording for this label.
 
-Only crystallize the spec after both gates pass or the user explicitly exits early with known ambiguity.
+Only crystallize the spec after both gates pass and either:
 
-When the final pending-approval spec is crystallized, include this parseable state block at the end:
+- the user chooses the milestone option to proceed to `ralplan` at `15%`, `5%`, or `2%`,
+- the interview reaches `0%`, or
+- the user explicitly exits early with known ambiguity.
+
+When the final pending-approval spec is crystallized, include this parseable state block at the end inside an HTML comment so it is available to runtime hooks but hidden from normal rendered chat:
 
 ```text
+<!--
 Megara Workflow State:
 - skill: deep-interview
 - status: crystallized
 - ambiguity: <NN%>
 - next: ralplan
+-->
 ```
 
-The final pending-approval spec and the `Megara Workflow State` block must be in the same assistant response. Runtime hooks persist that full response as the locked markdown artifact for the interview. A standalone workflow-state block without the final spec body is not a valid crystallized handoff and should not be used except to diagnose a missing-artifact failure.
+The final pending-approval spec and the hidden `Megara Workflow State` comment must be in the same assistant response. Runtime hooks persist that full response as the locked markdown artifact for the interview. A standalone workflow-state comment without the final spec body is not a valid crystallized handoff and should not be used except to diagnose a missing-artifact failure.
 
-Immediately before the `Megara Workflow State` block, include one short configured-locale next-step suggestion. It should tell the user or controller to continue with `ralplan` from the persisted spec lock and that implementation is still not allowed. Do not start `ralplan` or implementation in the same response. After emitting the block, stop; the next assistant turn may begin `ralplan` after the Stop hook persists the lock.
+Immediately before the hidden workflow-state comment, include one short configured-locale next-step suggestion. It should tell the user they can continue with `ralplan` from this summary and that implementation is still not allowed. Do not start `ralplan` or implementation in the same response. After emitting the hidden comment, stop; the next assistant turn may begin `ralplan` after the Stop hook persists the lock.
 
 If the user explicitly cancels the interview, use `status: cancelled`. If the interview is still active and asking more questions, do not emit this workflow state block.
 
@@ -299,7 +353,7 @@ Runtime hooks should persist raw prompts and assistant messages locally under `.
 - `conversation-events.jsonl`: chronological user/assistant event index.
 - `conversation.jsonl`: extracted user prompt and assistant message text when the hook runtime can parse JSON.
 
-When a crystallized final response includes `Megara Workflow State:`, runtime hooks should also persist the full final response as a markdown lock artifact:
+When a crystallized final response includes hidden `Megara Workflow State:` metadata, runtime hooks should also persist the full final response as a markdown lock artifact:
 
 - `.agents/state/workflows/deep-interview/specs/deep-interview-<session-id>-<timestamp>.md`
 - `.agents/state/workflows/deep-interview/specs/index.jsonl`
@@ -312,20 +366,17 @@ Do not emit a visible ledger update during active interview turns. Runtime hooks
 
 ## Output
 
-Produce a pending-approval specification:
+Produce a user-friendly pending-approval summary, not a raw metadata report.
 
-- Metadata: threshold, source, rounds, final ambiguity, greenfield/brownfield, status.
-- Clarity breakdown: dimensions, weights, weighted scores, final ambiguity.
-- Topology: every active and deferred component.
-- Established facts and disputed facts.
-- Trigger history: contradictions, inconsistencies, evasive answers, and scope expansions.
-- Goal: one confirmed sentence plus detail.
-- In scope / out of scope / deferrals.
-- Constraints and risks.
-- Acceptance criteria.
-- Technical context: repo evidence for brownfield work; chosen constraints for greenfield work.
-- Ontology: key entities, attributes, and relationships when applicable.
-- Interview transcript summary with all rounds.
-- Suggested next workflow: normally `ralplan`, with a concrete configured-locale next-step sentence before the final workflow-state block.
+Visible output should use concise configured-locale headings only:
 
-End in pending approval and include the `Megara Workflow State` block in the same response so the runtime can persist the markdown spec artifact. Do not start implementation from this workflow.
+- Goal: one confirmed sentence plus essential detail.
+- Scope: in-scope, out-of-scope, and deferrals.
+- Decisions: the important choices made during the interview.
+- Acceptance criteria: concrete checks for success.
+- Constraints and risks: only items that matter for planning.
+- Next step: normally `ralplan`, with a concrete configured-locale sentence before the hidden workflow-state comment.
+
+Do not show raw labels such as `Metadata`, `Clarity breakdown`, `Topology`, `Trigger history`, `Ontology`, `Interview transcript summary`, `spec_path`, `spec_sha256`, `payload`, `persisted_at`, or hook event names in the visible final response. If internal details are useful for audit, place a compact summary inside the hidden HTML comment, not in visible prose.
+
+End in pending approval and include the hidden `Megara Workflow State` comment in the same response so the runtime can persist the markdown spec artifact. Do not start implementation from this workflow.

@@ -48,7 +48,7 @@ pub(super) fn run_read(project: &Path) -> Output {
 pub(super) fn submit_state_only_crystallized(project: &Path) {
     let payload = br#"{
   "session_id": "sess-di",
-  "last_assistant_message": "Megara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n\n"
+  "last_assistant_message": "<!--\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n-->\n\n"
 }"#;
     assert_success(run_hook(project, project, "Stop", None, payload));
 }
@@ -56,7 +56,7 @@ pub(super) fn submit_state_only_crystallized(project: &Path) {
 pub(super) fn submit_final_spec(project: &Path) {
     let payload = br#"{
   "session_id": "sess-di",
-  "last_assistant_message": "**Pending Approval Specification**\n\nGoal: build the verified game.\n\nTranscript summary:\nMegara Question Gate:\n- id: di-old-transcript\n- round: 0\n- component: topology\n- dimension: Outcome clarity\n- question: Historical question embedded in the final spec.\n- options:\n  - Historical option\n- free_text: true\n\nAcceptance criteria:\n- Unit tests pass\n- E2E tests pass\n\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n\n"
+  "last_assistant_message": "**Requirements Summary**\n\nGoal: build the verified game.\n\nAcceptance criteria:\n- Unit tests pass\n- E2E tests pass\n\nNext: continue with `ralplan` from this summary. Implementation is still not allowed.\n\n<!--\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n-->\n\n"
 }"#;
     assert_success(run_hook(project, project, "Stop", None, payload));
 }

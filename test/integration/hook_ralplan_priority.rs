@@ -16,7 +16,7 @@ fn projected_hook_runner_prioritizes_ralplan_decision_over_stale_interview_quest
     assert_success(&stop_message(dir.path(), "sess-stale-di", stale_question));
 
     let approve_prompt = format!(
-        "Megara Approval Gate:\n- plan_id: rp-stale-di\n- plan_sha256: {plan_sha256}\n- handoff_target: ultragoal\n"
+        "<!--\nMegara Approval Gate:\n- plan_id: rp-stale-di\n- plan_sha256: {plan_sha256}\n- handoff_target: ultragoal\n-->\n"
     );
     assert_success(&user_prompt(dir.path(), "sess-stale-di", &approve_prompt));
 

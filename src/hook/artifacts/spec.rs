@@ -25,7 +25,7 @@ pub(crate) fn persist_crystallized_spec(
     if terminal.status != "crystallized" || text.trim().is_empty() {
         return Ok(None);
     }
-    if text_before_block(text, "Megara Workflow State:").is_empty() {
+    if visible_text_before_workflow_state(text).is_empty() {
         return Ok(None);
     }
 
@@ -68,4 +68,27 @@ pub(crate) fn persist_crystallized_spec(
         persisted_at: timestamp.to_string(),
         payload: payload_file.display().to_string(),
     }))
+}
+
+fn visible_text_before_workflow_state(text: &str) -> String {
+    strip_html_comments(&text_before_block(text, "Megara Workflow State:"))
+        .trim()
+        .to_string()
+}
+
+fn strip_html_comments(text: &str) -> String {
+    let mut output = String::new();
+    let mut rest = text;
+
+    while let Some(start) = rest.find("<!--") {
+        output.push_str(&rest[..start]);
+        let after_start = &rest[start + "<!--".len()..];
+        let Some(end) = after_start.find("-->") else {
+            return output;
+        };
+        rest = &after_start[end + "-->".len()..];
+    }
+
+    output.push_str(rest);
+    output
 }

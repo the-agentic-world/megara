@@ -9,13 +9,13 @@ const SESSION: &str = "sess-ug";
 pub(super) fn approve_ralplan_for_ultragoal(project: &Path, brief: &str) {
     submit_ready_reviews(project, SESSION);
     let plan_message = format!(
-        "**Pending Execution Plan**\n\n{brief}\n\nAcceptance criteria:\n- Both goals are verified before completion.\n\nMegara Plan Gate:\n- id: {PLAN_ID}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {PLAN_ID}\n- next: approval\n\n"
+        "**Pending Execution Plan**\n\n{brief}\n\nAcceptance criteria:\n- Both goals are verified before completion.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: {PLAN_ID}\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: {PLAN_ID}\n- next: approval\n-->\n"
     );
     assert_success(&stop_message(project, SESSION, &plan_message));
     let ralplan_state = read_state(project, RALPLAN, SESSION);
     let plan_sha256 = ralplan_state["plan_sha256"].as_str().unwrap();
     let approval_prompt = format!(
-        "Megara Approval Gate:\n- plan_id: {PLAN_ID}\n- plan_sha256: {plan_sha256}\n- handoff_target: ultragoal\n"
+        "<!--\nMegara Approval Gate:\n- plan_id: {PLAN_ID}\n- plan_sha256: {plan_sha256}\n- handoff_target: ultragoal\n-->\n"
     );
     assert_success(&user_prompt(project, SESSION, &approval_prompt));
 }
