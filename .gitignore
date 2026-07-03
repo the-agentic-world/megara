@@ -16,3 +16,6 @@
 # Local graph analysis output.
 /graphify-out/
 /graph-out/
+
+# OpenDock release-local binaries. Build before deploy, do not commit.
+/opendock/megara/workdir/bin/
