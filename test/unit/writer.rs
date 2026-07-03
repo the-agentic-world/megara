@@ -43,6 +43,33 @@ fn force_updates_unmanaged_files() {
     assert!(fs::read_to_string(path).unwrap().contains(MANAGED_MARKER));
 }
 
+#[test]
+fn uses_language_comments_for_tool_support_files() {
+    let dir = tempdir().unwrap();
+    let python = PlannedFile::new(dir.path().join("engine/__main__.py"), "print('ok')\n");
+    let javascript = PlannedFile::new(dir.path().join("engine/run.js"), "console.log('ok')\n");
+    let yaml = PlannedFile::new(
+        dir.path().join("engine/waf_profiles.yaml"),
+        "profiles: []\n",
+    );
+    let requirements = PlannedFile::new(dir.path().join("requirements.txt"), "curl_cffi\n");
+
+    write_files(&[python, javascript, yaml, requirements], false, false).unwrap();
+
+    let python = fs::read_to_string(dir.path().join("engine/__main__.py")).unwrap();
+    let javascript = fs::read_to_string(dir.path().join("engine/run.js")).unwrap();
+    let yaml = fs::read_to_string(dir.path().join("engine/waf_profiles.yaml")).unwrap();
+    let requirements = fs::read_to_string(dir.path().join("requirements.txt")).unwrap();
+    assert!(python.starts_with("# MEGARA:MANAGED"));
+    assert!(javascript.starts_with("// MEGARA:MANAGED"));
+    assert!(yaml.starts_with("# MEGARA:MANAGED"));
+    assert!(requirements.starts_with("# MEGARA:MANAGED"));
+    assert!(!python.contains("<!-- MEGARA:MANAGED"));
+    assert!(!javascript.contains("<!-- MEGARA:MANAGED"));
+    assert!(!yaml.contains("<!-- MEGARA:MANAGED"));
+    assert!(!requirements.contains("<!-- MEGARA:MANAGED"));
+}
+
 #[cfg(unix)]
 #[test]
 fn writes_executable_shell_files() {

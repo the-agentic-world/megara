@@ -108,13 +108,29 @@ fn ssot_files(root: PathBuf, registry: &TemplateRegistry) -> Vec<PlannedFile> {
 
 pub(crate) fn runtime_support_files(root: PathBuf) -> Result<Vec<PlannedFile>> {
     let megara_bin = env::current_exe().context("failed to resolve current megara executable")?;
-    Ok(vec![PlannedFile::new_executable_shell(
-        root.join("bin").join("megara"),
-        format!(
-            "#!/bin/sh\nexec {} \"$@\"\n",
-            shell_quote(&megara_bin.display().to_string())
+    Ok(vec![
+        PlannedFile::new_executable_shell(
+            root.join("bin").join("megara"),
+            format!(
+                "#!/bin/sh\nexec {} \"$@\"\n",
+                shell_quote(&megara_bin.display().to_string())
+            ),
         ),
-    )])
+        PlannedFile::new_executable_shell(
+            root.join("bin").join("insane-search"),
+            r#"#!/bin/sh
+set -eu
+bin_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+tool_dir="$bin_dir/../tools/insane-search"
+if [ ! -d "$tool_dir" ]; then
+  echo "insane-search tool directory not found: $tool_dir" >&2
+  exit 2
+fi
+cd "$tool_dir"
+exec python3 -m engine "$@"
+"#,
+        ),
+    ])
 }
 
 fn shell_quote(value: &str) -> String {

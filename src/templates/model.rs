@@ -18,6 +18,8 @@ pub enum TemplateKind {
     Workflow,
     Skill,
     SkillFragment,
+    Tool,
+    ToolSupport,
     Agent,
 }
 

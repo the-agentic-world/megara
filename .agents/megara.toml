@@ -4,6 +4,7 @@ locale = "ko-KR"
 targets = ["codex"]
 enabled_workflows = ["deep-interview", "ralplan", "ultragoal", "team"]
 default_active_skills = ["caveman"]
+enabled_tools = ["insane-search"]
 enabled_agents = ["executor", "planner", "architect", "critic"]
 
 [target.codex]

@@ -65,4 +65,9 @@ fn update_refreshes_project_harness_and_removes_legacy_codex_skills() {
         .path()
         .join(".agents/skills/deep-interview/SKILL.md")
         .exists());
+    assert!(dir
+        .path()
+        .join(".agents/tools/insane-search/TOOL.md")
+        .exists());
+    assert!(dir.path().join(".agents/bin/insane-search").exists());
 }

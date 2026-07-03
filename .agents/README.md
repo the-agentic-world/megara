@@ -23,6 +23,13 @@ The installer compiles these files into the `megara` binary, writes them to the 
 
 - `caveman`: terse response compression mode adapted from `juliusbrussee/caveman`. It is installed as a Megara skill and listed as a default active skill.
 
+## Tools
+
+- `insane-search`: on-demand public web access helper adapted from `fivetaku/insane-search`.
+  - It is installed under `tools/insane-search`, not `skills/insane-search`.
+  - It is not a default active skill.
+  - Runtime agents should read `tools/insane-search/TOOL.md` and use `bin/insane-search` only when normal search/fetch paths fail or a blocked/JS-heavy public page needs stronger access.
+
 ## Agents
 
 - `executor`
@@ -40,6 +47,7 @@ The installer compiles these files into the `megara` binary, writes them to the 
   - `.agents/state/hooks/conversation-events.jsonl` indexes user prompts and assistant stop messages.
   - `.agents/state/hooks/conversation.jsonl` stores extracted prompt/message text when JSON extraction is available.
 - `last-<runtime>-<event>.json` files are convenience pointers only. They are intentionally overwritten and must not be used as the interview history.
+- On-demand tool state and dependencies belong under `.agents/tools/<tool>` or the tool's own cache paths. They are not workflow state and must not be treated as active skills.
 - Workflow state is stored under `.agents/state/workflows/<skill>/` when hooks can parse runtime JSON.
   - `deep-interview/<session-id>.json` tracks pending question gates, answers, and terminal workflow status.
   - `deep-interview/events.jsonl` records gate, answer, state, and mutation-guard events.

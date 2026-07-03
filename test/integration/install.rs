@@ -25,6 +25,7 @@ fn installs_project_scope_codex_harness() {
     assert!(stdout.contains("open a new session after install"));
     assert!(dir.path().join(".agents/megara.toml").exists());
     assert!(dir.path().join(".agents/bin/megara").exists());
+    assert!(dir.path().join(".agents/bin/insane-search").exists());
     assert!(dir.path().join(".codex/AGENTS.md").exists());
     assert!(dir
         .path()
@@ -36,6 +37,34 @@ fn installs_project_scope_codex_harness() {
         .join(".codex/skills/deep-interview/SKILL.md")
         .exists());
     assert!(!dir.path().join(".codex/skills/caveman/SKILL.md").exists());
+    assert!(dir
+        .path()
+        .join(".agents/tools/insane-search/TOOL.md")
+        .exists());
+    assert!(dir
+        .path()
+        .join(".agents/tools/insane-search/engine/__main__.py")
+        .exists());
+    assert!(dir
+        .path()
+        .join(".agents/tools/insane-search/requirements.txt")
+        .exists());
+    assert!(dir
+        .path()
+        .join(".agents/tools/insane-search/engine/templates/playwright_real_chrome.js")
+        .exists());
+    assert!(dir
+        .path()
+        .join(".agents/tools/insane-search/references/public-api.md")
+        .exists());
+    assert!(!dir
+        .path()
+        .join(".agents/skills/insane-search/SKILL.md")
+        .exists());
+    assert!(!dir
+        .path()
+        .join(".codex/skills/insane-search/SKILL.md")
+        .exists());
     assert!(dir
         .path()
         .join(".agents/skill-fragments/deep-interview/auto-research-greenfield.md")
@@ -111,6 +140,45 @@ fn installs_project_scope_codex_harness() {
     let caveman = fs::read_to_string(dir.path().join(".agents/skills/caveman/SKILL.md")).unwrap();
     assert!(caveman.contains("ACTIVE EVERY RESPONSE"));
     assert!(caveman.contains("stop caveman"));
+    let insane_tool =
+        fs::read_to_string(dir.path().join(".agents/tools/insane-search/TOOL.md")).unwrap();
+    assert!(insane_tool.contains("kind: tool"));
+    assert!(insane_tool.contains("not a default active skill"));
+    assert!(insane_tool.contains("https://github.com/fivetaku/insane-search"));
+    let insane_requirements = fs::read_to_string(
+        dir.path()
+            .join(".agents/tools/insane-search/requirements.txt"),
+    )
+    .unwrap();
+    assert!(insane_requirements.starts_with("# MEGARA:MANAGED"));
+    assert!(insane_requirements.contains("curl_cffi>=0.15.0"));
+    let insane_engine = fs::read_to_string(
+        dir.path()
+            .join(".agents/tools/insane-search/engine/__main__.py"),
+    )
+    .unwrap();
+    assert!(insane_engine.starts_with("# MEGARA:MANAGED"));
+    assert!(!insane_engine.contains("<!-- MEGARA:MANAGED"));
+    let insane_yaml = fs::read_to_string(
+        dir.path()
+            .join(".agents/tools/insane-search/engine/waf_profiles.yaml"),
+    )
+    .unwrap();
+    assert!(insane_yaml.starts_with("# MEGARA:MANAGED"));
+    let insane_js = fs::read_to_string(
+        dir.path()
+            .join(".agents/tools/insane-search/engine/templates/playwright_real_chrome.js"),
+    )
+    .unwrap();
+    assert!(insane_js.starts_with("// MEGARA:MANAGED"));
+    serde_json::from_str::<serde_json::Value>(
+        &fs::read_to_string(
+            dir.path()
+                .join(".agents/tools/insane-search/engine/templates/package.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let ralplan = fs::read_to_string(dir.path().join(".agents/skills/ralplan/SKILL.md")).unwrap();
     assert!(!ralplan.contains("Megara Review Pass:"));
     assert!(!ralplan.contains("Megara Plan Gate:"));
@@ -197,6 +265,7 @@ fn installs_project_scope_codex_harness() {
     let megara_config = fs::read_to_string(dir.path().join(".agents/megara.toml")).unwrap();
     assert!(megara_config.contains("locale = \"ko-KR\""));
     assert!(megara_config.contains("default_active_skills = [\"caveman\"]"));
+    assert!(megara_config.contains("enabled_tools = [\"insane-search\"]"));
     let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
     assert!(agents_md.contains("## Locale"));
     assert!(agents_md.contains("Locale: `ko-KR`"));
@@ -207,6 +276,11 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("Codex native Plan mode is available through `/plan` or Shift+Tab"));
     assert!(agents_md.contains("Codex Plan-Mode Preflight before Round 0"));
     assert!(agents_md.contains("## Skills"));
+    assert!(agents_md.contains("## On-Demand Tools"));
+    assert!(agents_md.contains("insane-search"));
+    assert!(agents_md.contains("tools/insane-search/TOOL.md"));
+    assert!(agents_md.contains("On-demand tools are not default active skills"));
+    assert!(agents_md.contains(".agents/bin/<tool-name>"));
     assert!(agents_md.contains("## Default Active Skills"));
     assert!(agents_md.contains("- `caveman`"));
     assert!(agents_md.contains("Do not mix languages in explanatory prose"));

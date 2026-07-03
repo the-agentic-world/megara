@@ -49,7 +49,14 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
                 &mut unmanaged,
                 &mut stale,
             )?;
-            inspect_wrapper_invocation(&file.path, &mut warnings);
+            if file
+                .path
+                .file_name()
+                .and_then(|file_name| file_name.to_str())
+                == Some("megara")
+            {
+                inspect_wrapper_invocation(&file.path, &mut warnings);
+            }
         }
 
         let ssot_registry = TemplateRegistry::from_ssot_root(&paths.ssot_root)?;

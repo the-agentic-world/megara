@@ -24,5 +24,12 @@ fn installs_global_scope_codex_harness() {
     );
     assert!(home.path().join(".megara/megara.toml").exists());
     assert!(home.path().join(".megara/bin/megara").exists());
+    assert!(home.path().join(".megara/bin/insane-search").exists());
+    assert!(home
+        .path()
+        .join(".megara/tools/insane-search/TOOL.md")
+        .exists());
     assert!(home.path().join(".codex/AGENTS.md").exists());
+    let agents_md = fs::read_to_string(home.path().join(".codex/AGENTS.md")).unwrap();
+    assert!(agents_md.contains("~/.megara/bin/<tool-name>"));
 }

@@ -14,8 +14,21 @@ fn lists_targets_and_templates() {
     assert!(stdout.contains("Megara / Templates"));
     assert!(stdout.contains("deep-interview"));
     assert!(stdout.contains("caveman"));
+    assert!(stdout.contains("insane-search"));
     assert!(stdout.contains("deep-interview/auto-research-greenfield"));
+    assert!(!stdout.contains("insane-search/engine/fetch_chain.py"));
     assert!(!stdout.contains("megara-hook"));
+
+    let tool = megara()
+        .arg("templates")
+        .arg("show")
+        .arg("insane-search")
+        .output()
+        .unwrap();
+    assert!(tool.status.success());
+    let tool_stdout = String::from_utf8_lossy(&tool.stdout);
+    assert!(tool_stdout.contains("kind: tool"));
+    assert!(tool_stdout.contains("https://github.com/fivetaku/insane-search"));
 
     let update_help = megara().arg("update").arg("--help").output().unwrap();
     assert!(update_help.status.success());

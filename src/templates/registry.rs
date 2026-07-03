@@ -73,6 +73,10 @@ impl TemplateRegistry {
         self.by_kind(TemplateKind::SkillFragment)
     }
 
+    pub fn tools(&self) -> Vec<&HarnessTemplate> {
+        self.by_kind(TemplateKind::Tool)
+    }
+
     pub fn agents(&self) -> Vec<&HarnessTemplate> {
         self.by_kind(TemplateKind::Agent)
     }
@@ -80,6 +84,7 @@ impl TemplateRegistry {
     pub fn template_names(&self) -> Vec<String> {
         self.files
             .iter()
+            .filter(|template| template.kind != TemplateKind::ToolSupport)
             .map(|template| template.name.clone())
             .collect()
     }
