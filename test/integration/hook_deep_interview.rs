@@ -21,9 +21,17 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
         "What proves this is done?"
     );
     assert_eq!(state["pending_question"]["options"][0], "Unit tests");
+    assert_eq!(state["pending_question"]["options"][2], "Manual QA");
     assert_eq!(
-        state["pending_question"]["options"][2],
+        state["pending_question"]["options"][3],
         "Direct input / not listed"
+    );
+    assert_eq!(
+        state["pending_question"]["options"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
     );
 
     answer_question(dir.path());

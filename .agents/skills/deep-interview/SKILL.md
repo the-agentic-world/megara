@@ -23,7 +23,8 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Start with Round 0 topology confirmation: identify top-level components or outcomes and ask whether the shape is correct.
 - Score remaining ambiguity after each answer as a percentage, not a 0-10 rating.
 - Keep active interview output compact for humans; do not include technical hook blocks in active user-facing answers.
-- End every visible option list with a configured-locale free-text catch-all option for answers outside the listed choices.
+- Show the current ambiguity score on every active interview question.
+- Use exactly four visible options on every active interview question: three concrete choices plus one configured-locale free-text catch-all option for answers outside the listed choices.
 - Target the weakest active component and dimension each round.
 - Continue until ambiguity is at or below the resolved threshold, or the user explicitly exits early.
 - End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
@@ -81,7 +82,15 @@ Use these weighted dimensions:
 Calculate weighted clarity as `sum(dimension_clarity_percent * weight) / 100`.
 Calculate ambiguity as `100 - weighted_clarity`.
 
-After each user answer, update the scores internally and carry them into the final crystallized specification. Do not show score details in active question turns. If you need a private score note, keep it out of the user-facing answer.
+After each user answer, update the scores and carry them into the final crystallized specification. Every active question turn must show exactly one compact ambiguity score line before the question:
+
+```text
+<configured-locale ambiguity label>: NN%
+```
+
+For Round 0, estimate the initial ambiguity from the user's request and repository facts. If there is not enough information to make a useful estimate, show `100%`.
+
+Do not show dimension-level score details in active question turns. If you need a private score note, keep it out of the user-facing answer.
 
 Ambiguity is bidirectional and non-monotonic. Later answers can increase ambiguity when they contradict established facts, add scope, expose internal inconsistency, or fail to answer the targeted gap. Reflect the change in internal scoring and target the next question at the affected component/dimension.
 
@@ -103,7 +112,7 @@ Before scoring, enumerate top-level components from the user's idea and any repo
 Ask exactly one first-round topology confirmation question. Use configured-locale prose for all visible text:
 
 ```text
-<configured-locale round 0 topology heading> | <configured-locale not scored yet>
+<configured-locale ambiguity label>: NN%
 
 <configured-locale sentence explaining that the request is being read as N components>:
 1. <component>: <one-sentence outcome>
@@ -113,7 +122,8 @@ Ask exactly one first-round topology confirmation question. Use configured-local
 
 1. <configured-locale accept as-is option>
 2. <configured-locale adjust components option>
-3. <configured-locale direct input / not in listed options>
+3. <configured-locale defer or prioritize components option>
+4. <configured-locale direct input / not in listed options>
 ```
 
 After the answer, carry this topology forward for internal scoring and the final spec.
@@ -122,13 +132,14 @@ After the answer, carry this topology forward for internal scoring and the final
 
 Active interview turns must be compact. Show only the information needed for the user to answer the next question:
 
-1. One short context sentence only when it materially helps the user answer.
-2. One targeted question.
-3. A short numbered option list.
+1. Exactly one compact ambiguity score line.
+2. One short context sentence only when it materially helps the user answer.
+3. One targeted question.
+4. A short numbered option list with exactly four options.
 
-Do not print progress-score lines, technical hook-gate headers, parseable gate blocks, full score tables, full topology tables, all established facts, all open gaps, trigger history, lateral-review notes, transcript summaries, semantic ledger updates, or internal reasoning during active question turns. Keep those details in local records and the final crystallized lock artifact.
+Do not print technical hook-gate headers, parseable gate blocks, full score tables, dimension score tables, full topology tables, all established facts, all open gaps, trigger history, lateral-review notes, transcript summaries, semantic ledger updates, or internal reasoning during active question turns. Keep those details in local records and the final crystallized lock artifact.
 
-Never include labels such as `remaining ambiguity`, `weakest dimension`, `next target`, `Interview ledger update`, `Established facts`, or `Open gaps` in an active question turn. The user only needs the next question and answer choices.
+Never include labels such as `weakest dimension`, `next target`, `Interview ledger update`, `Established facts`, or `Open gaps` in an active question turn. The user only needs the ambiguity score, next question, and answer choices.
 
 Final crystallized output may be longer because it becomes the persisted markdown lock artifact. Even then, avoid duplicating round details beyond what is needed for `ralplan`.
 
@@ -173,25 +184,29 @@ For each round:
 7. Update established facts, disputed facts, deferrals, and open gaps.
 8. Record the round locally.
 
-Every user-facing question must show a short numbered visible option list, so the user can answer by number. The last visible option must be the configured-locale free-text catch-all.
+Every user-facing question must show a short numbered visible option list, so the user can answer by number. The list must contain exactly three concrete choices followed by one configured-locale free-text catch-all.
 
 Do not include technical gate blocks in active question answers. Runtime hooks infer the pending question from the last visible question line and the following visible numbered options. Use this visible shape:
 
 ```text
+<configured-locale ambiguity label>: NN%
+
 <single question text?>
 
 1. <option 1>
 2. <option 2>
-3. <configured-locale direct input / not in listed options>
+3. <option 3>
+4. <configured-locale direct input / not in listed options>
 ```
 
 Rules:
 
 - The visible question should be one line ending with a question mark.
-- Do not omit `options`; for free-text questions, provide a single catch-all option.
+- Do not omit `options`; provide exactly four visible options.
 - Number each option from 1 in order.
 - The user may answer with the option number or with free text.
-- The last option must always be a configured-locale catch-all such as "direct input / not in listed options". This option is visible UX, not a restriction on free-text answers.
+- Options 1-3 must be concrete choices that answer the question.
+- Option 4 must always be a configured-locale catch-all such as "direct input / not in listed options". This option is visible UX, not a restriction on free-text answers.
 - Do not put implementation instructions in the visible options.
 - Legacy parseable gate blocks are supported by runtime hooks for backward compatibility only; do not emit them in new active question answers.
 - Do not ask another question in the same assistant turn.
