@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -82,9 +83,11 @@ impl TemplateRegistry {
     }
 
     pub fn template_names(&self) -> Vec<String> {
+        let mut seen = HashSet::new();
         self.files
             .iter()
             .filter(|template| template.kind != TemplateKind::ToolSupport)
+            .filter(|template| seen.insert(template.name.as_str()))
             .map(|template| template.name.clone())
             .collect()
     }

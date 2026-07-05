@@ -37,18 +37,36 @@ Global installs use the same layout under `~/.megara`.
 
 ## Dependencies
 
-The wrapper does not auto-install dependencies.
+The wrapper bootstraps dependencies on first use.
 
-Install only when the tool is needed:
+Project installs create a private venv at:
 
-```bash
-python3 -m pip install -r .agents/tools/insane-search/requirements.txt
+```text
+.agents/state/tools/insane-search/venv
 ```
 
-For global installs, use:
+Global installs create a private venv at:
+
+```text
+~/.megara/state/tools/insane-search/venv
+```
+
+The wrapper runs:
 
 ```bash
-python3 -m pip install -r ~/.megara/tools/insane-search/requirements.txt
+python3 -m venv <state-venv>
+<state-venv>/bin/python -m pip install -r <tool-dir>/requirements.txt
+```
+
+This happens only when the wrapper is invoked and required modules are missing or `requirements.txt` is newer than the runtime `requirements.stamp`. It does not install packages into the project Python environment or the user's global site packages.
+The runtime state directory is ignored by the managed `.agents/.gitignore` / `~/.megara/.gitignore`.
+
+If bootstrap fails, run the same install manually and retry:
+
+```bash
+python3 -m venv .agents/state/tools/insane-search/venv
+.agents/state/tools/insane-search/venv/bin/python -m pip install -r .agents/tools/insane-search/requirements.txt
+.agents/bin/insane-search "https://example.com/" --json --trace
 ```
 
 ## Order

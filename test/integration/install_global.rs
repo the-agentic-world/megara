@@ -23,11 +23,23 @@ fn installs_global_scope_codex_harness() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(home.path().join(".megara/megara.toml").exists());
+    assert!(home.path().join(".megara/.gitignore").exists());
     assert!(home.path().join(".megara/bin/megara").exists());
     assert!(home.path().join(".megara/bin/insane-search").exists());
+    let wrapper = fs::read_to_string(home.path().join(".megara/bin/insane-search")).unwrap();
+    assert!(wrapper.contains("state/tools/insane-search"));
+    assert!(wrapper.contains("python3 -m venv"));
     assert!(home
         .path()
         .join(".megara/tools/insane-search/TOOL.md")
+        .exists());
+    assert!(home
+        .path()
+        .join(".megara/skills/insane-search/SKILL.md")
+        .exists());
+    assert!(home
+        .path()
+        .join(".codex/skills/insane-search/SKILL.md")
         .exists());
     assert!(home.path().join(".codex/AGENTS.md").exists());
     let agents_md = fs::read_to_string(home.path().join(".codex/AGENTS.md")).unwrap();

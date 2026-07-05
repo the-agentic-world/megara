@@ -121,13 +121,45 @@ pub(crate) fn runtime_support_files(root: PathBuf) -> Result<Vec<PlannedFile>> {
             r#"#!/bin/sh
 set -eu
 bin_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+root_dir="$bin_dir/.."
 tool_dir="$bin_dir/../tools/insane-search"
+state_dir="$root_dir/state/tools/insane-search"
+venv_dir="$state_dir/venv"
+python_bin="$venv_dir/bin/python"
+requirements="$tool_dir/requirements.txt"
+requirements_stamp="$state_dir/requirements.stamp"
 if [ ! -d "$tool_dir" ]; then
   echo "insane-search tool directory not found: $tool_dir" >&2
   exit 2
 fi
+if [ ! -x "$python_bin" ]; then
+  mkdir -p "$state_dir"
+  echo "insane-search: bootstrapping Python dependencies into $venv_dir" >&2
+  python3 -m venv "$venv_dir"
+fi
+needs_install=0
+if [ ! -f "$requirements_stamp" ] || [ "$requirements" -nt "$requirements_stamp" ]; then
+  needs_install=1
+fi
+if ! "$python_bin" - <<'PY' >/dev/null 2>&1
+import importlib.util
+missing = [
+    package
+    for package in ("curl_cffi", "bs4", "yaml", "yt_dlp")
+    if importlib.util.find_spec(package) is None
+]
+raise SystemExit(1 if missing else 0)
+PY
+then
+  needs_install=1
+fi
+if [ "$needs_install" = "1" ]; then
+  "$python_bin" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  PIP_DISABLE_PIP_VERSION_CHECK=1 "$python_bin" -m pip install -r "$requirements" >&2
+  touch "$requirements_stamp"
+fi
 cd "$tool_dir"
-exec python3 -m engine "$@"
+exec "$python_bin" -m engine "$@"
 "#,
         ),
     ])

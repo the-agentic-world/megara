@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::installer::strip_managed_marker;
+
 #[derive(Clone, Debug, Serialize)]
 pub struct HarnessTemplate {
     pub name: String,
@@ -38,7 +40,7 @@ impl TemplateSpec {
             kind: self.kind,
             relative_path: self.relative_path.to_string(),
             description: self.description.to_string(),
-            content: self.content.to_string(),
+            content: strip_managed_marker(self.content),
         }
     }
 }

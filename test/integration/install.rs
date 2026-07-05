@@ -24,6 +24,7 @@ fn installs_project_scope_codex_harness() {
     assert!(stdout.contains("Megara / Install"));
     assert!(stdout.contains("open a new session after install"));
     assert!(dir.path().join(".agents/megara.toml").exists());
+    assert!(dir.path().join(".agents/.gitignore").exists());
     assert!(dir.path().join(".agents/bin/megara").exists());
     assert!(dir.path().join(".agents/bin/insane-search").exists());
     assert!(dir.path().join(".codex/AGENTS.md").exists());
@@ -32,6 +33,10 @@ fn installs_project_scope_codex_harness() {
         .join(".agents/skills/deep-interview/SKILL.md")
         .exists());
     assert!(dir.path().join(".agents/skills/caveman/SKILL.md").exists());
+    assert!(dir
+        .path()
+        .join(".agents/skills/insane-search/SKILL.md")
+        .exists());
     assert!(!dir
         .path()
         .join(".codex/skills/deep-interview/SKILL.md")
@@ -59,10 +64,6 @@ fn installs_project_scope_codex_harness() {
         .exists());
     assert!(!dir
         .path()
-        .join(".agents/skills/insane-search/SKILL.md")
-        .exists());
-    assert!(!dir
-        .path()
         .join(".codex/skills/insane-search/SKILL.md")
         .exists());
     assert!(dir
@@ -76,6 +77,9 @@ fn installs_project_scope_codex_harness() {
     assert!(dir.path().join(".agents/agents/executor.toml").exists());
     assert!(dir.path().join(".codex/hooks.json").exists());
     assert!(dir.path().join(".codex/agents/executor.toml").exists());
+    let agents_gitignore = fs::read_to_string(dir.path().join(".agents/.gitignore")).unwrap();
+    assert!(agents_gitignore.contains("MEGARA:MANAGED"));
+    assert!(agents_gitignore.contains("state/"));
     let skill =
         fs::read_to_string(dir.path().join(".agents/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));
@@ -92,14 +96,17 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Continue deep-interview to the next ambiguity target"));
     assert!(skill.contains("reaching the active target opens the milestone decision step"));
     assert!(skill.contains("do not crystallize at `1%`"));
-    assert!(skill.contains("Codex Plan-Mode Preflight"));
-    assert!(
-        skill.contains("The preflight question must have exactly three visible numbered options")
-    );
-    assert!(skill.contains("Restart with `/plan <same request>`"));
-    assert!(skill.contains("Continue here without `/plan`"));
-    assert!(!skill.contains("Continue here, but keep questions extra compact"));
-    assert!(skill.contains("begin Round 0 in the next assistant turn using the original request"));
+    assert!(skill.contains("Codex Plan-Mode Activation"));
+    assert!(skill.contains("Runtime-Backed Multi-Turn Contract"));
+    assert!(skill.contains("Codex App delegation wrappers"));
+    assert!(skill.contains("Subagents may be used only for read-only lateral review"));
+    assert!(skill.contains("implementation mutation is blocked by the runtime until `ralplan`"));
+    assert!(skill.contains("Runtime hooks attempt to activate Codex Plan mode before Round 0"));
+    assert!(skill.contains("If automatic activation fails"));
+    assert!(skill.contains("/plan <same request>"));
+    assert!(skill.contains("Do not offer a \"continue without /plan\" option"));
+    assert!(!skill.contains("Continue here without `/plan`"));
+    assert!(!skill.contains("The preflight question must have"));
     assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
     assert!(skill.contains("Calculate ambiguity as `100 - weighted_clarity`"));
     assert!(skill.contains("Ambiguity is bidirectional and non-monotonic"));
@@ -129,6 +136,7 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Do not emit `Megara Workflow State`"));
     assert!(skill.contains("locked markdown artifact"));
     assert!(skill.contains("spec_path"));
+    assert!(skill.contains("pipeline_lock"));
     assert!(skill.contains("Write every user-facing sentence in the configured locale"));
     assert!(skill.contains("option labels"));
     assert!(skill.contains("free-text values"));
@@ -140,11 +148,29 @@ fn installs_project_scope_codex_harness() {
     let caveman = fs::read_to_string(dir.path().join(".agents/skills/caveman/SKILL.md")).unwrap();
     assert!(caveman.contains("ACTIVE EVERY RESPONSE"));
     assert!(caveman.contains("stop caveman"));
+    let insane_wrapper = fs::read_to_string(dir.path().join(".agents/bin/insane-search")).unwrap();
+    assert!(insane_wrapper.contains("state/tools/insane-search"));
+    assert!(insane_wrapper.contains("python3 -m venv"));
+    assert!(insane_wrapper.contains("pip install -r"));
+    assert!(insane_wrapper.contains("requirements.stamp"));
+    assert!(insane_wrapper.contains("-nt \"$requirements_stamp\""));
+    assert!(insane_wrapper.contains("curl_cffi"));
+    assert!(insane_wrapper.contains("yt_dlp"));
+    assert!(insane_wrapper.contains(r#"exec "$python_bin" -m engine "$@""#));
     let insane_tool =
         fs::read_to_string(dir.path().join(".agents/tools/insane-search/TOOL.md")).unwrap();
     assert!(insane_tool.contains("kind: tool"));
     assert!(insane_tool.contains("not a default active skill"));
     assert!(insane_tool.contains("https://github.com/fivetaku/insane-search"));
+    assert!(insane_tool.contains("bootstraps dependencies on first use"));
+    assert!(insane_tool.contains(".agents/state/tools/insane-search/venv"));
+    let insane_skill =
+        fs::read_to_string(dir.path().join(".agents/skills/insane-search/SKILL.md")).unwrap();
+    assert!(insane_skill.contains("name: insane-search"));
+    assert!(insane_skill.contains("on-demand, not a default active skill"));
+    assert!(insane_skill.contains(".agents/tools/insane-search/TOOL.md"));
+    assert!(insane_skill.contains(".agents/bin/insane-search"));
+    assert!(insane_skill.contains(".agents/state/tools/insane-search/venv"));
     let insane_requirements = fs::read_to_string(
         dir.path()
             .join(".agents/tools/insane-search/requirements.txt"),
@@ -250,10 +276,13 @@ fn installs_project_scope_codex_harness() {
     assert!(hooks_json.contains("CAVEMAN MODE ACTIVE"));
     assert!(hooks_json.contains("megara-hook-UserPromptSubmit"));
     assert!(hooks_json.contains("megara-hook-PreToolUse"));
+    assert!(hooks_json.contains("megara-hook-SubagentStart"));
+    assert!(hooks_json.contains("megara-hook-SubagentStop"));
     assert!(
         hooks_json.contains("hook --managed-marker MEGARA:MANAGED --scope project --project-root")
     );
     assert!(hooks_json.contains("--runtime codex --event UserPromptSubmit"));
+    assert!(hooks_json.contains("--runtime codex --event SubagentStart"));
     let command = hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
         .as_str()
         .unwrap();
@@ -274,10 +303,16 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("## Codex Runtime Adapter"));
     assert!(agents_md.contains("This projected harness is running inside Codex"));
     assert!(agents_md.contains("Codex native Plan mode is available through `/plan` or Shift+Tab"));
-    assert!(agents_md.contains("Codex Plan-Mode Preflight before Round 0"));
+    assert!(agents_md.contains("Megara hooks try to activate Codex Plan mode before Round 0"));
+    assert!(agents_md.contains("resend with `/plan <same request>`"));
+    assert!(agents_md.contains("Do not offer a \"continue without /plan\" path"));
+    assert!(agents_md.contains("delegated prompts may arrive wrapped"));
+    assert!(agents_md.contains("implementation mutation is blocked until `ralplan`"));
+    assert!(agents_md.contains("SubagentStart"));
     assert!(agents_md.contains("## Skills"));
     assert!(agents_md.contains("## On-Demand Tools"));
     assert!(agents_md.contains("insane-search"));
+    assert!(agents_md.contains("- `insane-search`"));
     assert!(agents_md.contains("tools/insane-search/TOOL.md"));
     assert!(agents_md.contains("On-demand tools are not default active skills"));
     assert!(agents_md.contains(".agents/bin/<tool-name>"));

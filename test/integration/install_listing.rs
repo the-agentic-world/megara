@@ -15,6 +15,7 @@ fn lists_targets_and_templates() {
     assert!(stdout.contains("deep-interview"));
     assert!(stdout.contains("caveman"));
     assert!(stdout.contains("insane-search"));
+    assert_eq!(stdout.matches("insane-search").count(), 1);
     assert!(stdout.contains("deep-interview/auto-research-greenfield"));
     assert!(!stdout.contains("insane-search/engine/fetch_chain.py"));
     assert!(!stdout.contains("megara-hook"));
@@ -23,6 +24,18 @@ fn lists_targets_and_templates() {
         .arg("templates")
         .arg("show")
         .arg("insane-search")
+        .output()
+        .unwrap();
+    assert!(tool.status.success());
+    let skill_stdout = String::from_utf8_lossy(&tool.stdout);
+    assert!(skill_stdout.contains("kind: skill"));
+    assert!(skill_stdout.contains("name: insane-search"));
+    assert!(skill_stdout.contains(".agents/tools/insane-search/TOOL.md"));
+
+    let tool = megara()
+        .arg("templates")
+        .arg("show")
+        .arg("tools/insane-search/TOOL.md")
         .output()
         .unwrap();
     assert!(tool.status.success());

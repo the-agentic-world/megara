@@ -16,6 +16,13 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         content: include_str!("../../.agents/README.md"),
     },
     TemplateSpec {
+        name: ".gitignore",
+        kind: TemplateKind::ToolSupport,
+        relative_path: ".gitignore",
+        description: "Megara runtime state ignore rules",
+        content: include_str!("../../.agents/.gitignore"),
+    },
+    TemplateSpec {
         name: "planning",
         kind: TemplateKind::Rule,
         relative_path: "rules/planning.md",
@@ -56,6 +63,13 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         relative_path: "skills/caveman/SKILL.md",
         description: "Always-on terse response compression mode",
         content: include_str!("../../.agents/skills/caveman/SKILL.md"),
+    },
+    TemplateSpec {
+        name: "insane-search",
+        kind: TemplateKind::Skill,
+        relative_path: "skills/insane-search/SKILL.md",
+        description: "On-demand skill wrapper for the insane-search tool",
+        content: include_str!("../../.agents/skills/insane-search/SKILL.md"),
     },
     TemplateSpec {
         name: "insane-search",
