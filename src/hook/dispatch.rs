@@ -10,9 +10,12 @@ pub(super) fn run_workflow_event(
     match options.event.as_str() {
         "Stop" => stop::handle_stop(timestamp, state_dir, payload, payload_file),
         "UserPromptSubmit" => {
-            user_prompt::handle_user_prompt(timestamp, state_dir, payload, payload_file)
+            user_prompt::handle_user_prompt(timestamp, state_dir, options, payload, payload_file)
         }
         "PreToolUse" => pre_tool::handle_pre_tool_use(timestamp, state_dir, payload, payload_file),
+        "SubagentStart" | "SubagentStop" => {
+            subagent::handle_subagent_event(timestamp, state_dir, options, payload, payload_file)
+        }
         _ => Ok(0),
     }
 }

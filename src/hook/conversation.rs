@@ -19,18 +19,27 @@ pub(super) fn record_conversation_event(
             "runtime": options.runtime,
             "event": options.event,
             "role": role,
+            "surface": runtime_input::runtime_context(payload).surface.as_str(),
             "payload": payload_file,
             "payload_bytes": payload_bytes,
         }),
     )?;
 
-    let field = if role == "user" {
-        "prompt"
+    let context = runtime_input::runtime_context(payload);
+    let (field, content) = if role == "user" {
+        let Some(content) = context.effective_prompt.clone() else {
+            return Ok(());
+        };
+        ("prompt", content)
     } else {
-        "last_assistant_message"
-    };
-    let Some(content) = payload.get(field).and_then(Value::as_str) else {
-        return Ok(());
+        let Some(content) = payload
+            .get("last_assistant_message")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            return Ok(());
+        };
+        ("last_assistant_message", content)
     };
     if content.trim().is_empty() {
         return Ok(());
@@ -41,8 +50,23 @@ pub(super) fn record_conversation_event(
     entry.insert("runtime".to_string(), json!(options.runtime));
     entry.insert("event".to_string(), json!(options.event));
     entry.insert("role".to_string(), json!(role));
-    entry.insert("content".to_string(), json!(content));
+    entry.insert("content".to_string(), json!(content.clone()));
+    entry.insert("surface".to_string(), json!(context.surface.as_str()));
     entry.insert("payload".to_string(), json!(payload_file));
+    if let Some(raw_content) = payload.get(field).and_then(Value::as_str) {
+        if raw_content != content {
+            entry.insert("raw_content".to_string(), json!(raw_content));
+        }
+    }
+    if let Some(source) = context.transcript_source {
+        entry.insert("transcript_source".to_string(), json!(source));
+    }
+    if let Some(thread_source) = context.transcript_thread_source {
+        entry.insert("transcript_thread_source".to_string(), json!(thread_source));
+    }
+    if let Some(originator) = context.transcript_originator {
+        entry.insert("transcript_originator".to_string(), json!(originator));
+    }
 
     for key in ["session_id", "turn_id", "transcript_path", "cwd", "model"] {
         if let Some(value) = payload.get(key) {

@@ -122,5 +122,12 @@ fn record_next_workflow_suggestion(
         "suggested_at": timestamp,
         "implementation_allowed_now": false,
     });
+    state["pipeline_lock"] = json!({
+        "workflow": RALPLAN,
+        "status": "pending_ralplan",
+        "created_at": timestamp,
+        "implementation_allowed_now": false,
+        "unlock_condition": "ralplan_pending_or_approved",
+    });
     Some(RALPLAN.to_string())
 }

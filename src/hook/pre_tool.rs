@@ -32,6 +32,31 @@ pub(super) fn handle_pre_tool_use(
     let Some((skill, state, events_file)) =
         active_workflow_state(timestamp, state_dir, payload, payload_file)?
     else {
+        if let Some((state, events_file)) =
+            pending_deep_interview_pipeline_lock(timestamp, state_dir, payload, payload_file)?
+        {
+            let session_id = state
+                .get("session_id")
+                .map(value_to_string)
+                .unwrap_or_else(|| "unknown-session".to_string());
+            append_jsonl(
+                &events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": "pipeline_lock_mutation_blocked",
+                    "session_id": session_id,
+                    "skill": DEEP_INTERVIEW,
+                    "phase": state.get("phase").cloned().unwrap_or(Value::Null),
+                    "mutation_kind": mutation.kind,
+                    "mutation_value": mutation.value,
+                    "payload": payload_file,
+                }),
+            )?;
+            eprintln!(
+                "MEGARA mutation guard: deep-interview is crystallized. Start ralplan from the locked spec before mutating files."
+            );
+            return if guard_mode == "warn" { Ok(0) } else { Ok(42) };
+        }
         return Ok(0);
     };
 
@@ -95,4 +120,52 @@ fn mutation_guard_applies(skill: &'static str, state: &Value) -> bool {
         state.get("phase").and_then(Value::as_str),
         Some("goal_planning" | "planning" | "initialized" | "handoff")
     )
+}
+
+fn pending_deep_interview_pipeline_lock(
+    timestamp: &str,
+    state_dir: &Path,
+    payload: &Value,
+    payload_file: &Path,
+) -> Result<Option<(Value, PathBuf)>> {
+    let paths = workflow_paths(state_dir, payload, DEEP_INTERVIEW);
+    reconcile_session_aliases(timestamp, payload_file, &paths, DEEP_INTERVIEW, payload)?;
+    let Some(state) = load_json(&paths.session_file) else {
+        return Ok(None);
+    };
+    if !deep_interview_pipeline_lock_applies(&state) {
+        return Ok(None);
+    }
+    if ralplan_has_taken_over(timestamp, state_dir, payload, payload_file)? {
+        return Ok(None);
+    }
+    Ok(Some((state, paths.events_file)))
+}
+
+fn deep_interview_pipeline_lock_applies(state: &Value) -> bool {
+    state.get("phase").and_then(Value::as_str) == Some("crystallized")
+        && state
+            .get("pipeline_lock")
+            .and_then(|lock| lock.get("status"))
+            .and_then(Value::as_str)
+            == Some("pending_ralplan")
+}
+
+fn ralplan_has_taken_over(
+    timestamp: &str,
+    state_dir: &Path,
+    payload: &Value,
+    payload_file: &Path,
+) -> Result<bool> {
+    let paths = workflow_paths(state_dir, payload, RALPLAN);
+    reconcile_session_aliases(timestamp, payload_file, &paths, RALPLAN, payload)?;
+    let Some(state) = load_json(&paths.session_file) else {
+        return Ok(false);
+    };
+    if state.get("approval_status").and_then(Value::as_str) == Some("approved")
+        || state.get("phase").and_then(Value::as_str) == Some("approved")
+    {
+        return Ok(true);
+    }
+    Ok(state.get("active").and_then(Value::as_bool) == Some(true))
 }

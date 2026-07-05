@@ -1,5 +1,7 @@
 use super::hook_deep_interview_support::*;
-use super::hook_ralplan_support::{assert_success, read_json};
+use super::hook_ralplan_support::{
+    assert_success, read_json, submit_plan, submit_ready_reviews, user_prompt,
+};
 use super::*;
 
 #[test]
@@ -62,6 +64,8 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert_eq!(state["ambiguity"], "12%");
     assert_eq!(state["next_workflow_suggestion"]["workflow"], "ralplan");
     assert_eq!(state["next_workflow_suggestion"]["status"], "suggested");
+    assert_eq!(state["pipeline_lock"]["workflow"], "ralplan");
+    assert_eq!(state["pipeline_lock"]["status"], "pending_ralplan");
     assert!(state["pending_question"].is_null());
 
     let spec_path = PathBuf::from(state["spec_path"].as_str().unwrap());
@@ -82,7 +86,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(spec_index.contains("\"event\":\"spec_persisted\""));
     assert!(spec_index.contains(spec_path.to_str().unwrap()));
 
-    assert_success(&run_bash_mutation(dir.path()));
+    assert_guard_blocks(run_bash_mutation(dir.path()));
     let events = fs::read_to_string(
         dir.path()
             .join(".agents/state/workflows/deep-interview/events.jsonl"),
@@ -94,7 +98,101 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert!(events.contains("\"event\":\"spec_missing\""));
     assert!(events.contains("\"event\":\"spec_persisted\""));
     assert!(events.contains("\"event\":\"next_workflow_suggested\""));
+    assert!(events.contains("\"event\":\"pipeline_lock_mutation_blocked\""));
     assert!(!events.contains("di-old-transcript"));
+}
+
+#[test]
+fn delegated_user_answer_is_recorded_without_codex_wrapper() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_question(dir.path());
+    let payload = br#"{
+  "session_id": "sess-di",
+  "prompt": "<codex_delegation><input>Use option 2 and add smoke tests.</input></codex_delegation>"
+}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload,
+    ));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(
+        state["questions"][0]["answer"]["content"],
+        "Use option 2 and add smoke tests."
+    );
+}
+
+#[test]
+fn subagent_events_are_logged_and_attached_to_workflow_state() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_question(dir.path());
+    let payload = br#"{
+  "session_id": "sess-di",
+  "cwd": "/tmp/project",
+  "subagent_id": "sg-1",
+  "subagent_name": "researcher"
+}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStart",
+        None,
+        payload,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        None,
+        payload,
+    ));
+
+    let log = fs::read_to_string(dir.path().join(".agents/state/hooks/subagents.jsonl")).unwrap();
+    assert!(log.contains("\"event\":\"SubagentStart\""));
+    assert!(log.contains("\"event\":\"SubagentStop\""));
+    assert!(log.contains("\"subagent_name\":\"researcher\""));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["last_subagent_event"]["event"], "SubagentStop");
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".agents/state/workflows/deep-interview/events.jsonl"),
+    )
+    .unwrap();
+    assert!(events.contains("\"event\":\"subagent_event\""));
+}
+
+#[test]
+fn crystallized_pipeline_lock_blocks_until_ralplan_approval() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_final_spec(dir.path());
+    assert_guard_blocks(run_bash_mutation(dir.path()));
+    assert_success(&run_read(dir.path()));
+
+    submit_ready_reviews(dir.path(), "sess-di");
+    submit_plan(
+        dir.path(),
+        "sess-di",
+        "rp-unlock-after-approval",
+        "continue from the crystallized spec.",
+    );
+    let blocked_by_ralplan = run_bash_mutation(dir.path());
+    assert_guard_blocks(blocked_by_ralplan);
+
+    assert_success(&user_prompt(dir.path(), "sess-di", "2"));
+    assert_success(&run_bash_mutation(dir.path()));
 }
 
 #[test]

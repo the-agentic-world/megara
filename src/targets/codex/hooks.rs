@@ -70,6 +70,28 @@ pub(super) fn codex_hooks_json(
             }]
         }]),
     );
+    hook_events.insert(
+        "SubagentStart".to_string(),
+        serde_json::json!([{
+            "hooks": [{
+                "name": "megara-hook-SubagentStart",
+                "type": "command",
+                "command": hook_command(megara_bin, scope, root, "SubagentStart"),
+                "timeout": 10
+            }]
+        }]),
+    );
+    hook_events.insert(
+        "SubagentStop".to_string(),
+        serde_json::json!([{
+            "hooks": [{
+                "name": "megara-hook-SubagentStop",
+                "type": "command",
+                "command": hook_command(megara_bin, scope, root, "SubagentStop"),
+                "timeout": 10
+            }]
+        }]),
+    );
 
     let hooks = serde_json::json!({ "hooks": hook_events });
     Ok(format!(

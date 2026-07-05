@@ -105,3 +105,172 @@ fn block_parser_does_not_steal_fields_after_prose() {
         Some("rp-real")
     );
 }
+
+#[test]
+fn codex_plan_mode_detects_deep_interview_start_only() {
+    assert!(is_deep_interview_start_prompt(
+        "$deep-interview improve the menu"
+    ));
+    assert!(is_deep_interview_start_prompt(
+        "[$deep-interview](/tmp/SKILL.md) improve the menu"
+    ));
+    assert!(!is_deep_interview_start_prompt(
+        "please use deep-interview later"
+    ));
+}
+
+#[test]
+fn effective_prompt_extracts_codex_delegated_input() {
+    let prompt =
+        "<codex_delegation><input>$deep-interview improve the menu</input></codex_delegation>";
+
+    let effective = effective_prompt_text(prompt);
+
+    assert_eq!(effective, "$deep-interview improve the menu");
+    assert!(is_deep_interview_start_prompt(&effective));
+}
+
+#[test]
+fn effective_prompt_extracts_plan_prefix_from_delegated_input() {
+    let prompt = "<codex_delegation>\n<input>\n/plan [$deep-interview](/tmp/SKILL.md) improve the menu\n</input>\n</codex_delegation>";
+
+    let effective = effective_prompt_text(prompt);
+
+    assert_eq!(
+        effective,
+        "/plan [$deep-interview](/tmp/SKILL.md) improve the menu"
+    );
+    assert!(prompt_starts_with_plan(&effective));
+}
+
+#[test]
+fn runtime_context_reads_transcript_surface() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"session_meta","payload":{"source":"exec","thread_source":"user","originator":"Codex CLI"}}"#,
+    )
+    .unwrap();
+    let payload = json!({
+        "prompt": "hello",
+        "transcript_path": transcript,
+    });
+
+    let context = runtime_context(&payload);
+
+    assert_eq!(context.surface, RuntimeSurface::Cli);
+    assert_eq!(context.transcript_source.as_deref(), Some("exec"));
+    assert_eq!(context.transcript_thread_source.as_deref(), Some("user"));
+    assert_eq!(context.transcript_originator.as_deref(), Some("Codex CLI"));
+}
+
+#[test]
+fn runtime_context_treats_vscode_transcript_as_app_surface() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"session_meta","payload":{"source":"vscode","thread_source":"subagent","originator":"Codex Desktop"}}"#,
+    )
+    .unwrap();
+    let payload = json!({
+        "prompt": "<codex_delegation><input>hello</input></codex_delegation>",
+        "transcript_path": transcript,
+    });
+
+    let context = runtime_context(&payload);
+
+    assert_eq!(context.surface, RuntimeSurface::App);
+    assert_eq!(context.effective_prompt.as_deref(), Some("hello"));
+    assert_eq!(context.transcript_source.as_deref(), Some("vscode"));
+}
+
+#[test]
+fn codex_plan_mode_detects_plan_prefix() {
+    assert!(prompt_starts_with_plan(
+        "/plan $deep-interview improve the menu"
+    ));
+    assert!(prompt_starts_with_plan("  /PLAN\n$deep-interview"));
+    assert!(!prompt_starts_with_plan("please /plan later"));
+}
+
+#[test]
+fn codex_plan_mode_canonicalizes_thread_id() {
+    let payload = json!({
+        "thread_id": "thread-main",
+        "session_id": "session-alias",
+        "transcript_path": "/Users/me/.codex/sessions/rollout-2026-01-01T00-00-00-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
+    });
+    assert_eq!(
+        thread_id_from_payload(&payload).as_deref(),
+        Some("thread-main")
+    );
+
+    let payload = json!({
+        "session_id": "session-alias",
+        "transcript_path": "/Users/me/.codex/sessions/rollout-2026-01-01T00-00-00-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
+    });
+    assert_eq!(
+        thread_id_from_payload(&payload).as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
+
+    let payload = json!({
+        "session_id": "session-only",
+    });
+    assert_eq!(
+        thread_id_from_payload(&payload).as_deref(),
+        Some("session-only")
+    );
+}
+
+#[test]
+fn codex_plan_mode_builds_plan_update_payload() {
+    let list_result = json!({
+        "data": [
+            {
+                "name": "Default",
+                "mode": "default",
+                "settings": {
+                    "model": "gpt-5.5",
+                    "reasoning_effort": "medium"
+                }
+            },
+            {
+                "name": "Plan",
+                "mode": "plan",
+                "model": "gpt-5.5-codex",
+                "reasoning_effort": "high"
+            }
+        ]
+    });
+
+    let collaboration_mode = plan_collaboration_mode(&list_result, Some("gpt-5.5")).unwrap();
+    assert_eq!(collaboration_mode["mode"], "plan");
+    assert_eq!(collaboration_mode["settings"]["model"], "gpt-5.5-codex");
+    assert_eq!(collaboration_mode["settings"]["reasoning_effort"], "high");
+    assert!(collaboration_mode["settings"]["developer_instructions"].is_null());
+
+    let payload = thread_settings_update_payload("thread-1", collaboration_mode);
+    assert_eq!(payload["threadId"], "thread-1");
+    assert_eq!(payload["collaborationMode"]["mode"], "plan");
+}
+
+#[test]
+fn codex_plan_mode_recognizes_update_notification() {
+    let notification = json!({
+        "method": "thread/settings/updated",
+        "params": {
+            "threadId": "thread-1",
+            "threadSettings": {
+                "collaborationMode": {
+                    "mode": "plan"
+                }
+            }
+        }
+    });
+
+    assert!(is_plan_settings_notification(&notification, "thread-1"));
+    assert!(!is_plan_settings_notification(&notification, "thread-2"));
+}

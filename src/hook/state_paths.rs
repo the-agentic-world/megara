@@ -143,7 +143,7 @@ fn push_alias(aliases: &mut Vec<String>, candidate: Option<String>, canonical: &
     aliases.push(candidate);
 }
 
-fn transcript_session_id(payload: &Value) -> Option<String> {
+pub(crate) fn transcript_session_id(payload: &Value) -> Option<String> {
     let transcript = payload.get("transcript_path").and_then(Value::as_str)?;
     let file_name = Path::new(transcript).file_name()?.to_string_lossy();
     let session = file_name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;

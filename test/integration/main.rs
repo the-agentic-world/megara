@@ -49,6 +49,40 @@ fn run_hook(
     child.wait_with_output().unwrap()
 }
 
+fn run_hook_with_env(
+    project_root: &Path,
+    cwd: &Path,
+    event: &str,
+    matcher: Option<&str>,
+    payload: &[u8],
+    envs: &[(&str, &str)],
+) -> Output {
+    let mut command = megara();
+    command
+        .arg("hook")
+        .arg("--scope")
+        .arg("project")
+        .arg("--project-root")
+        .arg(project_root)
+        .arg("--runtime")
+        .arg("codex")
+        .arg("--event")
+        .arg(event)
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    if let Some(matcher) = matcher {
+        command.arg("--matcher").arg(matcher);
+    }
+    let mut child = command.spawn().unwrap();
+    child.stdin.as_mut().unwrap().write_all(payload).unwrap();
+    child.wait_with_output().unwrap()
+}
+
 fn install_project_harness(project: &Path, codex_home: &Path) {
     let install = megara_with_codex_home(codex_home)
         .arg("install")
@@ -71,6 +105,7 @@ fn occurrences(haystack: &str, needle: &str) -> usize {
 }
 
 mod doctor;
+mod hook_codex_plan_mode;
 mod hook_deep_interview;
 mod hook_deep_interview_support;
 mod hook_ralplan_approval;

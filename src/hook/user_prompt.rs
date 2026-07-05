@@ -3,13 +3,27 @@ use super::*;
 pub(super) fn handle_user_prompt(
     timestamp: &str,
     state_dir: &Path,
+    options: &HookOptions,
     payload: &Value,
     payload_file: &Path,
 ) -> Result<i32> {
-    let Some(prompt) = payload.get("prompt").and_then(Value::as_str) else {
+    let Some(prompt) = runtime_input::effective_prompt_from_payload(payload) else {
         return Ok(0);
     };
     if prompt.trim().is_empty() {
+        return Ok(0);
+    }
+
+    if let Some(reason) =
+        codex_plan::deep_interview_plan_mode_block_reason(options, payload, &prompt)?
+    {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "decision": "block",
+                "reason": reason,
+            }))?
+        );
         return Ok(0);
     }
 
@@ -19,7 +33,7 @@ pub(super) fn handle_user_prompt(
         if let Some(decision) = ralplan_prompt::apply_ralplan_prompt_decision(
             timestamp,
             &mut state,
-            prompt,
+            &prompt,
             payload_file,
         ) {
             let session_id = state
@@ -43,7 +57,7 @@ pub(super) fn handle_user_prompt(
         }
     }
 
-    if ralplan_prompt::is_deep_interview_approval_for_ralplan(prompt) {
+    if ralplan_prompt::is_deep_interview_approval_for_ralplan(&prompt) {
         let mut state = load_json(&ralplan_paths.session_file)
             .unwrap_or_else(|| new_state(RALPLAN, timestamp, &ralplan_paths.session_id, payload));
         require_ralplan_input_lock(timestamp, &mut state, payload_file);
@@ -78,7 +92,7 @@ pub(super) fn handle_user_prompt(
             return Ok(0);
         }
         if let Some(question_id) =
-            answer_pending_question(timestamp, &mut state, prompt, payload_file)
+            answer_pending_question(timestamp, &mut state, &prompt, payload_file)
         {
             let session_id = state
                 .get("session_id")

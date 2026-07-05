@@ -87,3 +87,36 @@ fn projected_hook_runner_records_runtime_event() {
     assert!(conversation.contains("\"content\":\"second\""));
     assert!(conversation.contains("\"content\":\"question?\""));
 }
+
+#[test]
+fn projected_hook_runner_records_effective_prompt_and_surface() {
+    let dir = tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"session_meta","payload":{"source":"vscode","thread_source":"subagent","originator":"Codex Desktop"}}"#,
+    )
+    .unwrap();
+    let payload = serde_json::json!({
+        "session_id": "runtime-session",
+        "transcript_path": transcript,
+        "prompt": "<codex_delegation><input>Use option 2.</input></codex_delegation>",
+    })
+    .to_string();
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload.as_bytes(),
+    );
+
+    assert!(output.status.success());
+    let conversation =
+        fs::read_to_string(dir.path().join(".agents/state/hooks/conversation.jsonl")).unwrap();
+    assert!(conversation.contains("\"content\":\"Use option 2.\""));
+    assert!(conversation.contains("\"surface\":\"app\""));
+    assert!(conversation.contains("\"transcript_source\":\"vscode\""));
+    assert!(conversation.contains("\"raw_content\":\"<codex_delegation>"));
+}

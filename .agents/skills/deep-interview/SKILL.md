@@ -129,26 +129,32 @@ At `15%`, `5%`, and `2%`, reaching the active target opens the milestone decisio
 
 When the active target is `0%`, do not crystallize at `1%` or any other non-zero score. If final restatement confirmation removes the last meaningful planning assumption, explicitly set the final score to `0%` and include that score in the final spec. If it does not remove the last assumption, ask one more compact targeted question instead of finalizing.
 
-## Codex Plan-Mode Preflight
+## Runtime-Backed Multi-Turn Contract
 
-When running under the Codex runtime adapter, prefer native Codex Plan mode for the first deep-interview turn.
+Megara hooks back this workflow with append-only local state. Treat active questions as main-session UX, not as hidden metadata protocol.
 
-On the first assistant response that would start deep-interview, if the user did not already start the request with `/plan`, do not begin Round 0 yet. Instead, ask one compact preflight question in the configured locale:
+- Codex App delegation wrappers such as `<codex_delegation><input>...</input>` are runtime transport details. The hook records the effective user prompt from inside `<input>`; do not mirror wrappers in user-facing prose.
+- Each user answer should respond only to the current visible question. The runtime records the answer, pending question, and conversation event locally.
+- Subagents may be used only for read-only lateral review: research, contradiction checks, simplification, or architecture blind-spot checks.
+- Do not move the active question/answer loop into a subagent. The user-facing question stays in the main session.
+- Not using a subagent must not block interview progress in v1.
+- Once the final spec crystallizes, stop. The next workflow must be `ralplan`, and implementation mutation is blocked by the runtime until `ralplan` owns or approves the handoff.
 
-- Explain that Codex Plan mode is recommended for deep-interview because it lets Codex gather context and ask clarifying questions before implementation.
-- Ask whether the user wants to restart the same request with `/plan <same request>` or continue here without native Plan mode.
-- Do not show an ambiguity score.
-- Do not record a pending interview question.
-- Do not emit `Megara Workflow State`.
-- Do not inspect files, run tools, or start implementation.
+## Codex Plan-Mode Activation
 
-The preflight question must have exactly three visible numbered options:
+When running under the Codex runtime adapter, native Codex Plan mode is required for the first deep-interview turn.
 
-1. Restart with `/plan <same request>`.
-2. Continue here without `/plan`.
-3. Direct input / not in the listed options.
+Runtime hooks attempt to activate Codex Plan mode before Round 0 when all conditions are true:
 
-If the user chooses option 2, or clearly says to continue as-is, begin Round 0 in the next assistant turn using the original request from the previous turn. If the user chooses option 1, stop and wait for the restarted `/plan` request. Skip this preflight when the current request already starts with `/plan`, when the user explicitly says to continue without `/plan`, or when this conversation has already completed the Codex Plan-mode preflight for the current request.
+- current request starts deep-interview,
+- current request did not already start with `/plan`,
+- hook payload does not report `permission_mode: plan`.
+
+If automatic activation succeeds, begin Round 0 normally.
+
+If automatic activation fails, do not begin Round 0. Tell the user in the configured locale to resend the same request as `/plan <same request>`. Do not offer a "continue without /plan" option.
+
+Do not show an ambiguity score, record a pending interview question, emit `Megara Workflow State`, inspect files, run tools, or start implementation during Plan-mode activation handling. Skip this section when the current request already starts with `/plan` or runtime reports Plan mode.
 
 ## Round 0: Topology Confirmation
 
@@ -310,6 +316,8 @@ At milestone transitions, briefly run an internal lateral review before the next
 - `simplifier`: the smallest valuable version.
 - `architect`: system shape, ownership, integration, and migration risks.
 
+When the runtime supports subagent event observation, prefer read-only subagents for this lateral review when the question benefits from isolated context. Use them as advisory reviewers only; their output should be distilled into at most one main-session question.
+
 Fold only the highest-value finding into the next single question. The panel does not add extra questions, does not decide requirements, and does not permit implementation.
 
 ## Closure Gates
@@ -346,6 +354,7 @@ Runtime hooks should persist raw prompts and assistant messages locally under `.
 - `last-<runtime>-<event>.json`: convenience pointer to the latest payload only.
 - `conversation-events.jsonl`: chronological user/assistant event index.
 - `conversation.jsonl`: extracted user prompt and assistant message text when the hook runtime can parse JSON.
+- `subagents.jsonl`: observed `SubagentStart` and `SubagentStop` events when the runtime emits them.
 
 When a crystallized final response is visible-only and points to `ralplan` as the next step, runtime hooks persist the visible final response as a markdown lock artifact:
 
@@ -353,6 +362,7 @@ When a crystallized final response is visible-only and points to `ralplan` as th
 - `.agents/state/workflows/deep-interview/specs/index.jsonl`
 
 The matching session JSON should reference `spec_path`, `spec_sha256`, and `spec_persisted_at`.
+The matching session JSON should also carry a `pipeline_lock` pointing to `ralplan`; this is runtime state, not visible output.
 
 Do not treat `last-*` files as durable interview history. If a semantic interview ledger is needed, summarize from the conversation history, persisted pending-question state, and append-only hook logs, not from `last-*`.
 

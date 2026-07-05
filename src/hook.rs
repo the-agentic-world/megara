@@ -12,6 +12,8 @@ use crate::cli::HookArgs;
 
 #[path = "hook/artifacts.rs"]
 mod artifacts;
+#[path = "hook/codex_plan.rs"]
+pub(crate) mod codex_plan;
 #[path = "hook/conversation.rs"]
 mod conversation;
 #[path = "hook/dispatch.rs"]
@@ -36,6 +38,8 @@ mod ralplan_prompt;
 mod ralplan_reviews;
 #[path = "hook/ralplan_state.rs"]
 mod ralplan_state;
+#[path = "hook/runtime_input.rs"]
+pub(crate) mod runtime_input;
 #[path = "hook/session_alias.rs"]
 mod session_alias;
 #[path = "hook/state.rs"]
@@ -46,6 +50,8 @@ mod state_fields;
 mod state_paths;
 #[path = "hook/stop.rs"]
 mod stop;
+#[path = "hook/subagent.rs"]
+mod subagent;
 #[path = "hook/terminal.rs"]
 mod terminal;
 #[path = "hook/user_prompt.rs"]
@@ -102,6 +108,7 @@ pub fn run(args: HookArgs) -> Result<i32> {
     let timestamp = timestamp();
     let payload = serde_json::from_str::<Value>(&payload_text).unwrap_or_else(|_| json!({}));
     let payload_bytes = payload_text.len();
+    let runtime_context = runtime_input::runtime_context(&payload);
 
     let safe_runtime = safe_part(&options.runtime);
     let safe_event = safe_part(&options.event);
@@ -116,18 +123,26 @@ pub fn run(args: HookArgs) -> Result<i32> {
     let last_payload_file = state_dir.join(format!("last-{safe_runtime}-{safe_event}.json"));
     fs::write(&last_payload_file, &payload_text)?;
 
-    append_jsonl(
-        &state_dir.join("events.jsonl"),
-        &json!({
-            "timestamp": timestamp,
-            "runtime": options.runtime,
-            "event": options.event,
-            "matcher": options.matcher,
-            "payload": payload_file,
-            "last_payload": last_payload_file,
-            "payload_bytes": payload_bytes,
-        }),
-    )?;
+    let mut event = json!({
+        "timestamp": timestamp,
+        "runtime": options.runtime,
+        "event": options.event,
+        "matcher": options.matcher,
+        "surface": runtime_context.surface.as_str(),
+        "payload": payload_file,
+        "last_payload": last_payload_file,
+        "payload_bytes": payload_bytes,
+    });
+    if let Some(source) = runtime_context.transcript_source {
+        event["transcript_source"] = json!(source);
+    }
+    if let Some(thread_source) = runtime_context.transcript_thread_source {
+        event["transcript_thread_source"] = json!(thread_source);
+    }
+    if let Some(originator) = runtime_context.transcript_originator {
+        event["transcript_originator"] = json!(originator);
+    }
+    append_jsonl(&state_dir.join("events.jsonl"), &event)?;
 
     conversation::record_conversation_event(
         &state_dir,
