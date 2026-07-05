@@ -1,5 +1,6 @@
 use std::{
     env,
+    fs::File,
     io::{BufRead, BufReader, Write},
     process::{Child, Command, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError},
@@ -13,7 +14,7 @@ use serde_json::{json, Value};
 use super::{state_paths::transcript_session_id, HookOptions};
 
 pub(crate) const PLAN_MODE_BLOCK_REASON: &str =
-    "Codex Plan mode를 자동 활성화하지 못했습니다. /plan <same request>로 다시 보내주세요.";
+    "Codex Plan mode를 확인하거나 자동 활성화하지 못했습니다. Plan mode를 활성화한 상태에서 같은 deep-interview 요청을 다시 보내주세요.";
 
 pub(crate) fn deep_interview_plan_mode_block_reason(
     options: &HookOptions,
@@ -26,7 +27,7 @@ pub(crate) fn deep_interview_plan_mode_block_reason(
     if !is_deep_interview_start_prompt(prompt) {
         return Ok(None);
     }
-    if prompt_starts_with_plan(prompt) || payload_reports_plan_mode(payload) {
+    if payload_reports_plan_mode(payload) {
         return Ok(None);
     }
 
@@ -37,17 +38,31 @@ pub(crate) fn deep_interview_plan_mode_block_reason(
 }
 
 pub(crate) fn is_deep_interview_start_prompt(prompt: &str) -> bool {
+    let prompt = prompt_after_optional_plan_prefix(prompt);
     let lower = prompt.trim_start().to_ascii_lowercase();
     lower.starts_with("$deep-interview") || lower.starts_with("[$deep-interview]")
 }
 
-pub(crate) fn prompt_starts_with_plan(prompt: &str) -> bool {
+fn prompt_after_optional_plan_prefix(prompt: &str) -> &str {
+    plan_prefixed_tail(prompt).unwrap_or(prompt)
+}
+
+fn plan_prefixed_tail(prompt: &str) -> Option<&str> {
     let trimmed = prompt.trim_start();
-    if trimmed.eq_ignore_ascii_case("/plan") {
-        return true;
+    if trimmed.len() < 5 {
+        return None;
     }
-    let lower = trimmed.to_ascii_lowercase();
-    lower.starts_with("/plan ") || lower.starts_with("/plan\t") || lower.starts_with("/plan\n")
+    let (prefix, rest) = trimmed.split_at(5);
+    if !prefix.eq_ignore_ascii_case("/plan") {
+        return None;
+    }
+    let Some(first) = rest.chars().next() else {
+        return Some(rest);
+    };
+    if first.is_whitespace() || first == '$' || first == '[' {
+        return Some(rest.trim_start());
+    }
+    None
 }
 
 pub(crate) fn thread_id_from_payload(payload: &Value) -> Option<String> {
@@ -192,11 +207,67 @@ fn activate_plan_mode(payload: &Value) -> Result<()> {
     result
 }
 
-fn payload_reports_plan_mode(payload: &Value) -> bool {
-    payload
-        .get("permission_mode")
+pub(crate) fn payload_reports_plan_mode(payload: &Value) -> bool {
+    value_reports_plan_mode(payload) || transcript_reports_plan_mode(payload)
+}
+
+fn value_reports_plan_mode(value: &Value) -> bool {
+    string_field(value, "permission_mode").is_some_and(|mode| mode.eq_ignore_ascii_case("plan"))
+        || string_field(value, "collaboration_mode_kind")
+            .is_some_and(|mode| mode.eq_ignore_ascii_case("plan"))
+        || collaboration_mode_value(value.get("collaborationMode"))
+        || collaboration_mode_value(value.get("collaboration_mode"))
+}
+
+fn collaboration_mode_value(value: Option<&Value>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    if value
+        .as_str()
+        .is_some_and(|mode| mode.eq_ignore_ascii_case("plan"))
+    {
+        return true;
+    }
+    value
+        .get("mode")
         .and_then(Value::as_str)
         .is_some_and(|mode| mode.eq_ignore_ascii_case("plan"))
+}
+
+fn transcript_reports_plan_mode(payload: &Value) -> bool {
+    let Some(turn_id) = string_field(payload, "turn_id") else {
+        return false;
+    };
+    let Some(transcript_path) = payload.get("transcript_path").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(file) = File::open(transcript_path) else {
+        return false;
+    };
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        if !line.contains(&turn_id) {
+            continue;
+        }
+        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if transcript_record_reports_plan_mode(&record, &turn_id) {
+            return true;
+        }
+    }
+    false
+}
+
+fn transcript_record_reports_plan_mode(record: &Value, turn_id: &str) -> bool {
+    let Some(payload) = record.get("payload") else {
+        return false;
+    };
+    payload
+        .get("turn_id")
+        .and_then(Value::as_str)
+        .is_some_and(|candidate| candidate == turn_id)
+        && value_reports_plan_mode(payload)
 }
 
 fn string_field(payload: &Value, key: &str) -> Option<String> {

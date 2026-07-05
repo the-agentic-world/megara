@@ -14,25 +14,73 @@ fn deep_interview_in_codex_plan_mode_passes_without_proxy() {
 }
 
 #[test]
-fn deep_interview_with_plan_prefix_passes_without_proxy() {
+fn deep_interview_with_plan_prefix_blocks_when_proxy_missing() {
     let dir = tempdir().unwrap();
+    let missing_proxy = dir.path().join("missing-proxy");
+    let missing_proxy = missing_proxy.to_string_lossy().to_string();
     let payload = payload("/plan $deep-interview improve the menu", "default");
 
-    let output = run_hook(dir.path(), dir.path(), "UserPromptSubmit", None, &payload);
+    let output = run_hook_with_env(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        &payload,
+        &[("MEGARA_CODEX_APP_SERVER_PROXY", missing_proxy.as_str())],
+    );
 
-    assert_success(&output);
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_blocked_for_plan_mode(&output);
 }
 
 #[test]
-fn delegated_deep_interview_with_plan_prefix_passes_without_proxy() {
+fn delegated_deep_interview_with_plan_prefix_blocks_when_proxy_missing() {
     let dir = tempdir().unwrap();
+    let missing_proxy = dir.path().join("missing-proxy");
+    let missing_proxy = missing_proxy.to_string_lossy().to_string();
     let payload = payload(
         "<codex_delegation><input>/plan $deep-interview improve the menu</input></codex_delegation>",
         "default",
     );
 
-    let output = run_hook(dir.path(), dir.path(), "UserPromptSubmit", None, &payload);
+    let output = run_hook_with_env(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        &payload,
+        &[("MEGARA_CODEX_APP_SERVER_PROXY", missing_proxy.as_str())],
+    );
+
+    assert_blocked_for_plan_mode(&output);
+}
+
+#[test]
+fn deep_interview_with_transcript_plan_mode_passes_without_proxy() {
+    let dir = tempdir().unwrap();
+    let missing_proxy = dir.path().join("missing-proxy");
+    let missing_proxy = missing_proxy.to_string_lossy().to_string();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-plan","collaboration_mode_kind":"plan"}}
+{"type":"turn_context","payload":{"turn_id":"turn-plan","collaboration_mode":{"mode":"plan","settings":{"model":"gpt-5.5"}}}}"#,
+    )
+    .unwrap();
+    let payload = payload_with_transcript(
+        "$deep-interview improve the menu",
+        "bypassPermissions",
+        "turn-plan",
+        &transcript,
+    );
+
+    let output = run_hook_with_env(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        &payload,
+        &[("MEGARA_CODEX_APP_SERVER_PROXY", missing_proxy.as_str())],
+    );
 
     assert_success(&output);
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
@@ -156,14 +204,25 @@ fn deep_interview_blocks_when_update_notification_missing() {
 }
 
 fn payload(prompt: &str, permission_mode: &str) -> Vec<u8> {
+    let transcript_path = PathBuf::from(format!(
+        "/Users/me/.codex/sessions/2026/01/01/rollout-2026-01-01T00-00-00-{THREAD_ID}.jsonl"
+    ));
+    payload_with_transcript(prompt, permission_mode, "turn-1", &transcript_path)
+}
+
+fn payload_with_transcript(
+    prompt: &str,
+    permission_mode: &str,
+    turn_id: &str,
+    transcript_path: &Path,
+) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
         "prompt": prompt,
         "permission_mode": permission_mode,
+        "turn_id": turn_id,
         "model": "gpt-5.5",
         "session_id": "session-alias",
-        "transcript_path": format!(
-            "/Users/me/.codex/sessions/2026/01/01/rollout-2026-01-01T00-00-00-{THREAD_ID}.jsonl"
-        )
+        "transcript_path": transcript_path,
     }))
     .unwrap()
 }
@@ -182,7 +241,8 @@ fn assert_blocked_for_plan_mode(output: &Output) {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""decision":"block""#), "stdout={stdout}");
     assert!(stdout.contains("Codex Plan mode"), "stdout={stdout}");
-    assert!(stdout.contains("/plan <same request>"), "stdout={stdout}");
+    assert!(stdout.contains("Plan mode"), "stdout={stdout}");
+    assert!(!stdout.contains("/plan <same request>"), "stdout={stdout}");
     assert!(!stdout.contains("app-server"), "stdout={stdout}");
     assert!(!stdout.contains("thread"), "stdout={stdout}");
 }

@@ -152,9 +152,9 @@ Runtime hooks attempt to activate Codex Plan mode before Round 0 when all condit
 
 If automatic activation succeeds, begin Round 0 normally.
 
-If automatic activation fails, do not begin Round 0. Tell the user in the configured locale to resend the same request as `/plan <same request>`. Do not offer a "continue without /plan" option.
+If automatic activation fails, do not begin Round 0. Tell the user in the configured locale to activate Codex Plan mode first, then resend the same deep-interview request. Do not offer a "continue without Plan mode" option.
 
-Do not show an ambiguity score, record a pending interview question, emit `Megara Workflow State`, inspect files, run tools, or start implementation during Plan-mode activation handling. Skip this section when the current request already starts with `/plan` or runtime reports Plan mode.
+Do not show an ambiguity score, record a pending interview question, emit `Megara Workflow State`, inspect files, run tools, or start implementation during Plan-mode activation handling. A `/plan` text prefix is not enough by itself; skip this section only when the runtime or transcript reports Plan mode.
 
 ## Round 0: Topology Confirmation
 

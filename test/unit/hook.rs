@@ -114,6 +114,12 @@ fn codex_plan_mode_detects_deep_interview_start_only() {
     assert!(is_deep_interview_start_prompt(
         "[$deep-interview](/tmp/SKILL.md) improve the menu"
     ));
+    assert!(is_deep_interview_start_prompt(
+        "/plan $deep-interview improve the menu"
+    ));
+    assert!(is_deep_interview_start_prompt(
+        "/plan[$deep-interview](/tmp/SKILL.md) improve the menu"
+    ));
     assert!(!is_deep_interview_start_prompt(
         "please use deep-interview later"
     ));
@@ -140,7 +146,7 @@ fn effective_prompt_extracts_plan_prefix_from_delegated_input() {
         effective,
         "/plan [$deep-interview](/tmp/SKILL.md) improve the menu"
     );
-    assert!(prompt_starts_with_plan(&effective));
+    assert!(is_deep_interview_start_prompt(&effective));
 }
 
 #[test]
@@ -187,12 +193,62 @@ fn runtime_context_treats_vscode_transcript_as_app_surface() {
 }
 
 #[test]
-fn codex_plan_mode_detects_plan_prefix() {
-    assert!(prompt_starts_with_plan(
-        "/plan $deep-interview improve the menu"
-    ));
-    assert!(prompt_starts_with_plan("  /PLAN\n$deep-interview"));
-    assert!(!prompt_starts_with_plan("please /plan later"));
+fn codex_plan_mode_reads_payload_collaboration_mode() {
+    assert!(payload_reports_plan_mode(&json!({
+        "collaboration_mode": {
+            "mode": "plan"
+        }
+    })));
+    assert!(payload_reports_plan_mode(&json!({
+        "collaborationMode": {
+            "mode": "Plan"
+        }
+    })));
+    assert!(payload_reports_plan_mode(&json!({
+        "collaboration_mode_kind": "plan"
+    })));
+    assert!(!payload_reports_plan_mode(&json!({
+        "permission_mode": "bypassPermissions",
+        "collaboration_mode": {
+            "mode": "default"
+        }
+    })));
+}
+
+#[test]
+fn codex_plan_mode_reads_transcript_current_turn_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-plan","collaboration_mode_kind":"plan"}}"#,
+    )
+    .unwrap();
+    let payload = json!({
+        "turn_id": "turn-plan",
+        "transcript_path": transcript,
+        "permission_mode": "bypassPermissions"
+    });
+
+    assert!(payload_reports_plan_mode(&payload));
+}
+
+#[test]
+fn codex_plan_mode_ignores_transcript_stale_plan_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"old-turn","collaboration_mode_kind":"plan"}}"#,
+    )
+    .unwrap();
+    let payload = json!({
+        "turn_id": "new-turn",
+        "transcript_path": transcript,
+        "permission_mode": "bypassPermissions"
+    });
+
+    assert!(!payload_reports_plan_mode(&payload));
 }
 
 #[test]

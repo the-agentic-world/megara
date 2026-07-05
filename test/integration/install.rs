@@ -103,8 +103,9 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("implementation mutation is blocked by the runtime until `ralplan`"));
     assert!(skill.contains("Runtime hooks attempt to activate Codex Plan mode before Round 0"));
     assert!(skill.contains("If automatic activation fails"));
-    assert!(skill.contains("/plan <same request>"));
-    assert!(skill.contains("Do not offer a \"continue without /plan\" option"));
+    assert!(skill.contains("activate Codex Plan mode first"));
+    assert!(skill.contains("A `/plan` text prefix is not enough by itself"));
+    assert!(skill.contains("Do not offer a \"continue without Plan mode\" option"));
     assert!(!skill.contains("Continue here without `/plan`"));
     assert!(!skill.contains("The preflight question must have"));
     assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
@@ -304,8 +305,8 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("This projected harness is running inside Codex"));
     assert!(agents_md.contains("Codex native Plan mode is available through `/plan` or Shift+Tab"));
     assert!(agents_md.contains("Megara hooks try to activate Codex Plan mode before Round 0"));
-    assert!(agents_md.contains("resend with `/plan <same request>`"));
-    assert!(agents_md.contains("Do not offer a \"continue without /plan\" path"));
+    assert!(agents_md.contains("activate Plan mode, then resend"));
+    assert!(agents_md.contains("Do not offer a \"continue without Plan mode\" path"));
     assert!(agents_md.contains("delegated prompts may arrive wrapped"));
     assert!(agents_md.contains("implementation mutation is blocked until `ralplan`"));
     assert!(agents_md.contains("SubagentStart"));
