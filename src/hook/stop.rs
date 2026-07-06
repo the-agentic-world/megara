@@ -6,10 +6,8 @@ pub(super) fn handle_stop(
     payload: &Value,
     payload_file: &Path,
 ) -> Result<i32> {
-    let text = payload
-        .get("last_assistant_message")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let text = runtime_input::assistant_message_from_payload(payload).unwrap_or_default();
+    let text = text.as_str();
 
     for review in review_passes_from_text(text) {
         let paths = workflow_paths(state_dir, payload, RALPLAN);

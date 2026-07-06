@@ -67,6 +67,15 @@ pub(crate) fn effective_prompt_from_payload(payload: &Value) -> Option<String> {
         .map(effective_prompt_text)
 }
 
+pub(crate) fn assistant_message_from_payload(payload: &Value) -> Option<String> {
+    payload
+        .get("last_assistant_message")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|text| !text.trim().is_empty())
+        .or_else(|| assistant_message_from_transcript(payload))
+}
+
 pub(crate) fn effective_prompt_text(prompt: &str) -> String {
     if let Some(input) = extract_delegated_input(prompt) {
         return clean_effective_prompt(input);
@@ -142,6 +151,121 @@ fn transcript_meta(path: &Path) -> Option<TranscriptMeta> {
         });
     }
     None
+}
+
+fn assistant_message_from_transcript(payload: &Value) -> Option<String> {
+    let transcript_path = payload.get("transcript_path").and_then(Value::as_str)?;
+    let requested_turn_id = string_field(payload, "turn_id");
+    let file = File::open(transcript_path).ok()?;
+    let mut active_turn_id = None::<String>;
+    let mut latest = None::<String>;
+    let mut latest_for_turn = None::<String>;
+
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if let Some(turn_id) = record_turn_id(&record) {
+            active_turn_id = Some(turn_id);
+        }
+        let Some(message) = assistant_message_from_record(&record) else {
+            continue;
+        };
+        latest = Some(message.clone());
+        if requested_turn_id.as_deref().is_some_and(|turn_id| {
+            record_belongs_to_turn(&record, active_turn_id.as_deref(), turn_id)
+        }) {
+            latest_for_turn = Some(message);
+        }
+    }
+
+    if requested_turn_id.is_some() {
+        latest_for_turn
+    } else {
+        latest
+    }
+}
+
+fn record_belongs_to_turn(record: &Value, active_turn_id: Option<&str>, turn_id: &str) -> bool {
+    record_turn_id(record)
+        .as_deref()
+        .is_some_and(|candidate| candidate == turn_id)
+        || active_turn_id.is_some_and(|candidate| candidate == turn_id)
+}
+
+fn record_turn_id(record: &Value) -> Option<String> {
+    string_field(record, "turn_id")
+        .or_else(|| {
+            record
+                .get("payload")
+                .and_then(|payload| string_field(payload, "turn_id"))
+        })
+        .or_else(|| {
+            record
+                .pointer("/payload/internal_chat_message_metadata_passthrough/turn_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+}
+
+fn assistant_message_from_record(record: &Value) -> Option<String> {
+    let payload = record.get("payload").unwrap_or(record);
+    let payload_type = payload.get("type").and_then(Value::as_str);
+
+    if payload_type.is_some_and(|value| value == "agent_message") {
+        return payload
+            .get("message")
+            .and_then(content_text)
+            .filter(|text| !text.trim().is_empty());
+    }
+
+    if payload_type.is_some_and(|value| value == "message")
+        && payload
+            .get("role")
+            .and_then(Value::as_str)
+            .is_some_and(|role| role == "assistant")
+    {
+        return payload
+            .get("content")
+            .and_then(content_text)
+            .filter(|text| !text.trim().is_empty());
+    }
+
+    let item = payload.get("item")?;
+    if item
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value == "message")
+        && item
+            .get("role")
+            .and_then(Value::as_str)
+            .is_some_and(|role| role == "assistant")
+    {
+        return item
+            .get("content")
+            .and_then(content_text)
+            .filter(|text| !text.trim().is_empty());
+    }
+
+    None
+}
+
+fn content_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.to_string()),
+        Value::Array(items) => {
+            let parts = items
+                .iter()
+                .filter_map(content_text)
+                .filter(|text| !text.trim().is_empty())
+                .collect::<Vec<_>>();
+            (!parts.is_empty()).then(|| parts.join(""))
+        }
+        Value::Object(map) => ["text", "message", "content"]
+            .iter()
+            .find_map(|key| map.get(*key).and_then(content_text)),
+        _ => None,
+    }
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {

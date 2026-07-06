@@ -32,11 +32,7 @@ pub(super) fn record_conversation_event(
         };
         ("prompt", content)
     } else {
-        let Some(content) = payload
-            .get("last_assistant_message")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-        else {
+        let Some(content) = runtime_input::assistant_message_from_payload(payload) else {
             return Ok(());
         };
         ("last_assistant_message", content)

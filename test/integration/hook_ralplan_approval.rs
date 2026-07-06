@@ -98,6 +98,63 @@ fn projected_hook_runner_tracks_visible_only_plan_and_numeric_approval() {
     assert_eq!(approved["approved_handoff_target"], "ultragoal");
 }
 
+#[test]
+fn plan_mode_stop_persists_pending_plan_from_transcript() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_crystallized_interview(dir.path(), "sess-plan-rp", "improve 2048 UI clarity.");
+    let message = "**Pending Execution Plan**\n\nSummary: improve the 2048 UI without changing rules.\n\nScope:\n- Update layout, spacing, and controls.\n- Keep scoring and board mechanics unchanged.\n\nSteps:\n- Inspect current UI structure.\n- Adjust responsive layout.\n- Verify keyboard and touch interaction.\n\nAcceptance criteria:\n- Existing tests pass.\n- The board does not overflow on mobile.\n\nRisks:\n- Avoid changing saved game state.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n";
+    let transcript = dir.path().join("plan-mode-ralplan-stop.jsonl");
+    fs::write(
+        &transcript,
+        format!(
+            "{}\n{}\n",
+            serde_json::json!({
+                "type": "turn_context",
+                "payload": {
+                    "turn_id": "turn-plan-rp",
+                    "collaboration_mode": {"mode": "plan"}
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final",
+                    "content": [{"type": "output_text", "text": message}]
+                }
+            })
+        ),
+    )
+    .unwrap();
+    let payload = serde_json::json!({
+        "session_id": "sess-plan-rp",
+        "turn_id": "turn-plan-rp",
+        "permission_mode": "plan",
+        "transcript_path": transcript,
+        "cwd": dir.path().display().to_string(),
+    })
+    .to_string();
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        payload.as_bytes(),
+    ));
+
+    let state = read_state(dir.path(), RALPLAN, "sess-plan-rp");
+    assert_eq!(state["phase"], "pending_approval");
+    let plan_path = PathBuf::from(state["plan_path"].as_str().unwrap());
+    let plan = fs::read_to_string(plan_path).unwrap();
+    assert!(plan.contains("Summary: improve the 2048 UI"));
+    assert!(!plan.contains("Megara Workflow State"));
+}
+
 fn submit_early_plan_without_reviews(project: &Path) {
     let message = "**Pending Execution Plan**\n\nSummary: this should wait for review coverage.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: rp-too-early\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-too-early\n- next: approval\n-->\n";
     assert_success(&stop_message(project, "sess-rp", message));

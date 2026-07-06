@@ -32,7 +32,9 @@ pub(crate) use hook::mutation::mutating_command;
 pub(crate) use hook::parser::{
     approval_gate_from_text, parse_blocks, text_before_first_workflow_block,
 };
-pub(crate) use hook::runtime_input::{effective_prompt_text, runtime_context, RuntimeSurface};
+pub(crate) use hook::runtime_input::{
+    assistant_message_from_payload, effective_prompt_text, runtime_context, RuntimeSurface,
+};
 pub(crate) use hook::state_paths::workflow_paths;
 pub(crate) use installer::{PlannedFile, MANAGED_MARKER};
 pub(crate) use serde_json::{json, Value};

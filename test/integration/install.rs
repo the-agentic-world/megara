@@ -105,7 +105,8 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Codex Plan-Mode Activation"));
     assert!(skill.contains("Runtime-Backed Multi-Turn Contract"));
     assert!(skill.contains("Codex App delegation wrappers"));
-    assert!(skill.contains("Subagents may be used only for read-only lateral review"));
+    assert!(skill.contains("Use read-only subagents for lateral review"));
+    assert!(skill.contains("request exactly one read-only subagent reviewer"));
     assert!(skill.contains("implementation mutation is blocked by the runtime until `ralplan`"));
     assert!(skill.contains("Runtime hooks attempt to activate Codex Plan mode before Round 0"));
     assert!(skill.contains("If automatic activation fails"));
@@ -225,6 +226,7 @@ fn installs_project_scope_codex_harness() {
         "begin planning from the locked spec without asking another transition question"
     ));
     assert!(ralplan.contains("Normal user approval should be a number or natural-language choice"));
+    assert!(ralplan.contains("run planner, architect, and critic as read-only subagent reviews"));
     assert!(ralplan.contains("input_spec_sha256"));
     assert!(ralplan.contains("plan_sha256"));
     assert!(ralplan.contains("pending-approval plan"));
@@ -317,6 +319,7 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("delegated prompts may arrive wrapped"));
     assert!(agents_md.contains("implementation mutation is blocked until `ralplan`"));
     assert!(agents_md.contains("SubagentStart"));
+    assert!(agents_md.contains("use subagents as read-only reviewers"));
     assert!(agents_md.contains("## Skills"));
     assert!(agents_md.contains("## On-Demand Tools"));
     assert!(agents_md.contains("insane-search"));

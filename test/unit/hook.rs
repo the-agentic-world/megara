@@ -219,6 +219,69 @@ fn runtime_context_treats_vscode_transcript_as_app_surface() {
 }
 
 #[test]
+fn assistant_message_falls_back_to_current_turn_transcript() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"turn_context","payload":{"turn_id":"old-turn"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"old answer"}]}}
+{"type":"turn_context","payload":{"turn_id":"turn-plan"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final","content":[{"type":"output_text","text":"current "},{"type":"output_text","text":"answer"}]}}"#,
+    )
+    .unwrap();
+    let payload = json!({
+        "turn_id": "turn-plan",
+        "transcript_path": transcript,
+    });
+
+    assert_eq!(
+        assistant_message_from_payload(&payload).as_deref(),
+        Some("current answer")
+    );
+}
+
+#[test]
+fn assistant_message_does_not_use_stale_transcript_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"turn_context","payload":{"turn_id":"old-turn"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"old answer"}]}}"#,
+    )
+    .unwrap();
+    let payload = json!({
+        "turn_id": "new-turn",
+        "transcript_path": transcript,
+    });
+
+    assert_eq!(assistant_message_from_payload(&payload), None);
+}
+
+#[test]
+fn assistant_message_prefers_payload_over_transcript() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"turn_context","payload":{"turn_id":"turn-plan"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"transcript answer"}]}}"#,
+    )
+    .unwrap();
+    let payload = json!({
+        "turn_id": "turn-plan",
+        "transcript_path": transcript,
+        "last_assistant_message": "payload answer",
+    });
+
+    assert_eq!(
+        assistant_message_from_payload(&payload).as_deref(),
+        Some("payload answer")
+    );
+}
+
+#[test]
 fn codex_plan_mode_reads_payload_collaboration_mode() {
     assert!(payload_reports_plan_mode(&json!({
         "collaboration_mode": {

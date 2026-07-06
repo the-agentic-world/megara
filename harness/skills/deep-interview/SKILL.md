@@ -135,9 +135,9 @@ Megara hooks back this workflow with append-only local state. Treat active quest
 
 - Codex App delegation wrappers such as `<codex_delegation><input>...</input>` are runtime transport details. The hook records the effective user prompt from inside `<input>`; do not mirror wrappers in user-facing prose.
 - Each user answer should respond only to the current visible question. The runtime records the answer, pending question, and conversation event locally.
-- Subagents may be used only for read-only lateral review: research, contradiction checks, simplification, or architecture blind-spot checks.
+- Use read-only subagents for lateral review at milestone transitions and before final crystallization when the runtime exposes subagent tools. Use them for research, contradiction checks, simplification, or architecture blind-spot checks.
 - Do not move the active question/answer loop into a subagent. The user-facing question stays in the main session.
-- Not using a subagent must not block interview progress in v1.
+- If subagent tools are unavailable, continue in the main session and keep the same read-only review discipline.
 - Once the final spec crystallizes, stop. The next workflow must be `ralplan`, and implementation mutation is blocked by the runtime until `ralplan` owns or approves the handoff.
 
 ## Codex Plan-Mode Activation
@@ -309,14 +309,21 @@ Use milestone bands:
 | refined | above active target through 30% |
 | target reached | <= active target |
 
-At milestone transitions, briefly run an internal lateral review before the next question. Use the existing internal fragments when available:
+At milestone transitions, run a read-only lateral review before the next question. Use the existing internal fragments when available:
 
 - `researcher`: external facts, prior art, version/compatibility constraints.
 - `contrarian`: assumptions that may be false or habitual.
 - `simplifier`: the smallest valuable version.
 - `architect`: system shape, ownership, integration, and migration risks.
 
-When the runtime supports subagent event observation, prefer read-only subagents for this lateral review when the question benefits from isolated context. Use them as advisory reviewers only; their output should be distilled into at most one main-session question.
+When the runtime supports subagent tools, request exactly one read-only subagent reviewer for each milestone transition. Choose the persona that matches the weakest remaining ambiguity dimension:
+
+- `researcher` for missing external facts, versions, compatibility, or prior art.
+- `contrarian` for contradictions, hidden assumptions, or risky defaults.
+- `simplifier` for oversized scope or unclear minimum viable value.
+- `architect` for ownership, integration, migration, or system-boundary risk.
+
+Before final crystallization, request one final read-only subagent review unless a subagent was already used in the immediately preceding milestone step. Use subagents as advisory reviewers only; their output should be distilled into at most one main-session question or one final-spec adjustment.
 
 Fold only the highest-value finding into the next single question. The panel does not add extra questions, does not decide requirements, and does not permit implementation.
 

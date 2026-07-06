@@ -235,6 +235,70 @@ fn projected_hook_runner_persists_visible_only_crystallized_spec() {
 }
 
 #[test]
+fn plan_mode_stop_persists_crystallized_spec_from_transcript() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let final_spec = "**Requirements Summary**\n\nAmbiguity: 0%\n\nGoal: improve the 2048 UI without changing the game rules.\n\nScope:\n- Keep scoring and board mechanics unchanged.\n- Improve layout, spacing, and touch affordances.\n\nDecisions:\n- Prioritize mobile readability.\n\nAcceptance criteria:\n- Existing tests pass.\n- The board does not overflow on mobile.\n\nConstraints and risks:\n- Avoid changing saved game state.\n\nNext step: continue with `ralplan` from this summary. Implementation is still not allowed.\n";
+    let transcript = dir.path().join("plan-mode-stop.jsonl");
+    fs::write(
+        &transcript,
+        format!(
+            "{}\n{}\n",
+            serde_json::json!({
+                "type": "turn_context",
+                "payload": {
+                    "turn_id": "turn-plan-di",
+                    "collaboration_mode": {"mode": "plan"}
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final",
+                    "content": [{"type": "output_text", "text": final_spec}]
+                }
+            })
+        ),
+    )
+    .unwrap();
+    let payload = serde_json::json!({
+        "session_id": "sess-plan-di",
+        "turn_id": "turn-plan-di",
+        "permission_mode": "plan",
+        "transcript_path": transcript,
+        "cwd": dir.path().display().to_string(),
+    })
+    .to_string();
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        payload.as_bytes(),
+    ));
+
+    let state = read_json(
+        &dir.path()
+            .join(".megara/state/workflows/deep-interview/sess-plan-di.json"),
+    );
+    assert_eq!(state["phase"], "crystallized");
+    assert_eq!(state["ambiguity"], "0%");
+    let spec_path = PathBuf::from(state["spec_path"].as_str().unwrap());
+    let spec = fs::read_to_string(spec_path).unwrap();
+    assert!(spec.contains("Goal: improve the 2048 UI"));
+    assert!(!spec.contains("Megara Workflow State"));
+
+    let conversation =
+        fs::read_to_string(dir.path().join(".megara/state/hooks/conversation.jsonl")).unwrap();
+    assert!(conversation.contains("improve the 2048 UI"));
+}
+
+#[test]
 fn projected_hook_runner_persists_zero_ambiguity_visible_spec() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();

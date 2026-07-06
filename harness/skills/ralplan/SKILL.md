@@ -21,6 +21,7 @@ Use this workflow after a request is clear enough to plan, but before implementa
 - The planner creates the first plan.
 - The architect reviews system shape, boundaries, and tradeoffs.
 - The critic rejects vague, unverifiable, or internally inconsistent plans.
+- When the runtime exposes subagent tools, run planner, architect, and critic as read-only subagent reviews. If subagent tools are unavailable, perform the same review loop in the main session without mutating files.
 - Iterate until the plan is executable, the user requests refinement, or a blocker is explicit.
 - Do not finish with a pending-approval plan until planner, architect, and critic passes have all been recorded, the planner and architect verdicts are approval-capable, and the critic verdict is `OKAY`.
 - Always finish approved planning with a pending-approval plan and clear execution options. Do not output runtime metadata.
@@ -48,6 +49,8 @@ Use this review order before producing the pending-approval plan:
 1. Planner: draft the proportional execution plan from known facts.
 2. Architect: review boundaries, affected surfaces, sequencing, and reversibility.
 3. Critic: return `OKAY`, `ITERATE`, or `REJECT`.
+
+Prefer isolated read-only subagent context for each pass when available. Do not delegate final user-facing approval wording to a subagent; the main session owns the final plan and approval question.
 
 If the critic returns `ITERATE`, revise once and run the critic pass again. If the critic still blocks, stop with the blocker instead of inventing certainty.
 
