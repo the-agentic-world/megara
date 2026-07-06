@@ -47,7 +47,7 @@ mod state;
 #[path = "hook/state_fields.rs"]
 mod state_fields;
 #[path = "hook/state_paths.rs"]
-mod state_paths;
+pub(crate) mod state_paths;
 #[path = "hook/stop.rs"]
 mod stop;
 #[path = "hook/subagent.rs"]

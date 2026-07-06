@@ -10,7 +10,7 @@ pub(super) fn handle_deep_interview_terminal(
 ) -> Result<()> {
     let spec = persist_crystallized_spec(
         timestamp,
-        &paths.workflow_dir,
+        &paths.artifact_dir,
         &paths.session_id,
         terminal,
         text,

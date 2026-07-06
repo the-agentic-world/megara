@@ -37,11 +37,11 @@ MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
 
 The durable state lives under:
 
-- `.agents/state/workflows/ultragoal/<session-id>/brief.md`
-- `.agents/state/workflows/ultragoal/<session-id>/goals.json`
-- `.agents/state/workflows/ultragoal/<session-id>/ledger.jsonl`
+- `.megara/artifacts/ultragoal/<session-id>/brief.md`
+- `.megara/artifacts/ultragoal/<session-id>/goals.json`
+- `.megara/artifacts/ultragoal/<session-id>/ledger.jsonl`
 
-For global harnesses, set `MEGARA_BIN="${MEGARA_BIN:-$HOME/.megara/bin/megara}"` and use `--scope global`; the same files are stored under `~/.megara/state/workflows/ultragoal/<session-id>/`.
+For global harnesses, set `MEGARA_BIN="${MEGARA_BIN:-$HOME/.megara/bin/megara}"` and use `--scope global`; the same files are stored under `~/.megara/artifacts/ultragoal/<session-id>/`.
 
 ## Goal Creation
 
@@ -52,7 +52,7 @@ MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
 "$MEGARA_BIN" ultragoal --scope project --session-id <session-id> create-goals
 ```
 
-The command reads `.agents/state/workflows/ralplan/<session-id>.json`, verifies that the approved handoff target is `ultragoal`, verifies the approved plan sha256, and then creates goals from the locked plan artifact.
+The command reads `.megara/state/workflows/ralplan/<session-id>.json`, verifies that the approved handoff target is `ultragoal`, verifies the approved plan sha256, and then creates goals from the locked plan artifact.
 
 If the approved brief contains column-zero `@goal` markers, each marker starts a new goal:
 

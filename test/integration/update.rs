@@ -66,6 +66,7 @@ fn update_refreshes_project_harness_and_removes_legacy_codex_skills() {
         .join(".agents/skills/deep-interview/SKILL.md")
         .exists());
     assert!(dir.path().join(".agents/.gitignore").exists());
+    assert!(dir.path().join(".megara/.gitignore").exists());
     assert!(dir
         .path()
         .join(".agents/tools/insane-search/TOOL.md")
@@ -76,6 +77,7 @@ fn update_refreshes_project_harness_and_removes_legacy_codex_skills() {
         .exists());
     assert!(dir.path().join(".agents/bin/insane-search").exists());
     let wrapper = fs::read_to_string(dir.path().join(".agents/bin/insane-search")).unwrap();
+    assert!(wrapper.contains(r#"runtime_root="$root_dir/../.megara""#));
     assert!(wrapper.contains("state/tools/insane-search"));
     assert!(wrapper.contains("pip install -r"));
 }

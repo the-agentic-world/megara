@@ -91,6 +91,7 @@ pub struct InstallPlan {
     pub scope: InstallScope,
     pub target: TargetRuntime,
     pub ssot_root: PathBuf,
+    pub runtime_root: PathBuf,
     pub target_root: PathBuf,
     pub files: Vec<PlannedFile>,
     pub obsolete_files: Vec<PathBuf>,

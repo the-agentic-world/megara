@@ -19,10 +19,10 @@ fn project_hook_rejects_cwd_outside_project_root() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside project root"));
     assert!(!project
         .path()
-        .join(".agents/state/hooks/events.jsonl")
+        .join(".megara/state/hooks/events.jsonl")
         .exists());
     assert!(!outside
         .path()
-        .join(".agents/state/hooks/events.jsonl")
+        .join(".megara/state/hooks/events.jsonl")
         .exists());
 }

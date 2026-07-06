@@ -24,7 +24,10 @@ impl<'a> Planner<'a> {
     pub fn plan(&self) -> Result<InstallPlan> {
         let paths = InstallPaths::resolve(self.options.scope, self.options.target)?;
         let mut files = Vec::new();
-        files.extend(runtime_support_files(paths.ssot_root.clone())?);
+        files.extend(runtime_support_files(
+            paths.ssot_root.clone(),
+            paths.runtime_root.clone(),
+        )?);
         let projection_registry = match self.options.action {
             InstallAction::Install => {
                 files.extend(ssot_files(paths.ssot_root.clone(), self.registry));
@@ -52,6 +55,7 @@ impl<'a> Planner<'a> {
             scope: self.options.scope,
             target: self.options.target,
             ssot_root: paths.ssot_root,
+            runtime_root: paths.runtime_root,
             target_root: paths.target_root,
             files,
             obsolete_files,
@@ -106,9 +110,12 @@ fn ssot_files(root: PathBuf, registry: &TemplateRegistry) -> Vec<PlannedFile> {
         .collect()
 }
 
-pub(crate) fn runtime_support_files(root: PathBuf) -> Result<Vec<PlannedFile>> {
+pub(crate) fn runtime_support_files(
+    root: PathBuf,
+    runtime_root: PathBuf,
+) -> Result<Vec<PlannedFile>> {
     let megara_bin = env::current_exe().context("failed to resolve current megara executable")?;
-    Ok(vec![
+    let mut files = vec![
         PlannedFile::new_executable_shell(
             root.join("bin").join("megara"),
             format!(
@@ -123,7 +130,12 @@ set -eu
 bin_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 root_dir="$bin_dir/.."
 tool_dir="$bin_dir/../tools/insane-search"
-state_dir="$root_dir/state/tools/insane-search"
+if [ "$(basename "$root_dir")" = ".agents" ]; then
+  runtime_root="$root_dir/../.megara"
+else
+  runtime_root="$root_dir"
+fi
+state_dir="$runtime_root/state/tools/insane-search"
 venv_dir="$state_dir/venv"
 python_bin="$venv_dir/bin/python"
 requirements="$tool_dir/requirements.txt"
@@ -162,7 +174,14 @@ cd "$tool_dir"
 exec "$python_bin" -m engine "$@"
 "#,
         ),
-    ])
+    ];
+    if runtime_root != root {
+        files.push(PlannedFile::new(
+            runtime_root.join(".gitignore"),
+            "state/\nartifacts/\ncache/\n",
+        ));
+    }
+    Ok(files)
 }
 
 fn shell_quote(value: &str) -> String {

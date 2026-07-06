@@ -25,6 +25,7 @@ fn installs_project_scope_codex_harness() {
     assert!(stdout.contains("open a new session after install"));
     assert!(dir.path().join(".agents/megara.toml").exists());
     assert!(dir.path().join(".agents/.gitignore").exists());
+    assert!(dir.path().join(".megara/.gitignore").exists());
     assert!(dir.path().join(".agents/bin/megara").exists());
     assert!(dir.path().join(".agents/bin/insane-search").exists());
     assert!(dir.path().join(".codex/AGENTS.md").exists());
@@ -80,6 +81,11 @@ fn installs_project_scope_codex_harness() {
     let agents_gitignore = fs::read_to_string(dir.path().join(".agents/.gitignore")).unwrap();
     assert!(agents_gitignore.contains("MEGARA:MANAGED"));
     assert!(agents_gitignore.contains("state/"));
+    let runtime_gitignore = fs::read_to_string(dir.path().join(".megara/.gitignore")).unwrap();
+    assert!(runtime_gitignore.contains("MEGARA:MANAGED"));
+    assert!(runtime_gitignore.contains("state/"));
+    assert!(runtime_gitignore.contains("artifacts/"));
+    assert!(runtime_gitignore.contains("cache/"));
     let skill =
         fs::read_to_string(dir.path().join(".agents/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));
@@ -150,6 +156,7 @@ fn installs_project_scope_codex_harness() {
     assert!(caveman.contains("ACTIVE EVERY RESPONSE"));
     assert!(caveman.contains("stop caveman"));
     let insane_wrapper = fs::read_to_string(dir.path().join(".agents/bin/insane-search")).unwrap();
+    assert!(insane_wrapper.contains(r#"runtime_root="$root_dir/../.megara""#));
     assert!(insane_wrapper.contains("state/tools/insane-search"));
     assert!(insane_wrapper.contains("python3 -m venv"));
     assert!(insane_wrapper.contains("pip install -r"));
@@ -164,14 +171,14 @@ fn installs_project_scope_codex_harness() {
     assert!(insane_tool.contains("not a default active skill"));
     assert!(insane_tool.contains("https://github.com/fivetaku/insane-search"));
     assert!(insane_tool.contains("bootstraps dependencies on first use"));
-    assert!(insane_tool.contains(".agents/state/tools/insane-search/venv"));
+    assert!(insane_tool.contains(".megara/state/tools/insane-search/venv"));
     let insane_skill =
         fs::read_to_string(dir.path().join(".agents/skills/insane-search/SKILL.md")).unwrap();
     assert!(insane_skill.contains("name: insane-search"));
     assert!(insane_skill.contains("on-demand, not a default active skill"));
     assert!(insane_skill.contains(".agents/tools/insane-search/TOOL.md"));
     assert!(insane_skill.contains(".agents/bin/insane-search"));
-    assert!(insane_skill.contains(".agents/state/tools/insane-search/venv"));
+    assert!(insane_skill.contains(".megara/state/tools/insane-search/venv"));
     let insane_requirements = fs::read_to_string(
         dir.path()
             .join(".agents/tools/insane-search/requirements.txt"),

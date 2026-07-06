@@ -21,7 +21,7 @@ fn ultragoal_cli_creates_goals_and_records_completion_receipt() {
         String::from_utf8_lossy(&create.stderr)
     );
 
-    let state_dir = dir.path().join(".agents/state/workflows/ultragoal/sess-ug");
+    let state_dir = dir.path().join(".megara/artifacts/ultragoal/sess-ug");
     assert!(state_dir.join("brief.md").exists());
     let goals_path = state_dir.join("goals.json");
     let goals = read_json(&goals_path);
@@ -33,7 +33,7 @@ fn ultragoal_cli_creates_goals_and_records_completion_receipt() {
 
     let runtime_state_path = dir
         .path()
-        .join(".agents/state/workflows/ultragoal/sess-ug.json");
+        .join(".megara/state/workflows/ultragoal/sess-ug.json");
     assert_eq!(read_json(&runtime_state_path)["phase"], "goal_planning");
 
     let next = complete_goals(dir.path());

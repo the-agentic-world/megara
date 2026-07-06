@@ -26,16 +26,17 @@ pub(super) struct UltragoalPaths {
 
 impl UltragoalPaths {
     pub(super) fn resolve(scope: ScopeArg, session_id: &str) -> Result<Self> {
-        let ssot_root = match scope {
+        let runtime_root = match scope {
             ScopeArg::Project => env::current_dir()
                 .context("failed to read current directory")?
-                .join(".agents"),
+                .join(".megara"),
             ScopeArg::Global => home_dir()?.join(".megara"),
         };
-        let workflow_base = ssot_root.join("state").join("workflows");
+        let workflow_base = runtime_root.join("state").join("workflows");
+        let artifact_base = runtime_root.join("artifacts");
         let safe_session = safe_part(session_id);
         let workflow_dir = workflow_base.join(WORKFLOW);
-        let dir = workflow_dir.join(&safe_session);
+        let dir = artifact_base.join(WORKFLOW).join(&safe_session);
         Ok(Self {
             brief_file: dir.join("brief.md"),
             goals_file: dir.join("goals.json"),

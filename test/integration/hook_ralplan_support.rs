@@ -37,7 +37,7 @@ pub(super) fn user_prompt(project: &Path, session_id: &str, prompt: &str) -> Out
 
 pub(super) fn workflow_state_path(project: &Path, workflow: &str, session_id: &str) -> PathBuf {
     project
-        .join(".agents/state/workflows")
+        .join(".megara/state/workflows")
         .join(workflow)
         .join(format!("{session_id}.json"))
 }
@@ -143,6 +143,6 @@ pub(super) fn run_mutation(project: &Path, session_id: &str) -> Output {
 }
 
 pub(super) fn events(project: &Path, workflow: &str) -> String {
-    fs::read_to_string(project.join(format!(".agents/state/workflows/{workflow}/events.jsonl")))
+    fs::read_to_string(project.join(format!(".megara/state/workflows/{workflow}/events.jsonl")))
         .unwrap()
 }

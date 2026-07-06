@@ -2,6 +2,8 @@
 
 #[path = "../../src/cli.rs"]
 mod cli;
+#[path = "../../src/docs.rs"]
+mod docs;
 #[path = "../../src/doctor.rs"]
 mod doctor;
 #[path = "../../src/hook.rs"]
@@ -31,12 +33,15 @@ pub(crate) use hook::parser::{
     approval_gate_from_text, parse_blocks, text_before_first_workflow_block,
 };
 pub(crate) use hook::runtime_input::{effective_prompt_text, runtime_context, RuntimeSurface};
+pub(crate) use hook::state_paths::workflow_paths;
 pub(crate) use installer::{PlannedFile, MANAGED_MARKER};
 pub(crate) use serde_json::{json, Value};
 pub(crate) use std::{fs, path::Path};
 pub(crate) use ultragoal::*;
 pub(crate) use writer::*;
 
+#[path = "docs.rs"]
+mod docs_tests;
 #[path = "hook.rs"]
 mod hook_tests;
 #[path = "ultragoal.rs"]

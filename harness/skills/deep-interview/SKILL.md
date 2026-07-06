@@ -29,7 +29,7 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Continue until ambiguity reaches the active ambiguity target, then ask whether to crystallize for `ralplan` or continue to the next stricter target.
 - End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
 - Recording interview state is allowed and required; it is not implementation work.
-- Runtime hooks own `.agents/state/workflows/deep-interview/**` and `.agents/state/workflows/ralplan/**`. Do not inspect, edit, repair, or synthesize those files to force a handoff.
+- Runtime hooks own `.megara/state/workflows/deep-interview/**` and `.megara/state/workflows/ralplan/**`. Do not inspect, edit, repair, or synthesize those files to force a handoff.
 - When the final crystallized spec is emitted, make it the final response of that assistant turn. Do not start `ralplan`, run tools, inspect state, or continue the workflow in the same turn.
 
 ## Use When
@@ -347,7 +347,7 @@ If the user explicitly cancels the interview, say so in normal user-facing prose
 
 ## Local Record
 
-Runtime hooks should persist raw prompts and assistant messages locally under `.agents/state/hooks/`.
+Runtime hooks should persist raw prompts and assistant messages locally under `.megara/state/hooks/`.
 
 - `events.jsonl`: append-only hook event index.
 - `payloads/<runtime>/<event>/*.json`: append-only raw payload snapshots.
@@ -358,8 +358,8 @@ Runtime hooks should persist raw prompts and assistant messages locally under `.
 
 When a crystallized final response is visible-only and points to `ralplan` as the next step, runtime hooks persist the visible final response as a markdown lock artifact:
 
-- `.agents/state/workflows/deep-interview/specs/deep-interview-<session-id>-<timestamp>.md`
-- `.agents/state/workflows/deep-interview/specs/index.jsonl`
+- `.megara/artifacts/deep-interview/specs/deep-interview-<session-id>-<timestamp>.md`
+- `.megara/artifacts/deep-interview/specs/index.jsonl`
 
 The matching session JSON should reference `spec_path`, `spec_sha256`, and `spec_persisted_at`.
 The matching session JSON should also carry a `pipeline_lock` pointing to `ralplan`; this is runtime state, not visible output.

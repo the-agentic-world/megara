@@ -13,6 +13,7 @@ use crate::cli::ScopeArg;
 pub(crate) struct WorkflowPaths {
     pub(crate) session_id: String,
     pub(crate) workflow_dir: PathBuf,
+    pub(crate) artifact_dir: PathBuf,
     pub(crate) session_file: PathBuf,
     pub(crate) events_file: PathBuf,
 }
@@ -32,7 +33,7 @@ pub(crate) fn scoped_state_dir(scope: ScopeArg, project_root: Option<&Path>) -> 
                     project_root.display()
                 );
             }
-            Ok(project_root.join(".agents").join("state").join("hooks"))
+            Ok(project_root.join(".megara").join("state").join("hooks"))
         }
         ScopeArg::Global => Ok(home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -96,11 +97,13 @@ pub(crate) fn safe_part(value: impl AsRef<str>) -> String {
 pub(crate) fn workflow_paths(state_dir: &Path, payload: &Value, skill: &str) -> WorkflowPaths {
     let session_id = canonical_session_id(payload);
     let workflow_dir = workflow_base_dir(state_dir).join(skill);
+    let artifact_dir = workflow_artifact_base_dir(state_dir).join(skill);
     let session_file = workflow_dir.join(format!("{}.json", safe_part(&session_id)));
     let events_file = workflow_dir.join("events.jsonl");
     WorkflowPaths {
         session_id,
         workflow_dir,
+        artifact_dir,
         session_file,
         events_file,
     }
@@ -155,10 +158,27 @@ pub(crate) fn transcript_session_id(payload: &Value) -> Option<String> {
 }
 
 pub(crate) fn workflow_base_dir(state_dir: &Path) -> PathBuf {
+    state_root_dir(state_dir).join("workflows")
+}
+
+pub(crate) fn workflow_artifact_base_dir(state_dir: &Path) -> PathBuf {
+    runtime_root_dir(state_dir).join("artifacts")
+}
+
+fn state_root_dir(state_dir: &Path) -> PathBuf {
     if state_dir.file_name().is_some_and(|name| name == "hooks") {
-        state_dir.parent().unwrap_or(state_dir).join("workflows")
+        state_dir.parent().unwrap_or(state_dir).to_path_buf()
     } else {
-        state_dir.join("workflows")
+        state_dir.to_path_buf()
+    }
+}
+
+fn runtime_root_dir(state_dir: &Path) -> PathBuf {
+    let state_root = state_root_dir(state_dir);
+    if state_root.file_name().is_some_and(|name| name == "state") {
+        state_root.parent().unwrap_or(&state_root).to_path_buf()
+    } else {
+        state_root
     }
 }
 

@@ -42,7 +42,7 @@ The wrapper bootstraps dependencies on first use.
 Project installs create a private venv at:
 
 ```text
-.agents/state/tools/insane-search/venv
+.megara/state/tools/insane-search/venv
 ```
 
 Global installs create a private venv at:
@@ -64,8 +64,8 @@ The runtime state directory is ignored by the managed `.agents/.gitignore` / `~/
 If bootstrap fails, run the same install manually and retry:
 
 ```bash
-python3 -m venv .agents/state/tools/insane-search/venv
-.agents/state/tools/insane-search/venv/bin/python -m pip install -r .agents/tools/insane-search/requirements.txt
+python3 -m venv .megara/state/tools/insane-search/venv
+.megara/state/tools/insane-search/venv/bin/python -m pip install -r .agents/tools/insane-search/requirements.txt
 .agents/bin/insane-search "https://example.com/" --json --trace
 ```
 

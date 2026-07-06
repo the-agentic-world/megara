@@ -36,6 +36,7 @@ impl fmt::Display for TargetRuntime {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstallPaths {
     pub ssot_root: PathBuf,
+    pub runtime_root: PathBuf,
     pub target_root: PathBuf,
 }
 
@@ -45,12 +46,15 @@ impl InstallPaths {
         match scope {
             InstallScope::Project => Ok(Self {
                 ssot_root: cwd.join(".agents"),
+                runtime_root: cwd.join(".megara"),
                 target_root: target.project_root(cwd),
             }),
             InstallScope::Global => {
                 let home = home_dir()?;
+                let megara_root = home.join(".megara");
                 Ok(Self {
-                    ssot_root: home.join(".megara"),
+                    ssot_root: megara_root.clone(),
+                    runtime_root: megara_root,
                     target_root: target.global_root(home),
                 })
             }

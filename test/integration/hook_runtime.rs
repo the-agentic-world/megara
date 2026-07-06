@@ -46,13 +46,14 @@ fn projected_hook_runner_records_runtime_event() {
     );
     assert!(output.status.success());
 
-    let log = fs::read_to_string(dir.path().join(".agents/state/hooks/events.jsonl")).unwrap();
+    let log = fs::read_to_string(dir.path().join(".megara/state/hooks/events.jsonl")).unwrap();
+    assert!(!dir.path().join(".agents/state/hooks/events.jsonl").exists());
     assert!(log.contains("\"runtime\":\"codex\""));
     assert!(log.contains("\"event\":\"UserPromptSubmit\""));
     assert!(log.contains("/payloads/codex/UserPromptSubmit/"));
     let payload = fs::read_to_string(
         dir.path()
-            .join(".agents/state/hooks/last-codex-UserPromptSubmit.json"),
+            .join(".megara/state/hooks/last-codex-UserPromptSubmit.json"),
     )
     .unwrap();
     assert_eq!(payload, r#"{"prompt":"second"}"#);
@@ -75,14 +76,14 @@ fn projected_hook_runner_records_runtime_event() {
 
     let conversation_events = fs::read_to_string(
         dir.path()
-            .join(".agents/state/hooks/conversation-events.jsonl"),
+            .join(".megara/state/hooks/conversation-events.jsonl"),
     )
     .unwrap();
     assert!(conversation_events.contains("\"role\":\"user\""));
     assert!(conversation_events.contains("\"role\":\"assistant\""));
 
     let conversation =
-        fs::read_to_string(dir.path().join(".agents/state/hooks/conversation.jsonl")).unwrap();
+        fs::read_to_string(dir.path().join(".megara/state/hooks/conversation.jsonl")).unwrap();
     assert!(conversation.contains("\"content\":\"hello\""));
     assert!(conversation.contains("\"content\":\"second\""));
     assert!(conversation.contains("\"content\":\"question?\""));
@@ -114,7 +115,7 @@ fn projected_hook_runner_records_effective_prompt_and_surface() {
 
     assert!(output.status.success());
     let conversation =
-        fs::read_to_string(dir.path().join(".agents/state/hooks/conversation.jsonl")).unwrap();
+        fs::read_to_string(dir.path().join(".megara/state/hooks/conversation.jsonl")).unwrap();
     assert!(conversation.contains("\"content\":\"Use option 2.\""));
     assert!(conversation.contains("\"surface\":\"app\""));
     assert!(conversation.contains("\"transcript_source\":\"vscode\""));

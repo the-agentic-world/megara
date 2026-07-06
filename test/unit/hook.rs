@@ -38,13 +38,39 @@ fn append_jsonl_keeps_concurrent_records_valid() {
 #[test]
 fn mutation_guard_allows_read_commands_with_discarded_stderr() {
     assert!(!mutating_command(
-        "find .agents/state/workflows/deep-interview/specs -maxdepth 1 -type f -print 2>/dev/null | sort"
+        "find .megara/artifacts/deep-interview/specs -maxdepth 1 -type f -print 2>/dev/null | sort"
     ));
     assert!(!mutating_command(
-        "tail -20 .agents/state/workflows/deep-interview/specs/index.jsonl 2>/dev/null"
+        "tail -20 .megara/artifacts/deep-interview/specs/index.jsonl 2>/dev/null"
     ));
     assert!(!mutating_command("grep needle file 2>&1"));
     assert!(!mutating_command("cat file > /dev/null"));
+}
+
+#[test]
+fn workflow_paths_separate_state_and_artifacts() {
+    let state_dir = Path::new("/tmp/megara-project/.megara/state/hooks");
+    let paths = workflow_paths(
+        state_dir,
+        &json!({
+            "session_id": "sess-structure"
+        }),
+        "deep-interview",
+    );
+
+    assert_eq!(paths.session_id, "sess-structure");
+    assert_eq!(
+        paths.workflow_dir,
+        Path::new("/tmp/megara-project/.megara/state/workflows/deep-interview")
+    );
+    assert_eq!(
+        paths.session_file,
+        Path::new("/tmp/megara-project/.megara/state/workflows/deep-interview/sess-structure.json")
+    );
+    assert_eq!(
+        paths.artifact_dir,
+        Path::new("/tmp/megara-project/.megara/artifacts/deep-interview")
+    );
 }
 
 #[test]

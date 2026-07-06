@@ -9,7 +9,7 @@ fn hook_blocks_ultragoal_goal_planning_but_allows_active_goal_mutations() {
     submit_ultragoal_state(dir.path(), "goal_planning", "create goals");
     let state_path = dir
         .path()
-        .join(".agents/state/workflows/ultragoal/sess-ug-hook.json");
+        .join(".megara/state/workflows/ultragoal/sess-ug-hook.json");
     let state: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["active"], true);
@@ -35,7 +35,7 @@ fn hook_blocks_ultragoal_goal_planning_but_allows_active_goal_mutations() {
 
     let events = fs::read_to_string(
         dir.path()
-            .join(".agents/state/workflows/ultragoal/events.jsonl"),
+            .join(".megara/state/workflows/ultragoal/events.jsonl"),
     )
     .unwrap();
     assert!(events.contains("\"event\":\"workflow_state\""));

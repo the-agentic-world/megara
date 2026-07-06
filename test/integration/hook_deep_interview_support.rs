@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn state_path(project: &Path) -> PathBuf {
-    project.join(".agents/state/workflows/deep-interview/sess-di.json")
+    project.join(".megara/state/workflows/deep-interview/sess-di.json")
 }
 
 pub(super) fn submit_question(project: &Path) {

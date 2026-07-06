@@ -12,6 +12,7 @@
 /.github/skills/
 /.agents/results/
 /.agents/state/
+/.megara/
 
 # Local graph analysis output.
 /graphify-out/

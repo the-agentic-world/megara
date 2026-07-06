@@ -21,16 +21,18 @@ impl InstallResult {
             ("scope", self.plan.scope.to_string()),
             ("target", self.plan.target.to_string()),
             ("ssot", self.plan.ssot_root.display().to_string()),
+            ("runtime", self.plan.runtime_root.display().to_string()),
             ("projection", self.plan.target_root.display().to_string()),
         ];
         let mut sections = vec![Section::new(
             "Run",
             vec![
                 format!(
-                    "megara {verb}: scope={}, target={}, ssot={}, projection={}",
+                    "megara {verb}: scope={}, target={}, ssot={}, runtime={}, projection={}",
                     self.plan.scope,
                     self.plan.target,
                     self.plan.ssot_root.display(),
+                    self.plan.runtime_root.display(),
                     self.plan.target_root.display()
                 ),
                 format!(

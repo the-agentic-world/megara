@@ -115,12 +115,38 @@ fn doctor_reports_broken_project_wrapper() {
 }
 
 #[test]
+fn doctor_warns_about_legacy_agents_state() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    fs::create_dir_all(dir.path().join(".agents/state/workflows/deep-interview")).unwrap();
+
+    let output = megara()
+        .arg("doctor")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .arg("--json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"ok\": false"));
+    assert!(stdout.contains("legacy Megara runtime state found under"));
+    assert!(stdout.contains(".agents/state"));
+    assert!(stdout.contains(".megara/state"));
+}
+
+#[test]
 fn doctor_reports_stale_deep_interview_state() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
 
-    let workflow_dir = dir.path().join(".agents/state/workflows/deep-interview");
+    let workflow_dir = dir.path().join(".megara/state/workflows/deep-interview");
     fs::create_dir_all(&workflow_dir).unwrap();
     fs::write(
         workflow_dir.join("ghost.json"),
@@ -179,7 +205,7 @@ fn doctor_ignores_deep_interview_artifact_directories() {
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
 
-    let workflow_dir = dir.path().join(".agents/state/workflows/deep-interview");
+    let workflow_dir = dir.path().join(".megara/state/workflows/deep-interview");
     let specs_dir = workflow_dir.join("specs");
     fs::create_dir_all(&specs_dir).unwrap();
     fs::write(specs_dir.join("index.jsonl"), "{}\n").unwrap();
@@ -227,7 +253,7 @@ fn doctor_reports_duplicate_active_deep_interview_states() {
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
 
-    let workflow_dir = dir.path().join(".agents/state/workflows/deep-interview");
+    let workflow_dir = dir.path().join(".megara/state/workflows/deep-interview");
     fs::create_dir_all(&workflow_dir).unwrap();
     for session_id in ["runtime-session", "visible-thread"] {
         fs::write(

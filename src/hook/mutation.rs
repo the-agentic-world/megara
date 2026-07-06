@@ -72,6 +72,8 @@ fn payload_contains_protected_workflow_path(value: &Value) -> bool {
 fn is_protected_workflow_state_path(value: &str) -> bool {
     let normalized = value.replace('\\', "/");
     [
+        ".megara/state/workflows/deep-interview/",
+        ".megara/state/workflows/ralplan/",
         ".agents/state/workflows/deep-interview/",
         ".agents/state/workflows/ralplan/",
     ]

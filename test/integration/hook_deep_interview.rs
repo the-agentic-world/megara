@@ -80,7 +80,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
 
     let spec_index = fs::read_to_string(
         dir.path()
-            .join(".agents/state/workflows/deep-interview/specs/index.jsonl"),
+            .join(".megara/artifacts/deep-interview/specs/index.jsonl"),
     )
     .unwrap();
     assert!(spec_index.contains("\"event\":\"spec_persisted\""));
@@ -89,7 +89,7 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
     assert_guard_blocks(run_bash_mutation(dir.path()));
     let events = fs::read_to_string(
         dir.path()
-            .join(".agents/state/workflows/deep-interview/events.jsonl"),
+            .join(".megara/state/workflows/deep-interview/events.jsonl"),
     )
     .unwrap();
     assert!(events.contains("\"event\":\"question_pending\""));
@@ -156,7 +156,7 @@ fn subagent_events_are_logged_and_attached_to_workflow_state() {
         payload,
     ));
 
-    let log = fs::read_to_string(dir.path().join(".agents/state/hooks/subagents.jsonl")).unwrap();
+    let log = fs::read_to_string(dir.path().join(".megara/state/hooks/subagents.jsonl")).unwrap();
     assert!(log.contains("\"event\":\"SubagentStart\""));
     assert!(log.contains("\"event\":\"SubagentStop\""));
     assert!(log.contains("\"subagent_name\":\"researcher\""));
@@ -165,7 +165,7 @@ fn subagent_events_are_logged_and_attached_to_workflow_state() {
     assert_eq!(state["last_subagent_event"]["event"], "SubagentStop");
     let events = fs::read_to_string(
         dir.path()
-            .join(".agents/state/workflows/deep-interview/events.jsonl"),
+            .join(".megara/state/workflows/deep-interview/events.jsonl"),
     )
     .unwrap();
     assert!(events.contains("\"event\":\"subagent_event\""));
@@ -218,7 +218,7 @@ fn projected_hook_runner_persists_visible_only_crystallized_spec() {
 
     let state_path = dir
         .path()
-        .join(".agents/state/workflows/deep-interview/visible-final.json");
+        .join(".megara/state/workflows/deep-interview/visible-final.json");
     let state = read_json(&state_path);
     assert_eq!(state["active"], false);
     assert_eq!(state["phase"], "crystallized");
@@ -257,7 +257,7 @@ fn projected_hook_runner_persists_zero_ambiguity_visible_spec() {
 
     let state_path = dir
         .path()
-        .join(".agents/state/workflows/deep-interview/visible-zero-final.json");
+        .join(".megara/state/workflows/deep-interview/visible-zero-final.json");
     let state = read_json(&state_path);
     assert_eq!(state["active"], false);
     assert_eq!(state["phase"], "crystallized");
@@ -286,7 +286,7 @@ fn visible_question_requires_deep_interview_catch_all_without_score_marker() {
 
     assert!(!dir
         .path()
-        .join(".agents/state/workflows/deep-interview/ordinary-question.json")
+        .join(".megara/state/workflows/deep-interview/ordinary-question.json")
         .exists());
 }
 
@@ -314,11 +314,11 @@ fn hook_state_uses_visible_thread_id_before_runtime_session_id() {
 
     assert!(dir
         .path()
-        .join(".agents/state/workflows/deep-interview/visible-thread.json")
+        .join(".megara/state/workflows/deep-interview/visible-thread.json")
         .exists());
     assert!(!dir
         .path()
-        .join(".agents/state/workflows/deep-interview/internal-runtime-session.json")
+        .join(".megara/state/workflows/deep-interview/internal-runtime-session.json")
         .exists());
 }
 
@@ -360,7 +360,7 @@ fn user_prompt_merges_runtime_session_alias_into_visible_thread_state() {
 
     let visible = read_json(
         &dir.path()
-            .join(".agents/state/workflows/deep-interview/visible-thread.json"),
+            .join(".megara/state/workflows/deep-interview/visible-thread.json"),
     );
     assert!(visible["pending_question"].is_null());
     assert_eq!(visible["questions"][0]["id"], "di-alias");
@@ -372,7 +372,7 @@ fn user_prompt_merges_runtime_session_alias_into_visible_thread_state() {
 
     let alias = read_json(
         &dir.path()
-            .join(".agents/state/workflows/deep-interview/runtime-session.json"),
+            .join(".megara/state/workflows/deep-interview/runtime-session.json"),
     );
     assert_eq!(alias["active"], false);
     assert_eq!(alias["phase"], "stale");
@@ -380,7 +380,7 @@ fn user_prompt_merges_runtime_session_alias_into_visible_thread_state() {
 
     let events = fs::read_to_string(
         dir.path()
-            .join(".agents/state/workflows/deep-interview/events.jsonl"),
+            .join(".megara/state/workflows/deep-interview/events.jsonl"),
     )
     .unwrap();
     assert!(events.contains("\"event\":\"session_alias_superseded\""));
@@ -425,7 +425,7 @@ fn terminal_deep_interview_closes_same_cwd_ghost_pending_state() {
 
     let ghost = read_json(
         &dir.path()
-            .join(".agents/state/workflows/deep-interview/ghost-session.json"),
+            .join(".megara/state/workflows/deep-interview/ghost-session.json"),
     );
     assert_eq!(ghost["active"], false);
     assert_eq!(ghost["phase"], "stale");
@@ -434,7 +434,7 @@ fn terminal_deep_interview_closes_same_cwd_ghost_pending_state() {
 
     let events = fs::read_to_string(
         dir.path()
-            .join(".agents/state/workflows/deep-interview/events.jsonl"),
+            .join(".megara/state/workflows/deep-interview/events.jsonl"),
     )
     .unwrap();
     assert!(events.contains("\"event\":\"stale_state_closed\""));
@@ -449,8 +449,8 @@ fn projected_hook_runner_blocks_manual_workflow_state_repair() {
     submit_final_spec(dir.path());
 
     for path in [
-        ".agents/state/workflows/deep-interview/sess-di.json",
-        ".agents/state/workflows/ralplan/sess-di.json",
+        ".megara/state/workflows/deep-interview/sess-di.json",
+        ".megara/state/workflows/ralplan/sess-di.json",
     ] {
         let patch = format!("*** Begin Patch\n*** Update File: {path}\n@@\n*** End Patch\n");
         let payload = serde_json::json!({

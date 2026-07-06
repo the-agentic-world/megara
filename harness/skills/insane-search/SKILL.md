@@ -40,7 +40,7 @@ Global wrapper:
 
 The wrapper bootstraps Python dependencies only when this skill is actually needed. It creates a private venv under runtime state:
 
-- project scope: `.agents/state/tools/insane-search/venv`
+- project scope: `.megara/state/tools/insane-search/venv`
 - global scope: `~/.megara/state/tools/insane-search/venv`
 
 Do not install these packages into the project Python environment unless the user explicitly asks to debug bootstrap failure.

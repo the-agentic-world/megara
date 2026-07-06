@@ -41,7 +41,7 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
     );
 
     if missing.is_empty() {
-        for file in runtime_support_files(paths.ssot_root.clone())? {
+        for file in runtime_support_files(paths.ssot_root.clone(), paths.runtime_root.clone())? {
             inspect_managed_file(
                 &file.path,
                 &file.content,
@@ -75,8 +75,9 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
                 &mut stale,
             )?;
         }
-        inspect_hook_events(&paths.ssot_root, &mut observations);
-        inspect_stale_workflows(&paths.ssot_root, &mut warnings)?;
+        inspect_hook_events(&paths.runtime_root, &mut observations);
+        inspect_stale_workflows(&paths.runtime_root, &mut warnings)?;
+        inspect_legacy_agents_state(&paths.ssot_root, &mut warnings);
     }
 
     Ok(DoctorReport {
@@ -174,8 +175,8 @@ fn inspect_wrapper_invocation(path: &Path, warnings: &mut Vec<String>) {
     }
 }
 
-fn inspect_hook_events(ssot_root: &Path, observations: &mut Vec<String>) {
-    let events = ssot_root.join("state/hooks/events.jsonl");
+fn inspect_hook_events(runtime_root: &Path, observations: &mut Vec<String>) {
+    let events = runtime_root.join("state/hooks/events.jsonl");
     if events.exists() {
         observations.push(format!(
             "Codex hook events observed at {}",
@@ -189,8 +190,8 @@ fn inspect_hook_events(ssot_root: &Path, observations: &mut Vec<String>) {
     }
 }
 
-fn inspect_stale_workflows(ssot_root: &Path, warnings: &mut Vec<String>) -> Result<()> {
-    let workflow_dir = ssot_root.join("state/workflows/deep-interview");
+fn inspect_stale_workflows(runtime_root: &Path, warnings: &mut Vec<String>) -> Result<()> {
+    let workflow_dir = runtime_root.join("state/workflows/deep-interview");
     if !workflow_dir.exists() {
         return Ok(());
     }
@@ -227,6 +228,16 @@ fn inspect_stale_workflows(ssot_root: &Path, warnings: &mut Vec<String>) -> Resu
     }
     inspect_duplicate_active_deep_interviews(&states, warnings);
     Ok(())
+}
+
+fn inspect_legacy_agents_state(ssot_root: &Path, warnings: &mut Vec<String>) {
+    let legacy_state = ssot_root.join("state");
+    if legacy_state.exists() {
+        warnings.push(format!(
+            "legacy Megara runtime state found under {}; new project-scope runtime state uses .megara/state",
+            legacy_state.display()
+        ));
+    }
 }
 
 fn terminal_peer_exists(path: &Path) -> Result<bool> {

@@ -55,11 +55,11 @@ pub(crate) fn persist_pending_plan(
     let mut content = header.join("\n");
     content.push('\n');
 
-    let plan_path = unique_plan_path(&paths.workflow_dir, &paths.session_id, plan_id, timestamp);
+    let plan_path = unique_plan_path(&paths.artifact_dir, &paths.session_id, plan_id, timestamp);
     write_text_atomic(&plan_path, &content)?;
     let sha256 = sha256_hex(content.as_bytes());
     append_jsonl(
-        &paths.workflow_dir.join("plans").join("index.jsonl"),
+        &paths.artifact_dir.join("plans").join("index.jsonl"),
         &json!({
             "timestamp": timestamp,
             "event": "plan_persisted",

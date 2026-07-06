@@ -1,8 +1,8 @@
 # Megara Harness Source
 
-This directory is the source of truth for Megara's bundled harness.
+This directory contains Megara harness files.
 
-The installer compiles these files into the `megara` binary, writes them to the selected install scope, and projects them into supported agent runtimes.
+In the Megara repository, `harness/` is the bundled harness source. After installation, these files are written to the selected install scope as `.agents/` or `~/.megara` and projected into supported agent runtimes.
 
 ## Configuration
 
@@ -29,8 +29,19 @@ The installer compiles these files into the `megara` binary, writes them to the 
 - `insane-search`: on-demand public web access helper adapted from `fivetaku/insane-search`.
   - The executable tool files are installed under `tools/insane-search`.
   - The matching skill under `skills/insane-search` is only a trigger and usage guide; the engine and references stay under `tools/insane-search`.
-  - The wrapper bootstraps Python dependencies into `state/tools/insane-search/venv` on first use.
+  - The wrapper bootstraps Python dependencies into `.megara/state/tools/insane-search/venv` for project scope and `~/.megara/state/tools/insane-search/venv` for global scope on first use.
   - Runtime agents should read `tools/insane-search/TOOL.md` and use `bin/insane-search` only when normal search/fetch paths fail or a blocked/JS-heavy public page needs stronger access.
+
+## User Knowledge Docs
+
+- Durable user-requested knowledge should be stored as an OKF bundle.
+- The default project knowledge root is `docs/`.
+- Use `megara docs init` to create `index.md` and `log.md`.
+- Use `megara docs check` to validate minimal OKF conformance.
+- Use `megara docs init --root <path>` and `megara docs check --root <path>` when the user requests another knowledge root.
+- `.megara/**` runtime state, artifacts, and cache files are not OKF docs.
+- `.agents/skills/**` skill files are not OKF docs.
+- `harness/**` product harness source files in the Megara repository are not OKF docs.
 
 ## Agents
 
@@ -49,32 +60,32 @@ The installer compiles these files into the `megara` binary, writes them to the 
   - Prompt and workflow detection must run on the effective user prompt. For delegated Codex App payloads, extract the text inside `<input>...</input>` before checking slash commands or Megara skill triggers.
 - Codex subagent spawning is a model-turn capability, not a hook command capability. Hooks can observe `SubagentStart`/`SubagentStop` and can add context or block a turn, but they must not assume they can directly call Codex's internal spawn tools from a hook process.
 - Hook state is append-only by default:
-  - `.agents/state/hooks/events.jsonl` indexes every hook event.
-  - `.agents/state/hooks/payloads/<runtime>/<event>/*.json` stores every raw payload.
-  - `.agents/state/hooks/conversation-events.jsonl` indexes user prompts and assistant stop messages.
-  - `.agents/state/hooks/conversation.jsonl` stores extracted prompt/message text when JSON extraction is available.
-  - `.agents/state/hooks/subagents.jsonl` records observed `SubagentStart` and `SubagentStop` events.
+  - `.megara/state/hooks/events.jsonl` indexes every hook event.
+  - `.megara/state/hooks/payloads/<runtime>/<event>/*.json` stores every raw payload.
+  - `.megara/state/hooks/conversation-events.jsonl` indexes user prompts and assistant stop messages.
+  - `.megara/state/hooks/conversation.jsonl` stores extracted prompt/message text when JSON extraction is available.
+  - `.megara/state/hooks/subagents.jsonl` records observed `SubagentStart` and `SubagentStop` events.
 - `last-<runtime>-<event>.json` files are convenience pointers only. They are intentionally overwritten and must not be used as the interview history.
-- On-demand tool state and dependencies belong under `.agents/state/tools/<tool>` or the tool's own cache paths. They are not workflow state and must not be treated as active skills.
-- Workflow state is stored under `.agents/state/workflows/<skill>/` when hooks can parse runtime JSON.
+- On-demand tool state and dependencies belong under `.megara/state/tools/<tool>` or the tool's own cache paths. They are not workflow state and must not be treated as active skills.
+- Workflow state is stored under `.megara/state/workflows/<skill>/` when hooks can parse runtime JSON.
   - `deep-interview/<session-id>.json` tracks pending question gates, answers, and terminal workflow status.
   - Crystallized `deep-interview` states carry a `pipeline_lock` that blocks implementation mutation until `ralplan` owns or approves the handoff.
   - `deep-interview/events.jsonl` records gate, answer, state, and mutation-guard events.
-  - `deep-interview/specs/deep-interview-<session-id>-<timestamp>.md` stores the crystallized final spec as a durable lock artifact.
-  - `deep-interview/specs/index.jsonl` indexes persisted spec artifacts and sha256 values.
+  - `.megara/artifacts/deep-interview/specs/deep-interview-<session-id>-<timestamp>.md` stores the crystallized final spec as a durable lock artifact.
+  - `.megara/artifacts/deep-interview/specs/index.jsonl` indexes persisted spec artifacts and sha256 values.
   - `ralplan/<session-id>.json` tracks review coverage, linked input spec sha256 values, pending plan approval, and approved handoff target.
   - `ralplan/events.jsonl` records review, plan state, approval, and mutation-guard events.
-  - `ralplan/reviews/ralplan-review-<session-id>-<role>-r<round>-<timestamp>.md` stores planner, architect, and critic review passes.
-  - `ralplan/reviews/index.jsonl` indexes persisted review artifacts and sha256 values.
-  - `ralplan/plans/ralplan-<session-id>-<plan-id>-<timestamp>.md` stores the pending plan as a durable lock artifact with the linked deep-interview input sha256 when present.
-  - `ralplan/plans/index.jsonl` indexes persisted plan artifacts, input spec sha256 values, and plan sha256 values.
+  - `.megara/artifacts/ralplan/reviews/ralplan-review-<session-id>-<role>-r<round>-<timestamp>.md` stores planner, architect, and critic review passes.
+  - `.megara/artifacts/ralplan/reviews/index.jsonl` indexes persisted review artifacts and sha256 values.
+  - `.megara/artifacts/ralplan/plans/ralplan-<session-id>-<plan-id>-<timestamp>.md` stores the pending plan as a durable lock artifact with the linked deep-interview input sha256 when present.
+  - `.megara/artifacts/ralplan/plans/index.jsonl` indexes persisted plan artifacts, input spec sha256 values, and plan sha256 values.
   - `ultragoal/<session-id>.json` tracks runtime phase, active goal, source plan, and mutation-guard state for the hook.
-  - `ultragoal/<session-id>/brief.md` stores the approved execution brief.
-  - `ultragoal/<session-id>/goals.json` stores goal status, source metadata, evidence, and completion receipts.
-  - `ultragoal/<session-id>/ledger.jsonl` records goal creation, start, checkpoint, and steering events.
+  - `.megara/artifacts/ultragoal/<session-id>/brief.md` stores the approved execution brief.
+  - `.megara/artifacts/ultragoal/<session-id>/goals.json` stores goal status, source metadata, evidence, and completion receipts.
+  - `.megara/artifacts/ultragoal/<session-id>/ledger.jsonl` records goal creation, start, checkpoint, and steering events.
 - During active `deep-interview`, `ralplan`, or `ultragoal` goal-planning, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.
 - After `deep-interview` crystallizes, the hook still blocks obvious implementation mutation until a `ralplan` state becomes active or approved for the same session.
 - `ultragoal` permits implementation mutation only after `.agents/bin/megara ultragoal complete-goals` selects an active goal.
 - Codex App reads hooks at session start. After project-scope install, open a new saved-project or exact-directory session; projectless sessions may create a sibling directory without this harness.
 - Codex `SessionStart` reinforces `caveman` so new or resumed sessions receive the default active style context.
-- `deep-interview` and `ralplan` lock artifacts are hook-managed. Agents must not directly edit `.agents/state/workflows/deep-interview/**` or `.agents/state/workflows/ralplan/**`; direct write attempts are guarded even when a workflow is no longer active.
+- `deep-interview` and `ralplan` lock artifacts are hook-managed. Agents must not directly edit `.megara/state/workflows/deep-interview/**` or `.megara/state/workflows/ralplan/**`; direct write attempts are guarded even when a workflow is no longer active.

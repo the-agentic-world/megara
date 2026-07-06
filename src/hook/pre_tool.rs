@@ -22,7 +22,7 @@ pub(super) fn handle_pre_tool_use(
             }),
         )?;
         eprintln!(
-            "MEGARA mutation guard: workflow state is managed by Megara hooks. Do not edit .agents/state/workflows/deep-interview or .agents/state/workflows/ralplan directly."
+            "MEGARA mutation guard: workflow state is managed by Megara hooks. Do not edit .megara/state/workflows/deep-interview or .megara/state/workflows/ralplan directly."
         );
         return if guard_mode == "warn" { Ok(0) } else { Ok(42) };
     }

@@ -16,7 +16,7 @@ use super::{
 
 pub(crate) fn persist_crystallized_spec(
     timestamp: &str,
-    workflow_dir: &Path,
+    artifact_dir: &Path,
     session_id: &str,
     terminal: &TerminalState,
     text: &str,
@@ -46,11 +46,11 @@ pub(crate) fn persist_crystallized_spec(
     .join("\n");
     content.push('\n');
 
-    let spec_path = unique_spec_path(workflow_dir, session_id, timestamp);
+    let spec_path = unique_spec_path(artifact_dir, session_id, timestamp);
     write_text_atomic(&spec_path, &content)?;
     let sha256 = sha256_hex(content.as_bytes());
     append_jsonl(
-        &workflow_dir.join("specs").join("index.jsonl"),
+        &artifact_dir.join("specs").join("index.jsonl"),
         &json!({
             "timestamp": timestamp,
             "event": "spec_persisted",

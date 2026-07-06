@@ -1,4 +1,5 @@
 mod cli;
+mod docs;
 mod doctor;
 mod hook;
 mod installer;
@@ -12,7 +13,7 @@ mod writer;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Commands, TargetCommands, TemplateCommands};
+use cli::{Cli, Commands, DocsCommands, TargetCommands, TemplateCommands};
 use installer::{InstallAction, InstallOptions, Planner};
 use templates::TemplateRegistry;
 
@@ -44,6 +45,10 @@ fn main() -> Result<()> {
             }
         }
         Commands::Ultragoal(args) => ultragoal::run(args)?,
+        Commands::Docs(args) => match args.command {
+            DocsCommands::Init(args) => docs::init(args)?,
+            DocsCommands::Check(args) => docs::check(args)?,
+        },
         Commands::Update(args) => update::run(args)?,
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {

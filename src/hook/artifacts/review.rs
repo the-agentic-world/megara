@@ -20,7 +20,7 @@ pub(crate) fn persist_ralplan_review(
     state: &mut Value,
 ) -> Result<()> {
     let review_path = unique_review_path(
-        &paths.workflow_dir,
+        &paths.artifact_dir,
         &paths.session_id,
         &review.role,
         review.round,
@@ -46,7 +46,7 @@ pub(crate) fn persist_ralplan_review(
         "payload": payload_file,
     });
     append_jsonl(
-        &paths.workflow_dir.join("reviews").join("index.jsonl"),
+        &paths.artifact_dir.join("reviews").join("index.jsonl"),
         &review_entry,
     )?;
     append_jsonl(&paths.events_file, &review_entry)?;
