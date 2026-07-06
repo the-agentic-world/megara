@@ -19,3 +19,5 @@
 
 # OpenDock release-local binaries. Build before deploy, do not commit.
 /opendock/megara/workdir/bin/
+
+.agents/bin/**
