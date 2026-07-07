@@ -297,9 +297,26 @@ fn installs_project_scope_codex_harness() {
     let ssot_agent: toml::Value = toml::from_str(&ssot_agent).unwrap();
     assert!(ssot_agent.get("instructions").is_some());
     assert!(ssot_agent.get("developer_instructions").is_none());
+    assert_eq!(
+        ssot_agent
+            .get("codex")
+            .and_then(|codex| codex.get("model"))
+            .and_then(toml::Value::as_str),
+        Some("gpt-5.5")
+    );
 
     let codex_agent = fs::read_to_string(dir.path().join(".codex/agents/executor.toml")).unwrap();
     let codex_agent: toml::Value = toml::from_str(&codex_agent).unwrap();
+    assert_eq!(
+        codex_agent.get("model").and_then(toml::Value::as_str),
+        Some("gpt-5.5")
+    );
+    assert_eq!(
+        codex_agent
+            .get("model_reasoning_effort")
+            .and_then(toml::Value::as_str),
+        Some("medium")
+    );
     assert!(codex_agent
         .get("developer_instructions")
         .and_then(toml::Value::as_str)

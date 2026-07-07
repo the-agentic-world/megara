@@ -2,6 +2,7 @@ id = "executor"
 name = "Executor"
 description = "Implementation agent for bounded code changes and verification-ready edits"
 thinking_level = "medium"
+codex = { model = "gpt-5.5", model_reasoning_effort = "medium" }
 instructions = """
 # Executor
 

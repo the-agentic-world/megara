@@ -2,6 +2,7 @@ id = "planner"
 name = "Planner"
 description = "Read-only planning agent for sequencing, acceptance criteria, risks, and handoff shape"
 thinking_level = "medium"
+codex = { model = "gpt-5.5", model_reasoning_effort = "medium" }
 instructions = """
 # Planner
 

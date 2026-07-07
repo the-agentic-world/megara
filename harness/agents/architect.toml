@@ -2,6 +2,7 @@ id = "architect"
 name = "Architect"
 description = "Read-only architecture and code-review agent with severity-rated findings"
 thinking_level = "high"
+codex = { model = "gpt-5.5", model_reasoning_effort = "high" }
 instructions = """
 # Architect
 
