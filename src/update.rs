@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::OsStr,
+    fs::{self, OpenOptions},
     path::{Path, PathBuf},
     process::Command,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -15,8 +17,10 @@ use crate::{
 };
 
 const REPO: &str = "the-agentic-world/megara";
+const LEGACY_INSTALLER_BIN: &str = "/usr/local/bin/megara";
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const NO_UPDATE_CHECK_ENV: &str = "MEGARA_NO_UPDATE_CHECK";
+const SKIP_LEGACY_CLEANUP_ENV: &str = "MEGARA_SKIP_LEGACY_CLEANUP";
 
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
@@ -39,10 +43,13 @@ pub fn maybe_notify(command: &Commands) {
 pub fn run(args: UpdateArgs) -> Result<()> {
     let latest = fetch_latest_release()?;
     let current = current_tag();
-    let install_dir = current_install_dir()?;
+    let current_bin = current_exe_path()?;
     let mut messages = Vec::new();
 
-    if is_newer_tag(&latest.tag_name, &current) || args.force {
+    let megara_bin = if is_newer_tag(&latest.tag_name, &current) || args.force {
+        let (install_dir, install_messages) = selected_install_dir()?;
+        messages.extend(install_messages);
+
         messages.push(format!(
             "Updating Megara binary: current={}, latest={}, install_dir={}",
             current,
@@ -50,9 +57,13 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             install_dir.display()
         ));
         install_release(&latest.tag_name, &install_dir)?;
+        let installed_bin = install_dir.join("megara");
+        messages.extend(cleanup_legacy_binary(&current_bin, &installed_bin));
+        installed_bin
     } else {
         messages.push(format!("Megara binary is current: {current}"));
-    }
+        current_bin
+    };
 
     if let Ok(path) = state_path() {
         let _ = write_check_state(
@@ -64,7 +75,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         );
     }
 
-    messages.extend(refresh_harnesses(args, &install_dir.join("megara"))?);
+    messages.extend(refresh_harnesses(args, &megara_bin)?);
     messages.push("Megara update complete.".to_string());
     ui::print_dashboard("Update", "complete", &[], &[Section::new("Run", messages)])?;
     Ok(())
@@ -245,8 +256,142 @@ fn state_path() -> Result<PathBuf> {
     Ok(home_dir()?.join(".megara/state/update-check.json"))
 }
 
+fn selected_install_dir() -> Result<(PathBuf, Vec<String>)> {
+    let current = current_install_dir()?;
+    let explicit = env::var_os("MEGARA_INSTALL_DIR")
+        .filter(|value| !value.as_os_str().is_empty())
+        .map(PathBuf::from);
+    let home = home_dir()?;
+    let path_env = env::var_os("PATH");
+    Ok(choose_install_dir(
+        explicit,
+        current.clone(),
+        dir_is_writable(&current),
+        home,
+        path_env.as_deref(),
+    ))
+}
+
+fn cleanup_legacy_binary(current_bin: &Path, installed_bin: &Path) -> Vec<String> {
+    if env::var_os(SKIP_LEGACY_CLEANUP_ENV).is_some()
+        || !should_cleanup_legacy_binary(current_bin, installed_bin)
+    {
+        return Vec::new();
+    }
+
+    let legacy = Path::new(LEGACY_INSTALLER_BIN);
+    if !legacy.exists() {
+        return Vec::new();
+    }
+
+    match fs::remove_file(legacy) {
+        Ok(()) => vec![format!(
+            "Removed legacy Megara binary: {}",
+            legacy.display()
+        )],
+        Err(_) => vec![format!(
+            "Legacy Megara binary remains at {}; remove it or place {} earlier in PATH.",
+            legacy.display(),
+            installed_bin
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .display()
+        )],
+    }
+}
+
+pub(crate) fn should_cleanup_legacy_binary(current_bin: &Path, installed_bin: &Path) -> bool {
+    let legacy = Path::new(LEGACY_INSTALLER_BIN);
+    paths_match(current_bin, legacy) && !paths_match(installed_bin, legacy)
+}
+
+fn paths_match(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    let Ok(left) = fs::canonicalize(left) else {
+        return false;
+    };
+    let Ok(right) = fs::canonicalize(right) else {
+        return false;
+    };
+    left == right
+}
+
+pub(crate) fn choose_install_dir(
+    explicit: Option<PathBuf>,
+    current: PathBuf,
+    current_writable: bool,
+    home: PathBuf,
+    path_env: Option<&OsStr>,
+) -> (PathBuf, Vec<String>) {
+    if let Some(path) = explicit {
+        let message = format!("Using MEGARA_INSTALL_DIR={}", path.display());
+        return (path, vec![message]);
+    }
+
+    if current_writable {
+        return (current, Vec::new());
+    }
+
+    let fallback = default_user_install_dir(&home);
+    let mut messages = vec![format!(
+        "Current install dir is not writable: {}; installing binary to {}",
+        current.display(),
+        fallback.display()
+    )];
+    if path_contains_dir(path_env, &fallback) {
+        messages.push(format!(
+            "Ensure {} appears before {} in PATH.",
+            fallback.display(),
+            current.display()
+        ));
+    } else {
+        messages.push(format!(
+            "Add {} to PATH before running megara again.",
+            fallback.display()
+        ));
+    }
+    (fallback, messages)
+}
+
+fn default_user_install_dir(home: &Path) -> PathBuf {
+    home.join(".local/bin")
+}
+
+fn path_contains_dir(path_env: Option<&OsStr>, dir: &Path) -> bool {
+    path_env
+        .into_iter()
+        .flat_map(env::split_paths)
+        .any(|entry| entry == dir)
+}
+
+fn dir_is_writable(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+
+    let probe = path.join(format!(
+        ".megara-write-test-{}-{}",
+        std::process::id(),
+        now_epoch_secs()
+    ));
+    match OpenOptions::new().write(true).create_new(true).open(&probe) {
+        Ok(_) => {
+            let _ = fs::remove_file(probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn current_exe_path() -> Result<PathBuf> {
+    env::current_exe().context("failed to resolve current megara executable")
+}
+
 fn current_install_dir() -> Result<PathBuf> {
-    let exe = env::current_exe().context("failed to resolve current megara executable")?;
+    let exe = current_exe_path()?;
     exe.parent()
         .map(Path::to_path_buf)
         .context("current megara executable has no parent directory")
@@ -267,7 +412,7 @@ fn update_check_disabled() -> bool {
     env::var_os(NO_UPDATE_CHECK_ENV).is_some()
 }
 
-fn is_newer_tag(latest: &str, current: &str) -> bool {
+pub(crate) fn is_newer_tag(latest: &str, current: &str) -> bool {
     let Some(latest) = parse_version(latest) else {
         return false;
     };
@@ -287,18 +432,4 @@ fn parse_version(tag: &str) -> Option<[u64; 3]> {
     let minor = parts.next().unwrap_or("0").parse().ok()?;
     let patch = parts.next().unwrap_or("0").parse().ok()?;
     Some([major, minor, patch])
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn compares_release_tags() {
-        assert!(is_newer_tag("v1.0.1", "v1.0.0"));
-        assert!(is_newer_tag("v1.1.0", "v1.0.9"));
-        assert!(!is_newer_tag("v1.0.0", "v1.0.0"));
-        assert!(!is_newer_tag("v0.0.13", "v1.0.0"));
-        assert!(!is_newer_tag("not-a-version", "v1.0.0"));
-    }
 }

@@ -22,6 +22,8 @@ mod tui;
 mod ui;
 #[path = "../../src/ultragoal.rs"]
 mod ultragoal;
+#[path = "../../src/update.rs"]
+mod update;
 #[path = "../../src/writer.rs"]
 mod writer;
 
@@ -48,5 +50,7 @@ mod hook_tests;
 mod tui_tests;
 #[path = "ultragoal.rs"]
 mod ultragoal_tests;
+#[path = "update.rs"]
+mod update_tests;
 #[path = "writer.rs"]
 mod writer_tests;

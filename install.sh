@@ -2,7 +2,6 @@
 set -eu
 
 repo="${MEGARA_REPO:-the-agentic-world/megara}"
-install_dir="${MEGARA_INSTALL_DIR:-/usr/local/bin}"
 version="${MEGARA_VERSION:-latest}"
 
 die() {
@@ -10,14 +9,48 @@ die() {
   exit 1
 }
 
+default_install_dir() {
+  if [ -n "${MEGARA_INSTALL_DIR:-}" ]; then
+    printf '%s\n' "$MEGARA_INSTALL_DIR"
+    return
+  fi
+
+  [ -n "${HOME:-}" ] || die "HOME is not set; set MEGARA_INSTALL_DIR to a writable directory"
+  printf '%s\n' "$HOME/.local/bin"
+}
+
 need() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
+cleanup_legacy_binary() {
+  [ "${MEGARA_SKIP_LEGACY_CLEANUP:-}" != "1" ] || return
+
+  legacy_dir="/usr/local/bin"
+  legacy_bin="${legacy_dir}/megara"
+  case "$install_dir" in
+    "$legacy_dir"|"$legacy_dir"/) return ;;
+  esac
+  [ -e "$legacy_bin" ] || return
+
+  if [ -w "$legacy_dir" ]; then
+    if rm -f "$legacy_bin"; then
+      echo "Removed legacy Megara binary at ${legacy_bin}"
+    else
+      echo "Note: could not remove legacy Megara binary at ${legacy_bin}." >&2
+    fi
+  else
+    echo "Note: legacy Megara binary remains at ${legacy_bin}. Remove it or place ${install_dir} earlier in PATH." >&2
+  fi
+}
+
 need curl
+need install
 need tar
 need uname
 need shasum
+
+install_dir="$(default_install_dir)"
 
 os="$(uname -s)"
 arch="$(uname -m)"
@@ -69,13 +102,14 @@ mkdir -p "${tmpdir}/extract"
 tar -xzf "${tmpdir}/${archive}" -C "${tmpdir}/extract"
 [ -x "${tmpdir}/extract/megara" ] || chmod +x "${tmpdir}/extract/megara"
 
-if mkdir -p "$install_dir" 2>/dev/null && [ -w "$install_dir" ]; then
-  install -m 755 "${tmpdir}/extract/megara" "${install_dir}/megara"
-else
-  need sudo
-  sudo mkdir -p "$install_dir"
-  sudo install -m 755 "${tmpdir}/extract/megara" "${install_dir}/megara"
-fi
+mkdir -p "$install_dir" || die "failed to create install directory: $install_dir"
+[ -w "$install_dir" ] || die "install directory is not writable: $install_dir; set MEGARA_INSTALL_DIR to a writable directory"
+install -m 755 "${tmpdir}/extract/megara" "${install_dir}/megara"
+cleanup_legacy_binary
 
 echo "Installed megara to ${install_dir}/megara"
+case ":${PATH:-}:" in
+  *":${install_dir}:"*) ;;
+  *) echo "Note: ${install_dir} is not on PATH. Add it before running megara." >&2 ;;
+esac
 "${install_dir}/megara" --version
