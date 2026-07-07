@@ -59,17 +59,23 @@ is_writable_dir() {
 }
 
 select_install_dir() {
-  if [ -n "${MEGARA_INSTALL_DIR:-}" ]; then
-    is_writable_dir "$install_dir" || die "install directory is not writable: $install_dir; set MEGARA_INSTALL_DIR to a writable directory"
+  requested_install_dir="$install_dir"
+
+  if is_writable_dir "$install_dir"; then
     return
   fi
 
-  for candidate in "$install_dir" "$HOME/bin" "$HOME/.megara/bin"; do
+  if [ -n "${MEGARA_INSTALL_DIR:-}" ] && [ "${MEGARA_INSTALL_DIR_STRICT:-}" = "1" ]; then
+    die "install directory is not writable: $install_dir; set MEGARA_INSTALL_DIR to a writable directory"
+  fi
+
+  [ -n "${HOME:-}" ] || die "HOME is not set; set MEGARA_INSTALL_DIR to a writable directory"
+
+  for candidate in "${XDG_BIN_HOME:-}" "$HOME/.local/bin" "$HOME/bin" "$HOME/.megara/bin"; do
     [ -n "$candidate" ] || continue
+    [ "$candidate" != "$requested_install_dir" ] || continue
     if is_writable_dir "$candidate"; then
-      if [ "$candidate" != "$install_dir" ]; then
-        echo "Note: ${install_dir} is not writable. Installing to ${candidate}." >&2
-      fi
+      echo "Note: ${requested_install_dir} is not writable. Installing to ${candidate}." >&2
       install_dir="$candidate"
       return
     fi

@@ -16,7 +16,7 @@ fn compares_release_tags() {
 #[test]
 fn explicit_install_dir_wins() {
     let (dir, messages) = update::choose_install_dir(
-        Some(PathBuf::from("/tmp/megara-bin")),
+        Some((PathBuf::from("/tmp/megara-bin"), true)),
         PathBuf::from("/usr/local/bin"),
         true,
         Some(PathBuf::from("/home/user/.local/bin")),
@@ -25,6 +25,41 @@ fn explicit_install_dir_wins() {
     .unwrap();
     assert_eq!(dir, PathBuf::from("/tmp/megara-bin"));
     assert_eq!(messages, vec!["Using MEGARA_INSTALL_DIR=/tmp/megara-bin"]);
+}
+
+#[test]
+fn explicit_non_writable_install_dir_falls_back() {
+    let (dir, messages) = update::choose_install_dir(
+        Some((PathBuf::from("/usr/local/bin"), false)),
+        PathBuf::from("/usr/local/bin"),
+        false,
+        Some(PathBuf::from("/home/user/.local/bin")),
+        None,
+    )
+    .unwrap();
+    assert_eq!(dir, PathBuf::from("/home/user/.local/bin"));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("MEGARA_INSTALL_DIR is not writable")));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("installing binary to /home/user/.local/bin")));
+}
+
+#[test]
+fn explicit_non_writable_install_dir_can_use_writable_current_dir() {
+    let (dir, messages) = update::choose_install_dir(
+        Some((PathBuf::from("/usr/local/bin"), false)),
+        PathBuf::from("/opt/megara/bin"),
+        true,
+        Some(PathBuf::from("/home/user/.local/bin")),
+        None,
+    )
+    .unwrap();
+    assert_eq!(dir, PathBuf::from("/opt/megara/bin"));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("MEGARA_INSTALL_DIR is not writable")));
 }
 
 #[test]

@@ -149,6 +149,7 @@ fn install_release(tag: &str, install_dir: &Path) -> Result<()> {
         .arg(&script)
         .env("MEGARA_VERSION", tag)
         .env("MEGARA_INSTALL_DIR", install_dir)
+        .env("MEGARA_INSTALL_DIR_STRICT", "1")
         .env("MEGARA_REPO", REPO)
         .status()
         .context("failed to run Megara installer")?;
@@ -260,7 +261,11 @@ fn selected_install_dir() -> Result<(PathBuf, Vec<String>)> {
     let current = current_install_dir()?;
     let explicit = env::var_os("MEGARA_INSTALL_DIR")
         .filter(|value| !value.as_os_str().is_empty())
-        .map(PathBuf::from);
+        .map(PathBuf::from)
+        .map(|path| {
+            let writable = dir_is_writable(&path);
+            (path, writable)
+        });
     let home = home_dir()?;
     let path_env = env::var_os("PATH");
     choose_install_dir(
@@ -320,19 +325,26 @@ fn paths_match(left: &Path, right: &Path) -> bool {
 }
 
 pub(crate) fn choose_install_dir(
-    explicit: Option<PathBuf>,
+    explicit: Option<(PathBuf, bool)>,
     current: PathBuf,
     current_writable: bool,
     writable_fallback: Option<PathBuf>,
     path_env: Option<&OsStr>,
 ) -> Result<(PathBuf, Vec<String>)> {
-    if let Some(path) = explicit {
+    let mut messages = Vec::new();
+    if let Some((path, true)) = explicit.as_ref() {
         let message = format!("Using MEGARA_INSTALL_DIR={}", path.display());
-        return Ok((path, vec![message]));
+        return Ok((path.clone(), vec![message]));
+    }
+    if let Some((path, false)) = explicit.as_ref() {
+        messages.push(format!(
+            "MEGARA_INSTALL_DIR is not writable: {}; using writable fallback",
+            path.display()
+        ));
     }
 
     if current_writable {
-        return Ok((current, Vec::new()));
+        return Ok((current, messages));
     }
 
     let Some(fallback) = writable_fallback else {
@@ -340,11 +352,11 @@ pub(crate) fn choose_install_dir(
             "no writable install directory found; set MEGARA_INSTALL_DIR to a writable directory"
         );
     };
-    let mut messages = vec![format!(
+    messages.push(format!(
         "Current install dir is not writable: {}; installing binary to {}",
         current.display(),
         fallback.display()
-    )];
+    ));
     if path_contains_dir(path_env, &fallback) {
         messages.push(format!(
             "Ensure {} appears before {} in PATH.",

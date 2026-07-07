@@ -154,6 +154,17 @@ jobs:
           HOME="${home}" MEGARA_VERSION="${GITHUB_REF_NAME}" MEGARA_SKIP_LEGACY_CLEANUP=1 sh "${RUNNER_TEMP}/install.sh"
           "${home}/bin/megara" --version
           "${home}/bin/megara" targets list --json | grep -q '"name": "codex"'
+      - name: Install with legacy update fallback path
+        shell: bash
+        run: |
+          set -euo pipefail
+          home="${RUNNER_TEMP}/home-explicit-fallback"
+          blocked="${RUNNER_TEMP}/blocked-bin"
+          mkdir -p "${home}/.local/bin" "${blocked}"
+          chmod a-w "${blocked}"
+          HOME="${home}" MEGARA_VERSION="${GITHUB_REF_NAME}" MEGARA_INSTALL_DIR="${blocked}" MEGARA_SKIP_LEGACY_CLEANUP=1 sh "${RUNNER_TEMP}/install.sh"
+          "${home}/.local/bin/megara" --version
+          "${home}/.local/bin/megara" targets list --json | grep -q '"name": "codex"'
 
   prune-releases:
     name: Keep latest 5 releases
