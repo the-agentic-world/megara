@@ -22,7 +22,7 @@ pub(super) fn handle_pre_tool_use(
             }),
         )?;
         eprintln!(
-            "MEGARA mutation guard: workflow state is managed by Megara hooks. Do not edit .megara/state/workflows/deep-interview or .megara/state/workflows/ralplan directly."
+            "MEGARA mutation guard: runtime state and artifacts are managed by Megara hooks and CLI commands. Do not edit .megara runtime files directly."
         );
         return if guard_mode == "warn" { Ok(0) } else { Ok(42) };
     }
@@ -57,6 +57,31 @@ pub(super) fn handle_pre_tool_use(
             );
             return if guard_mode == "warn" { Ok(0) } else { Ok(42) };
         }
+        if let Some((state, events_file)) =
+            approved_ultragoal_handoff_lock(timestamp, state_dir, payload, payload_file)?
+        {
+            let session_id = state
+                .get("session_id")
+                .map(value_to_string)
+                .unwrap_or_else(|| "unknown-session".to_string());
+            append_jsonl(
+                &events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": "approved_handoff_mutation_blocked",
+                    "session_id": session_id,
+                    "skill": RALPLAN,
+                    "phase": state.get("phase").cloned().unwrap_or(Value::Null),
+                    "mutation_kind": mutation.kind,
+                    "mutation_value": mutation.value,
+                    "payload": payload_file,
+                }),
+            )?;
+            eprintln!(
+                "MEGARA mutation guard: ralplan is approved for ultragoal. Run `MEGARA_BIN=\"${{MEGARA_BIN:-.agents/bin/megara}}\"; \"$MEGARA_BIN\" ultragoal create-goals`, then `MEGARA_BIN=\"${{MEGARA_BIN:-.agents/bin/megara}}\"; \"$MEGARA_BIN\" ultragoal start-goal` before mutating files."
+            );
+            return if guard_mode == "warn" { Ok(0) } else { Ok(42) };
+        }
         return Ok(0);
     };
 
@@ -79,7 +104,7 @@ pub(super) fn handle_pre_tool_use(
     )?;
 
     let guidance = if skill == ULTRAGOAL {
-        "run `MEGARA_BIN=\"${MEGARA_BIN:-.agents/bin/megara}\"; \"$MEGARA_BIN\" ultragoal complete-goals` and enter an active goal before mutating files"
+        "run `MEGARA_BIN=\"${MEGARA_BIN:-.agents/bin/megara}\"; \"$MEGARA_BIN\" ultragoal start-goal` and enter an active goal before mutating files"
     } else {
         "approve, refine, complete, or cancel the workflow before mutating files"
     };
@@ -140,6 +165,57 @@ fn pending_deep_interview_pipeline_lock(
         return Ok(None);
     }
     Ok(Some((state, paths.events_file)))
+}
+
+fn approved_ultragoal_handoff_lock(
+    timestamp: &str,
+    state_dir: &Path,
+    payload: &Value,
+    payload_file: &Path,
+) -> Result<Option<(Value, PathBuf)>> {
+    let ralplan_paths = workflow_paths(state_dir, payload, RALPLAN);
+    reconcile_session_aliases(timestamp, payload_file, &ralplan_paths, RALPLAN, payload)?;
+    let Some(ralplan_state) = load_json(&ralplan_paths.session_file) else {
+        return Ok(None);
+    };
+    if !ralplan_approved_for_ultragoal(&ralplan_state) {
+        return Ok(None);
+    }
+
+    let ultragoal_paths = workflow_paths(state_dir, payload, ULTRAGOAL);
+    reconcile_session_aliases(
+        timestamp,
+        payload_file,
+        &ultragoal_paths,
+        ULTRAGOAL,
+        payload,
+    )?;
+    if load_json(&ultragoal_paths.session_file)
+        .as_ref()
+        .is_some_and(ultragoal_has_active_goal)
+    {
+        return Ok(None);
+    }
+
+    Ok(Some((ralplan_state, ralplan_paths.events_file)))
+}
+
+fn ralplan_approved_for_ultragoal(state: &Value) -> bool {
+    let approved = state.get("approval_status").and_then(Value::as_str) == Some("approved")
+        || state.get("phase").and_then(Value::as_str) == Some("approved");
+    approved && ralplan_handoff_target(state) == Some("ultragoal")
+}
+
+fn ralplan_handoff_target(state: &Value) -> Option<&str> {
+    state
+        .get("approved_handoff_target")
+        .and_then(Value::as_str)
+        .or_else(|| state.get("handoff_target").and_then(Value::as_str))
+}
+
+fn ultragoal_has_active_goal(state: &Value) -> bool {
+    state.get("active").and_then(Value::as_bool) == Some(true)
+        && state.get("phase").and_then(Value::as_str) == Some("active")
 }
 
 fn deep_interview_pipeline_lock_applies(state: &Value) -> bool {

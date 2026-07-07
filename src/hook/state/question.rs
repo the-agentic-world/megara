@@ -4,17 +4,19 @@ use serde_json::{json, Value};
 
 use crate::hook::state_paths::value_to_string;
 
-pub(crate) fn upsert_question(timestamp: &str, state: &mut Value, question: Value) {
+pub(crate) fn upsert_question(timestamp: &str, state: &mut Value, mut question: Value) {
     supersede_pending_question(timestamp, state);
-    let question_id = question.get("id").map(value_to_string).unwrap_or_default();
     let mut questions = state
         .get("questions")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|existing| existing.get("id").map(value_to_string) != Some(question_id.clone()))
-        .collect::<Vec<_>>();
+        .unwrap_or_default();
+    let question_id = unique_question_id(
+        timestamp,
+        &questions,
+        question.get("id").map(value_to_string).unwrap_or_default(),
+    );
+    question["id"] = json!(question_id);
     questions.push(question.clone());
 
     state["questions"] = json!(questions);
@@ -54,6 +56,46 @@ pub(crate) fn answer_pending_question(
     state["phase"] = json!("interviewing");
     state["updated_at"] = json!(timestamp);
     Some(pending_id)
+}
+
+fn unique_question_id(timestamp: &str, questions: &[Value], raw_id: String) -> String {
+    let base = if raw_id.trim().is_empty() {
+        format!("di-{}", sanitize_id(timestamp))
+    } else {
+        raw_id.trim().to_string()
+    };
+    if !has_question_id(questions, &base) {
+        return base;
+    }
+
+    let suffix = sanitize_id(timestamp);
+    let mut candidate = format!("{base}-{suffix}");
+    let mut index = 2;
+    while has_question_id(questions, &candidate) {
+        candidate = format!("{base}-{suffix}-{index}");
+        index += 1;
+    }
+    candidate
+}
+
+fn has_question_id(questions: &[Value], id: &str) -> bool {
+    questions
+        .iter()
+        .any(|question| question.get("id").map(value_to_string).as_deref() == Some(id))
+}
+
+fn sanitize_id(value: &str) -> String {
+    let id = value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .take(24)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    if id.is_empty() {
+        "question".to_string()
+    } else {
+        id
+    }
 }
 
 fn supersede_pending_question(timestamp: &str, state: &mut Value) {

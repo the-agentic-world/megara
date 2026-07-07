@@ -86,6 +86,17 @@ fn installs_project_scope_codex_harness() {
     assert!(runtime_gitignore.contains("state/"));
     assert!(runtime_gitignore.contains("artifacts/"));
     assert!(runtime_gitignore.contains("cache/"));
+    let ultragoal =
+        fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
+    assert!(ultragoal.contains("Verification Evidence"));
+    assert!(ultragoal.contains("Do not create, edit, copy, link, or list Megara runtime files"));
+    assert!(ultragoal.contains("Quality gate JSON may be passed inline"));
+    assert!(ultragoal.contains("artifactRefs` is optional"));
+    assert!(!ultragoal.contains("Stable Evidence Directory"));
+    assert!(!ultragoal.contains(".megara/artifacts/ultragoal/<session-id>/evidence/"));
+    assert!(ultragoal.contains("ultragoal 승인"));
+    assert!(ultragoal.contains("실행 단위 생성"));
+    assert!(ultragoal.contains("Do not mention goals being opened, selected, approved, converted, or split into execution units"));
     let skill =
         fs::read_to_string(dir.path().join(".agents/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));
@@ -102,17 +113,24 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Continue deep-interview to the next ambiguity target"));
     assert!(skill.contains("reaching the active target opens the milestone decision step"));
     assert!(skill.contains("do not crystallize at `1%`"));
-    assert!(skill.contains("Codex Plan-Mode Activation"));
     assert!(skill.contains("Runtime-Backed Multi-Turn Contract"));
     assert!(skill.contains("Codex App delegation wrappers"));
-    assert!(skill.contains("Use read-only subagents for lateral review"));
-    assert!(skill.contains("request exactly one read-only subagent reviewer"));
+    assert!(skill.contains("Use subagents for lateral review"));
+    assert!(skill.contains("must not call tools, read files, write files"));
+    assert!(skill.contains("Use a minimal fact pass"));
+    assert!(skill.contains("do not block the immediate next question"));
+    assert!(skill.contains("Ask one compact follow-up from the confirmed topology"));
+    assert!(skill.contains("read at most"));
+    assert!(skill.contains("request exactly one subagent reviewer"));
+    assert!(skill.contains("must forbid tool calls and file reads"));
     assert!(skill.contains("implementation mutation is blocked by the runtime until `ralplan`"));
-    assert!(skill.contains("Runtime hooks attempt to activate Codex Plan mode before Round 0"));
-    assert!(skill.contains("If automatic activation fails"));
-    assert!(skill.contains("activate Codex Plan mode first"));
-    assert!(skill.contains("A `/plan` text prefix is not enough by itself"));
-    assert!(skill.contains("Do not offer a \"continue without Plan mode\" option"));
+    assert!(skill.contains("does not require Codex Plan mode"));
+    assert!(skill.contains("Do not ask the user to toggle `/plan`"));
+    assert!(!skill.contains("Codex Plan-Mode Activation"));
+    assert!(!skill.contains("Runtime hooks attempt to activate Codex Plan mode before Round 0"));
+    assert!(!skill.contains("activate Codex Plan mode first"));
+    assert!(!skill.contains("A `/plan` text prefix is not enough by itself"));
+    assert!(!skill.contains("Do not offer a \"continue without Plan mode\" option"));
     assert!(!skill.contains("Continue here without `/plan`"));
     assert!(!skill.contains("The preflight question must have"));
     assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
@@ -219,17 +237,25 @@ fn installs_project_scope_codex_harness() {
     assert!(!ralplan.contains("Megara Plan Gate:"));
     assert!(!ralplan.contains("Megara Approval Gate:"));
     assert!(ralplan.contains("Do not output runtime metadata"));
-    assert!(ralplan.contains("Runtime hooks infer review coverage"));
+    assert!(ralplan.contains("Runtime hooks record subagent receipts"));
     assert!(ralplan
         .contains("Do not send progress messages that merely narrate internal workflow mechanics"));
     assert!(ralplan.contains(
         "begin planning from the locked spec without asking another transition question"
     ));
     assert!(ralplan.contains("Normal user approval should be a number or natural-language choice"));
-    assert!(ralplan.contains("run planner, architect, and critic as read-only subagent reviews"));
+    assert!(ralplan.contains("hooks inject a hidden requirement"));
     assert!(ralplan.contains("input_spec_sha256"));
     assert!(ralplan.contains("plan_sha256"));
     assert!(ralplan.contains("pending-approval plan"));
+    assert!(ralplan.contains("Baseline failure handling"));
+    assert!(ralplan.contains("pre-existing"));
+    assert!(ralplan.contains("Plan-owned clarification"));
+    assert!(ralplan.contains("Do not block on details"));
+    assert!(ralplan.contains("Pick the stricter product-facing"));
+    assert!(ralplan.contains("generic list of unresolved review notes"));
+    assert!(ralplan.contains("Do not put workflow or handoff names"));
+    assert!(ralplan.contains("final numbered approval choices"));
     let ultragoal =
         fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
     assert!(ultragoal.contains(r#"MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}""#));
@@ -237,7 +263,11 @@ fn installs_project_scope_codex_harness() {
     assert!(ultragoal.contains("output only user-facing prose"));
     assert!(ultragoal.contains("Run Megara CLI commands silently"));
     assert!(ultragoal.contains("Do not narrate session ids"));
+    assert!(ultragoal.contains("Runtime artifact paths under `.megara/state`"));
+    assert!(ultragoal.contains("Do not link them, cite them as deliverables"));
+    assert!(ultragoal.contains("runtime files are owned by Megara hooks and CLI commands"));
     assert!(ultragoal.contains("checkpoint attempts"));
+    assert!(ultragoal.contains("start-goal"));
     assert!(ultragoal
         .contains("User-visible progress should mention only externally meaningful product work"));
     assert!(ultragoal.contains("Runtime state is managed by the `megara ultragoal` CLI commands"));
@@ -309,17 +339,20 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("## Locale"));
     assert!(agents_md.contains("Locale: `ko-KR`"));
     assert!(agents_md.contains("Hook output and Megara CLI state are runtime internals"));
+    assert!(agents_md.contains("Runtime artifact paths under `.megara/state`"));
+    assert!(agents_md.contains("Do not link them, cite them as deliverables"));
     assert!(agents_md.contains("quality-gate JSON"));
     assert!(agents_md.contains("## Codex Runtime Adapter"));
     assert!(agents_md.contains("This projected harness is running inside Codex"));
-    assert!(agents_md.contains("Codex native Plan mode is available through `/plan` or Shift+Tab"));
-    assert!(agents_md.contains("Megara hooks try to activate Codex Plan mode before Round 0"));
-    assert!(agents_md.contains("activate Plan mode, then resend"));
-    assert!(agents_md.contains("Do not offer a \"continue without Plan mode\" path"));
+    assert!(agents_md.contains("Deep-interview does not require Codex Plan mode"));
+    assert!(agents_md.contains("Do not ask the user to toggle `/plan`"));
+    assert!(!agents_md.contains("Megara hooks try to activate Codex Plan mode before Round 0"));
+    assert!(!agents_md.contains("activate Plan mode, then resend"));
+    assert!(!agents_md.contains("Do not offer a \"continue without Plan mode\" path"));
     assert!(agents_md.contains("delegated prompts may arrive wrapped"));
     assert!(agents_md.contains("implementation mutation is blocked until `ralplan`"));
     assert!(agents_md.contains("SubagentStart"));
-    assert!(agents_md.contains("use subagents as read-only reviewers"));
+    assert!(agents_md.contains("required receipts exist"));
     assert!(agents_md.contains("## Skills"));
     assert!(agents_md.contains("## On-Demand Tools"));
     assert!(agents_md.contains("insane-search"));

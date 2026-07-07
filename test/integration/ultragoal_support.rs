@@ -39,7 +39,21 @@ pub(super) fn create_goals(project: &Path, direct: bool) -> Output {
     command.current_dir(project).output().unwrap()
 }
 
-pub(super) fn complete_goals(project: &Path) -> Output {
+pub(super) fn start_goal(project: &Path) -> Output {
+    megara()
+        .arg("ultragoal")
+        .arg("--scope")
+        .arg("project")
+        .arg("--session-id")
+        .arg(SESSION)
+        .arg("start-goal")
+        .arg("--json")
+        .current_dir(project)
+        .output()
+        .unwrap()
+}
+
+pub(super) fn complete_goals_alias(project: &Path) -> Output {
     megara()
         .arg("ultragoal")
         .arg("--scope")
@@ -53,23 +67,15 @@ pub(super) fn complete_goals(project: &Path) -> Output {
         .unwrap()
 }
 
-pub(super) fn write_quality_artifacts(project: &Path) -> PathBuf {
+pub(super) fn write_reviewed_product_file(project: &Path) {
     fs::write(
         project.join("reviewed.md"),
         "Reviewed board and score boundaries.",
     )
     .unwrap();
-    fs::write(
-        project.join("verification.log"),
-        "cargo test passed; manual board smoke check passed",
-    )
-    .unwrap();
-    let quality_gate = project.join("quality-gate.json");
-    fs::write(&quality_gate, passing_quality_gate_json()).unwrap();
-    quality_gate
 }
 
-pub(super) fn complete_checkpoint(project: &Path, quality_gate: &Path) -> Output {
+pub(super) fn complete_checkpoint(project: &Path) -> Output {
     megara()
         .arg("ultragoal")
         .arg("--scope")
@@ -84,7 +90,7 @@ pub(super) fn complete_checkpoint(project: &Path, quality_gate: &Path) -> Output
         .arg("--evidence")
         .arg("cargo test passed; manual board smoke check passed")
         .arg("--quality-gate-json")
-        .arg(quality_gate)
+        .arg(passing_quality_gate_json())
         .arg("--json")
         .current_dir(project)
         .output()
@@ -122,7 +128,6 @@ fn passing_quality_gate_json() -> String {
             "redTeamStatus": "passed",
             "evidence": "Focused tests and manual regression checks passed.",
             "commands": ["cargo test"],
-            "artifactRefs": ["verification.log"],
             "blockers": []
         },
         "iteration": {
@@ -130,7 +135,6 @@ fn passing_quality_gate_json() -> String {
             "fullRerun": true,
             "evidence": "Final verification reran after cleanup.",
             "commands": ["cargo test"],
-            "artifactRefs": ["verification.log"],
             "blockers": []
         }
     })

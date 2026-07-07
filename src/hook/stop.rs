@@ -9,6 +9,19 @@ pub(super) fn handle_stop(
     let text = runtime_input::assistant_message_from_payload(payload).unwrap_or_default();
     let text = text.as_str();
 
+    if let Some(reason) =
+        block_visible_runtime_reference(timestamp, state_dir, payload, payload_file, text)?
+    {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "decision": "block",
+                "reason": reason,
+            }))?
+        );
+        return Ok(0);
+    }
+
     for review in review_passes_from_text(text) {
         let paths = workflow_paths(state_dir, payload, RALPLAN);
         reconcile_session_aliases(timestamp, payload_file, &paths, RALPLAN, payload)?;
@@ -23,6 +36,25 @@ pub(super) fn handle_stop(
         reconcile_session_aliases(timestamp, payload_file, &paths, &terminal.skill, payload)?;
         let mut state = load_json(&paths.session_file)
             .unwrap_or_else(|| new_state(&terminal.skill, timestamp, &paths.session_id, payload));
+        if terminal.skill == DEEP_INTERVIEW {
+            if let Some(reason) = subagent_gate::block_terminal_if_missing_receipts(
+                timestamp,
+                payload_file,
+                &paths,
+                &terminal,
+                &mut state,
+            )? {
+                write_json_atomic(&paths.session_file, &state)?;
+                println!(
+                    "{}",
+                    serde_json::to_string(&json!({
+                        "decision": "block",
+                        "reason": reason,
+                    }))?
+                );
+                return Ok(0);
+            }
+        }
         match terminal.skill.as_str() {
             DEEP_INTERVIEW => terminal::handle_deep_interview_terminal(
                 timestamp,
@@ -58,13 +90,56 @@ pub(super) fn handle_stop(
         return Ok(0);
     }
 
-    let Some(question) = question_from_text(timestamp, text, payload_file) else {
+    let Some(mut question) = question_from_text(timestamp, text, payload_file) else {
         return Ok(0);
     };
     let paths = workflow_paths(state_dir, payload, DEEP_INTERVIEW);
     reconcile_session_aliases(timestamp, payload_file, &paths, DEEP_INTERVIEW, payload)?;
     let mut state = load_json(&paths.session_file)
         .unwrap_or_else(|| new_state(DEEP_INTERVIEW, timestamp, &paths.session_id, payload));
+    let question_decision = deep_interview_milestone::prepare_question(&state, text, &mut question);
+    if let Some(ambiguity) = question.get("ambiguity").cloned() {
+        state["ambiguity"] = ambiguity;
+    }
+    match question_decision {
+        deep_interview_milestone::QuestionDecision::Allow => {}
+        deep_interview_milestone::QuestionDecision::Block { reason, kind } => {
+            state["active"] = json!(true);
+            let event = match kind {
+                deep_interview_milestone::QuestionBlockKind::MilestoneDecisionRequired => {
+                    state["phase"] = json!("milestone_decision_required");
+                    state["status"] = json!("milestone_decision_required");
+                    state["milestone_blocked_at"] = json!(timestamp);
+                    "milestone_decision_required"
+                }
+                deep_interview_milestone::QuestionBlockKind::CrystallizedSpecRequired => {
+                    state["phase"] = json!("crystallizing");
+                    state["status"] = json!("crystallizing");
+                    state["crystallization_blocked_at"] = json!(timestamp);
+                    "crystallized_spec_required"
+                }
+            };
+            state["updated_at"] = json!(timestamp);
+            write_json_atomic(&paths.session_file, &state)?;
+            append_jsonl(
+                &paths.events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": event,
+                    "session_id": paths.session_id,
+                    "payload": payload_file,
+                }),
+            )?;
+            println!(
+                "{}",
+                serde_json::to_string(&json!({
+                    "decision": "block",
+                    "reason": reason,
+                }))?
+            );
+            return Ok(0);
+        }
+    }
 
     let question_id = question
         .get("id")
@@ -75,6 +150,11 @@ pub(super) fn handle_stop(
     let component = question.get("component").cloned().unwrap_or(Value::Null);
     let dimension = question.get("dimension").cloned().unwrap_or(Value::Null);
     upsert_question(timestamp, &mut state, question);
+    let pending_question = state
+        .get("pending_question")
+        .cloned()
+        .unwrap_or(Value::Null);
+    deep_interview_milestone::mark_pending_state(timestamp, &mut state, &pending_question);
     append_jsonl(
         &paths.events_file,
         &json!({
@@ -160,4 +240,62 @@ fn mark_stale_deep_interview_peers(
         )?;
     }
     Ok(())
+}
+
+fn block_visible_runtime_reference(
+    timestamp: &str,
+    state_dir: &Path,
+    payload: &Value,
+    payload_file: &Path,
+    text: &str,
+) -> Result<Option<String>> {
+    let visible = parser::text_before_first_workflow_block(text);
+    if !contains_runtime_reference(&visible) || !has_workflow_state(state_dir, payload) {
+        return Ok(None);
+    }
+
+    let paths = workflow_paths(
+        state_dir,
+        payload,
+        workflow_with_state(state_dir, payload).unwrap_or(ULTRAGOAL),
+    );
+    append_jsonl(
+        &paths.events_file,
+        &json!({
+            "timestamp": timestamp,
+            "event": "visible_runtime_reference_blocked",
+            "session_id": paths.session_id,
+            "payload": payload_file,
+        }),
+    )?;
+    Ok(Some(
+        "Megara runtime artifact or state paths are internal. Rewrite the response without .megara/.agents runtime paths, session ids, receipts, checkpoints, or quality-gate file links. Summarize only product-facing changes, verification commands, pass/fail results, and user-actionable blockers."
+            .to_string(),
+    ))
+}
+
+fn contains_runtime_reference(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    [
+        ".megara/artifacts",
+        ".megara/state",
+        "~/.megara/artifacts",
+        "~/.megara/state",
+        "/.megara/artifacts",
+        "/.megara/state",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
+}
+
+fn has_workflow_state(state_dir: &Path, payload: &Value) -> bool {
+    workflow_with_state(state_dir, payload).is_some()
+}
+
+fn workflow_with_state(state_dir: &Path, payload: &Value) -> Option<&'static str> {
+    WORKFLOWS.iter().copied().find(|workflow| {
+        workflow_paths(state_dir, payload, workflow)
+            .session_file
+            .exists()
+    })
 }

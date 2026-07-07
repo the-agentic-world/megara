@@ -61,6 +61,13 @@ pub(super) fn submit_final_spec(project: &Path) {
     assert_success(run_hook(project, project, "Stop", None, payload));
 }
 
+pub(super) fn submit_ultragoal_state(project: &Path, status: &str, next: &str) {
+    let payload = format!(
+        "{{\"session_id\":\"sess-di\",\"last_assistant_message\":\"Status update.\\n\\n<!--\\nMegara Workflow State:\\n- skill: ultragoal\\n- status: {status}\\n- next: {next}\\n-->\\n\"}}"
+    );
+    assert_success(run_hook(project, project, "Stop", None, payload.as_bytes()));
+}
+
 pub(super) fn assert_guard_blocks(output: Output) {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("MEGARA mutation guard"));

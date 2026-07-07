@@ -110,6 +110,16 @@ pub(crate) fn workflow_paths(state_dir: &Path, payload: &Value, skill: &str) -> 
 }
 
 pub(crate) fn canonical_session_id(payload: &Value) -> String {
+    if is_subagent_payload(payload) {
+        return payload
+            .get("thread_id")
+            .map(value_to_string)
+            .or_else(|| payload.get("session_id").map(value_to_string))
+            .or_else(|| transcript_session_id(payload))
+            .or_else(|| payload.get("turn_id").map(value_to_string))
+            .unwrap_or_else(|| "unknown-session".to_string());
+    }
+
     payload
         .get("thread_id")
         .map(value_to_string)
@@ -127,13 +137,21 @@ pub(crate) fn session_alias_ids(payload: &Value) -> Vec<String> {
         payload.get("thread_id").map(value_to_string),
         &canonical,
     );
-    push_alias(&mut aliases, transcript_session_id(payload), &canonical);
+    if !is_subagent_payload(payload) {
+        push_alias(&mut aliases, transcript_session_id(payload), &canonical);
+    }
     push_alias(
         &mut aliases,
         payload.get("session_id").map(value_to_string),
         &canonical,
     );
     aliases
+}
+
+fn is_subagent_payload(payload: &Value) -> bool {
+    ["agent_id", "subagent_id", "agent_type", "subagent_name"]
+        .into_iter()
+        .any(|key| payload.get(key).is_some())
 }
 
 fn push_alias(aliases: &mut Vec<String>, candidate: Option<String>, canonical: &str) {

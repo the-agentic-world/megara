@@ -116,6 +116,47 @@ pub(super) fn submit_plan_with_lock(
     assert_success(&output);
 }
 
+pub(super) fn submit_role_subagent_review(
+    project: &Path,
+    session_id: &str,
+    role: &str,
+    verdict: &str,
+) {
+    let message = format!(
+        "Review complete.\n\n<!--\nMegara Review Pass:\n- role: {role}\n- round: 1\n- verdict: {verdict}\n- summary: {role} review is ready.\n- required_fixes:\n  - none\n-->\n"
+    );
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "agent_id": format!("agent-{role}-1"),
+        "agent_type": role,
+        "last_assistant_message": message,
+    })
+    .to_string();
+    assert_success(&run_hook(
+        project,
+        project,
+        "SubagentStop",
+        Some(role),
+        payload.as_bytes(),
+    ));
+}
+
+pub(super) fn submit_role_subagent_receipt(project: &Path, session_id: &str, role: &str) {
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "agent_id": format!("agent-{role}-receipt"),
+        "agent_type": role,
+    })
+    .to_string();
+    assert_success(&run_hook(
+        project,
+        project,
+        "SubagentStop",
+        Some(role),
+        payload.as_bytes(),
+    ));
+}
+
 pub(super) fn submit_crystallized_interview(
     project: &Path,
     session_id: &str,

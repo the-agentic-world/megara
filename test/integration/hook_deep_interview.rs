@@ -103,6 +103,87 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
 }
 
 #[test]
+fn deep_interview_question_ledger_preserves_repeated_gate_ids() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let first = serde_json::json!({
+        "session_id": "sess-di",
+        "last_assistant_message": "Ambiguity: 42%\n\n<!--\nMegara Question Gate:\n- id: repeated\n- question: What should be tested first?\n- options:\n  - Unit tests\n  - E2E tests\n  - Manual QA\n  - Direct input / not listed\n- free_text: true\n-->\n"
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        first.as_bytes(),
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","prompt":"Unit tests."}"#,
+    ));
+
+    let second = serde_json::json!({
+        "session_id": "sess-di",
+        "last_assistant_message": "Ambiguity: 38%\n\n<!--\nMegara Question Gate:\n- id: repeated\n- question: What should be checked next?\n- options:\n  - Keyboard flow\n  - Visual layout\n  - Score rules\n  - Direct input / not listed\n- free_text: true\n-->\n"
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        second.as_bytes(),
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","prompt":"Keyboard flow."}"#,
+    ));
+
+    let state = read_json(&state_path(dir.path()));
+    let questions = state["questions"].as_array().unwrap();
+    assert_eq!(questions.len(), 2);
+    assert_ne!(questions[0]["id"], questions[1]["id"]);
+    assert_eq!(questions[0]["answer"]["content"], "Unit tests.");
+    assert_eq!(questions[1]["answer"]["content"], "Keyboard flow.");
+}
+
+#[test]
+fn subagent_user_prompt_does_not_answer_deep_interview_question() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_question(dir.path());
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        Some("architect"),
+        br#"{
+  "session_id": "sess-di",
+  "agent_id": "agent-architect-running",
+  "agent_type": "Architect",
+  "prompt": "Read-only architect verdict. Unit tests are enough."
+}"#,
+    ));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "question_pending");
+    assert_eq!(state["pending_question"]["status"], "pending");
+    assert_eq!(state["questions"][0]["status"], "pending");
+    assert!(state["questions"][0].get("answer").is_none());
+}
+
+#[test]
 fn delegated_user_answer_is_recorded_without_codex_wrapper() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
@@ -172,6 +253,334 @@ fn subagent_events_are_logged_and_attached_to_workflow_state() {
 }
 
 #[test]
+fn deep_interview_start_injects_subagent_context_and_requires_receipt() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let start_payload = br#"{
+  "session_id": "sess-di",
+  "permission_mode": "default",
+  "cwd": "/tmp/project",
+  "prompt": "$deep-interview improve the game UI"
+}"#;
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        start_payload,
+    );
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("additionalContext"));
+    assert!(stdout.contains("Round 0 topology question before broad repository inspection"));
+    assert!(stdout.contains("before broad repository inspection or source-file reads"));
+    assert!(stdout.contains("do not block the immediate next question on repository inspection"));
+    assert!(stdout.contains("ask one compact follow-up from the confirmed topology first"));
+    assert!(stdout.contains("minimal brownfield fact pass"));
+    assert!(stdout.contains("only when the next decision depends on repository facts"));
+    assert!(stdout.contains("at most five focused source/test files"));
+    assert!(stdout.contains("architect subagent"));
+    assert!(stdout.contains("forbid tool calls"));
+    assert!(stdout.contains("decide only from the prompt context"));
+    assert!(stdout.contains("forbid Megara workflow/skill invocation"));
+    assert!(stdout.contains("final-answer-only short direct verdict"));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["subagent_orchestration"]["status"], "required");
+    assert_eq!(state["subagent_orchestration"]["roles"][0], "architect");
+
+    let blocked = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "**Requirements Summary**\n\nGoal: improve the game UI.\n\nAcceptance criteria:\n- Layout does not overflow.\n\nNext: continue with `ralplan` from this summary.\n\n<!--\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 9%\n- next: ralplan\n-->\n"
+}"#,
+    );
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.contains("architect"));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "subagent_review_required");
+    assert!(state.get("spec_path").is_none());
+
+    let subagent_payload = br#"{
+  "session_id": "sess-di",
+  "cwd": "/tmp/project",
+  "agent_id": "agent-architect-1",
+  "agent_type": "architect"
+}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        Some("architect"),
+        subagent_payload,
+    ));
+
+    submit_final_spec(dir.path());
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "crystallized");
+    assert_eq!(state["subagent_orchestration"]["status"], "satisfied");
+    assert_eq!(state["subagent_receipts"][0]["role"], "architect");
+}
+
+#[test]
+fn deep_interview_answer_reinforces_pending_subagent_context() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let start_payload = br#"{
+  "session_id": "sess-di",
+  "permission_mode": "default",
+  "cwd": "/tmp/project",
+  "prompt": "$deep-interview improve the game UI"
+}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        start_payload,
+    ));
+
+    let question = br#"{
+  "session_id": "sess-di",
+  "cwd": "/tmp/project",
+  "last_assistant_message": "Ambiguity: 35%\n\nWhich scope should be checked first?\n\n1. Layout\n2. Keyboard\n3. Tests\n4. Direct input / not listed\n\n"
+}"#;
+    assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, question));
+
+    let answer = br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"2"}"#;
+    let output = run_hook(dir.path(), dir.path(), "UserPromptSubmit", None, answer);
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(r#""additionalContext""#));
+    assert!(stdout.contains("Before final crystallization"));
+    assert!(stdout.contains("Missing receipt roles: architect"));
+    assert!(stdout.contains("Do not delay an ordinary interview question turn"));
+    assert!(!stdout.contains("Spawn only these missing roles now"));
+    assert!(
+        stdout.contains("Ask exactly one compact next question if more user input is still needed")
+    );
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "interviewing");
+    assert_eq!(state["subagent_orchestration"]["status"], "required");
+}
+
+#[test]
+fn subagent_transcript_does_not_supersede_main_workflow_state() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_question(dir.path());
+    let subagent_transcript = dir
+        .path()
+        .join("rollout-2026-01-01T00-00-00-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.jsonl");
+    fs::write(&subagent_transcript, "").unwrap();
+    let payload = serde_json::json!({
+        "session_id": "sess-di",
+        "cwd": "/tmp/project",
+        "agent_id": "agent-architect-1",
+        "agent_type": "architect",
+        "transcript_path": subagent_transcript,
+    })
+    .to_string();
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        Some("architect"),
+        payload.as_bytes(),
+    ));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["session_id"], "sess-di");
+    assert_eq!(state["last_subagent_event"]["event"], "SubagentStop");
+    assert_eq!(state["subagent_receipts"][0]["role"], "architect");
+    assert!(!dir
+        .path()
+        .join(".megara/state/workflows/deep-interview/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.json")
+        .exists());
+    assert!(state.get("stale_superseded_by").is_none());
+}
+
+#[test]
+fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_choice() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let ordinary = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 14%\n\nWhich visual issue should be fixed first?\n\n1. Layout overflow\n2. Button spacing\n3. Color contrast\n4. Direct input / not listed\n\n"
+}"#;
+    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, ordinary);
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.contains("milestone decision"));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "milestone_decision_required");
+    assert!(state["pending_question"].is_null());
+
+    let milestone = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 14%\n\nCrystallize this for ralplan now, or continue deep-interview to 5%?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to 5%\n3. Continue deep-interview only on a named component or risk\n4. Direct input / not listed\n\n"
+}"#;
+    assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, milestone));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["pending_question"]["kind"], "milestone_decision");
+    assert_eq!(state["pending_question"]["milestone_target"], 15);
+    assert_eq!(state["pending_question"]["next_ambiguity_target"], 5);
+
+    let answer = br#"{"session_id":"sess-di","prompt":"2"}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        answer,
+    ));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["active_ambiguity_target"], 5);
+    assert_eq!(
+        state["milestone_decision"]["status"],
+        "continue_deep_interview"
+    );
+
+    assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, ordinary));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "question_pending");
+    assert_eq!(
+        state["pending_question"]["question"],
+        "Which visual issue should be fixed first?"
+    );
+}
+
+#[test]
+fn deep_interview_answer_injects_milestone_preflight_context() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let question = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 17%\n\nWhat status detail matters most?\n\n1. Goal and top tile\n2. Empty cells\n3. Overlay copy\n4. Direct input / not listed\n\n"
+}"#;
+    assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, question));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["ambiguity"], "17%");
+
+    let answer = br#"{"session_id":"sess-di","prompt":"1"}"#;
+    let output = run_hook(dir.path(), dir.path(), "UserPromptSubmit", None, answer);
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(r#""additionalContext""#));
+    assert!(stdout.contains("active ambiguity target is 15%"));
+    assert!(stdout.contains("if the next visible ambiguity score is <= 15%"));
+    assert!(stdout.contains("do not ask an ordinary interview question"));
+}
+
+#[test]
+fn deep_interview_accepts_korean_ambiguity_synonym() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let ordinary = r#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "모호도: 14%\n\n어떤 UI 상태를 먼저 정할까?\n\n1. 진행 중 상태\n2. 승리 상태\n3. 패배 상태\n4. 직접 입력 / 보기 외 답변\n\n"
+}"#;
+    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, ordinary.as_bytes());
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.contains("milestone decision"));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "milestone_decision_required");
+    assert_eq!(state["ambiguity"], "14%");
+}
+
+#[test]
+fn deep_interview_milestone_uses_nearest_crossed_target() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let ordinary = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 3%\n\nWhich remaining risk should be clarified?\n\n1. Input flow\n2. Scoring\n3. Accessibility\n4. Direct input / not listed\n\n"
+}"#;
+    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, ordinary);
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.contains("active 5% target"));
+    assert!(stdout.contains("continue deep-interview to 2%"));
+
+    let stale_milestone = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 3%\n\nCrystallize this for ralplan now, or continue deep-interview to 5%?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to 5%\n3. Continue deep-interview only on a named component or risk\n4. Direct input / not listed\n\n"
+}"#;
+    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, stale_milestone);
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.contains("continue deep-interview to 2%"));
+}
+
+#[test]
+fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let milestone = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 15%\n\nCrystallize this for ralplan now, or continue deep-interview to 5%?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to 5%\n3. Continue deep-interview only on a named component or risk\n4. Direct input / not listed\n\n"
+}"#;
+    assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, milestone));
+
+    let answer = br#"{"session_id":"sess-di","prompt":"1"}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        answer,
+    ));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "crystallizing");
+    assert_eq!(state["milestone_decision"]["status"], "proceed_to_ralplan");
+    assert!(state["pending_question"].is_null());
+
+    let followup_question = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 15%\n\nFinal sentence check: if localStorage throws, should the game keep rendering?\n\n1. Yes, lock this sentence.\n2. Mention best score fallback.\n3. Mention uncaught page errors.\n4. Direct input / not listed.\n\n"
+}"#;
+    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, followup_question);
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.contains("crystallized markdown spec"));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "crystallizing");
+    assert_eq!(state["status"], "crystallizing");
+    assert!(state["pending_question"].is_null());
+}
+
+#[test]
 fn crystallized_pipeline_lock_blocks_until_ralplan_approval() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
@@ -192,6 +601,13 @@ fn crystallized_pipeline_lock_blocks_until_ralplan_approval() {
     assert_guard_blocks(blocked_by_ralplan);
 
     assert_success(&user_prompt(dir.path(), "sess-di", "2"));
+    let blocked_by_handoff = run_bash_mutation(dir.path());
+    assert_guard_blocks(blocked_by_handoff);
+    submit_ultragoal_state(dir.path(), "goal_planning", "create goals");
+    let blocked_by_goal_planning = run_bash_mutation(dir.path());
+    assert_guard_blocks(blocked_by_goal_planning);
+
+    submit_ultragoal_state(dir.path(), "active", "execute G001");
     assert_success(&run_bash_mutation(dir.path()));
 }
 
@@ -351,6 +767,46 @@ fn visible_question_requires_deep_interview_catch_all_without_score_marker() {
     assert!(!dir
         .path()
         .join(".megara/state/workflows/deep-interview/ordinary-question.json")
+        .exists());
+}
+
+#[test]
+fn deep_interview_pipeline_question_is_not_misclassified_as_ralplan_pending() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let message = "모호성: 85%\n\n요청을 4개 구성요소로 읽고 있습니다:\n1. `deep-interview`: 2048 UI/UX 개선 목표, 범위, 검증 기준을 질문으로 확정한다.\n2. `ralplan`: 확정된 요구사항에서 내부 초안 계획을 만들고 다중 관점 검토를 거쳐 승인 가능한 계획을 만든다.\n3. `ultragoal`: 승인된 계획을 기준으로 실제 구현과 검증을 끝까지 수행한다.\n4. 하네스 회귀 테스트: 위 워크플로우 순서, 출력 제한, subagent 제약, 구현 승인 경계를 검증한다.\n\n이 구성요소를 그대로 진행하면 됩니까, 아니면 추가/삭제/병합/분리/보류할 항목이 있습니까?\n\n1. 그대로 진행\n2. 구성요소 조정\n3. 일부 구성요소 보류 또는 우선순위 지정\n4. 직접 입력 / 선택지에 없음";
+    let payload = serde_json::json!({
+        "session_id": "pipeline-question",
+        "cwd": dir.path().display().to_string(),
+        "last_assistant_message": message,
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        payload.as_bytes(),
+    ));
+
+    let state = read_json(
+        &dir.path()
+            .join(".megara/state/workflows/deep-interview/pipeline-question.json"),
+    );
+    assert_eq!(state["phase"], "question_pending");
+    assert_eq!(
+        state["pending_question"]["question"],
+        "이 구성요소를 그대로 진행하면 됩니까, 아니면 추가/삭제/병합/분리/보류할 항목이 있습니까?"
+    );
+    assert_eq!(
+        state["pending_question"]["options"][3],
+        "직접 입력 / 선택지에 없음"
+    );
+    assert!(!dir
+        .path()
+        .join(".megara/state/workflows/ralplan/pipeline-question.json")
         .exists());
 }
 

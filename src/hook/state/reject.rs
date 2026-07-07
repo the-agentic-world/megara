@@ -18,6 +18,13 @@ pub(crate) fn require_ralplan_input_lock(timestamp: &str, state: &mut Value, pay
     state["updated_at"] = json!(timestamp);
 }
 
+pub(crate) fn mark_ralplan_input_lock_ready(timestamp: &str, state: &mut Value) {
+    state["phase"] = json!("input_lock_ready");
+    state["status"] = json!("input_lock_ready");
+    state["input_lock_status"] = json!("ready");
+    state["updated_at"] = json!(timestamp);
+}
+
 pub(crate) fn reject_crystallized_without_spec(timestamp: &str, state: &mut Value) {
     state["active"] = json!(true);
     state["phase"] = json!("crystallization_missing_spec");

@@ -40,7 +40,7 @@ pub(crate) fn mutation_signal(payload: &Value) -> Option<MutationSignal> {
 
 pub(crate) fn protected_workflow_state_mutation(payload: &Value) -> Option<MutationSignal> {
     let mutation = mutation_signal(payload)?;
-    payload_contains_protected_workflow_path(payload).then_some(mutation)
+    payload_contains_protected_runtime_path(payload).then_some(mutation)
 }
 
 pub(crate) fn mutating_command(command: &str) -> bool {
@@ -58,22 +58,26 @@ pub(crate) fn mutating_command(command: &str) -> bool {
         .any(mutating_command_segment)
 }
 
-fn payload_contains_protected_workflow_path(value: &Value) -> bool {
+fn payload_contains_protected_runtime_path(value: &Value) -> bool {
     match value {
-        Value::String(text) => is_protected_workflow_state_path(text),
-        Value::Array(items) => items.iter().any(payload_contains_protected_workflow_path),
-        Value::Object(object) => object
-            .values()
-            .any(payload_contains_protected_workflow_path),
+        Value::String(text) => is_protected_runtime_path(text),
+        Value::Array(items) => items.iter().any(payload_contains_protected_runtime_path),
+        Value::Object(object) => object.values().any(payload_contains_protected_runtime_path),
         _ => false,
     }
 }
 
-fn is_protected_workflow_state_path(value: &str) -> bool {
+fn is_protected_runtime_path(value: &str) -> bool {
     let normalized = value.replace('\\', "/");
     [
+        ".megara/state/",
+        ".megara/artifacts/",
+        "~/.megara/state/",
+        "~/.megara/artifacts/",
         ".megara/state/workflows/deep-interview/",
         ".megara/state/workflows/ralplan/",
+        ".agents/state/",
+        ".agents/artifacts/",
         ".agents/state/workflows/deep-interview/",
         ".agents/state/workflows/ralplan/",
     ]

@@ -71,14 +71,46 @@ fn workflow_state_from_visible_text(text: &str) -> Option<TerminalState> {
 
 fn looks_like_visible_ralplan_pending(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    let has_execution_choice =
-        lower.contains("ultragoal") || lower.contains("team") || text.contains("팀");
     let has_approval =
         lower.contains("approve") || lower.contains("approval") || text.contains("승인");
-    has_execution_choice
-        && has_approval
+    let options = visible_options(text);
+    has_approval
+        && looks_like_ralplan_approval_options(&options)
         && visible_section_score(text) >= 3
-        && has_numbered_options(text)
+}
+
+fn looks_like_ralplan_approval_options(options: &[String]) -> bool {
+    if options.len() < 3 {
+        return false;
+    }
+    let joined = options.join("\n").to_ascii_lowercase();
+    let has_ultragoal = joined.contains("ultragoal");
+    let has_team = joined.contains("team") || options.iter().any(|option| option.contains("팀"));
+    let has_refine = joined.contains("refine")
+        || options
+            .iter()
+            .any(|option| option.contains("보완") || option.contains("수정"));
+    let has_pending = joined.contains("pending")
+        || options
+            .iter()
+            .any(|option| option.contains("보류") || option.contains("대기"));
+    let has_approval = joined.contains("approve")
+        || joined.contains("approval")
+        || options.iter().any(|option| option.contains("승인"));
+    has_ultragoal && has_team && has_approval && (has_refine || has_pending)
+}
+
+fn visible_options(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| visible_option_text(line.trim()))
+        .map(|option| option.trim().to_string())
+        .filter(|option| !option.is_empty())
+        .collect()
+}
+
+fn visible_option_text(line: &str) -> Option<&str> {
+    line.strip_prefix("- ")
+        .or_else(|| numbered_option_text(line))
 }
 
 fn looks_like_visible_deep_interview_crystallized(text: &str) -> bool {
@@ -111,19 +143,12 @@ fn visible_section_score(text: &str) -> usize {
     .count()
 }
 
-fn has_numbered_options(text: &str) -> bool {
-    text.lines()
-        .filter(|line| numbered_option_text(line.trim()).is_some())
-        .count()
-        >= 2
-}
-
 fn extract_ambiguity(text: &str) -> Option<String> {
     text.lines()
         .rev()
         .filter(|line| {
             let lower = line.to_ascii_lowercase();
-            lower.contains("ambiguity") || line.contains("모호성")
+            lower.contains("ambiguity") || line.contains("모호성") || line.contains("모호도")
         })
         .find_map(percent_from_line)
 }

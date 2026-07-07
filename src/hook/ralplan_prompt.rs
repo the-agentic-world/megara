@@ -17,14 +17,7 @@ pub(super) fn is_deep_interview_approval_for_ralplan(prompt: &str) -> bool {
         return true;
     }
 
-    let normalized = prompt.to_ascii_lowercase();
-    normalized.contains("ralplan")
-        && (normalized.contains("proceed")
-            || normalized.contains("continue")
-            || normalized.contains("approve")
-            || normalized.contains("진행")
-            || normalized.contains("계속")
-            || normalized.contains("승인"))
+    false
 }
 
 pub(super) fn apply_ralplan_prompt_decision(
@@ -78,6 +71,7 @@ pub(super) fn apply_ralplan_prompt_decision(
         || normalized.contains("수정")
     {
         state["reviews"] = json!([]);
+        subagent_gate::reset_after_refine(timestamp, state, payload_file);
         state_fields::remove_state_fields(state, state_fields::PLAN_FIELDS);
         state["approval_status"] = json!("refine_requested");
         state["phase"] = json!("refining");

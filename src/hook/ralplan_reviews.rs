@@ -65,11 +65,17 @@ fn looks_like_reviewed_visible_plan(text: &str) -> bool {
     let has_approval =
         lower.contains("approve") || lower.contains("approval") || text.contains("승인");
     let has_scope = lower.contains("scope") || text.contains("범위");
-    let has_acceptance =
-        lower.contains("acceptance") || lower.contains("verification") || text.contains("검증");
+    let has_acceptance = lower.contains("acceptance")
+        || lower.contains("verification")
+        || text.contains("수용")
+        || text.contains("인수")
+        || text.contains("검증");
     let has_sequence = lower.contains("step")
         || lower.contains("task")
+        || lower.contains("sequence")
         || text.contains("단계")
-        || text.contains("작업");
+        || text.contains("작업")
+        || text.contains("순서")
+        || text.contains("절차");
     has_execution_choice && has_approval && has_scope && has_acceptance && has_sequence
 }

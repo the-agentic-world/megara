@@ -61,6 +61,7 @@ pub(super) struct CompletionReceipt {
 pub(super) struct StatusReport<'a> {
     pub(super) session_id: &'a str,
     pub(super) path: &'a Path,
+    pub(super) evidence_dir: &'a Path,
     pub(super) state: &'static str,
     pub(super) counts: GoalCounts,
     pub(super) active_goal: Option<&'a UltragoalGoal>,

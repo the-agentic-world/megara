@@ -17,6 +17,7 @@ use super::{flow::goal_counts, model::UltragoalPlan, RALPLAN, WORKFLOW};
 #[derive(Debug)]
 pub(super) struct UltragoalPaths {
     pub(super) dir: PathBuf,
+    pub(super) evidence_dir: PathBuf,
     pub(super) brief_file: PathBuf,
     pub(super) goals_file: PathBuf,
     pub(super) ledger_file: PathBuf,
@@ -37,6 +38,7 @@ impl UltragoalPaths {
         let safe_session = safe_part(session_id);
         let workflow_dir = workflow_base.join(WORKFLOW);
         let dir = artifact_base.join(WORKFLOW).join(&safe_session);
+        let evidence_dir = dir.join("evidence");
         Ok(Self {
             brief_file: dir.join("brief.md"),
             goals_file: dir.join("goals.json"),
@@ -45,6 +47,7 @@ impl UltragoalPaths {
             ralplan_state_file: workflow_base
                 .join(RALPLAN)
                 .join(format!("{safe_session}.json")),
+            evidence_dir,
             dir,
         })
     }
@@ -107,6 +110,8 @@ pub(super) fn write_runtime_state(
         "status": phase,
         "brief_path": plan.brief_path.clone(),
         "brief_sha256": plan.brief_sha256.clone(),
+        "artifact_dir": paths.dir.display().to_string(),
+        "evidence_dir": paths.evidence_dir.display().to_string(),
         "goals_path": paths.goals_file.display().to_string(),
         "ledger_path": paths.ledger_file.display().to_string(),
         "source": plan.source.clone(),
@@ -116,7 +121,7 @@ pub(super) fn write_runtime_state(
         "updated_at": timestamp,
     });
     if phase == "goal_planning" {
-        state["next"] = json!("run MEGARA_BIN=\"${MEGARA_BIN:-.agents/bin/megara}\"; \"$MEGARA_BIN\" ultragoal complete-goals before mutating product files");
+        state["next"] = json!("run MEGARA_BIN=\"${MEGARA_BIN:-.agents/bin/megara}\"; \"$MEGARA_BIN\" ultragoal start-goal before mutating product files");
     } else if phase == "active" {
         state["next"] = json!("execute active goal and checkpoint with quality gate evidence");
     }

@@ -55,7 +55,7 @@ pub fn run(args: UltragoalArgs) -> Result<()> {
         UltragoalCommands::CreateGoals(command) => {
             create::run(&paths, args.scope, &args.session_id, command)
         }
-        UltragoalCommands::CompleteGoals(command) => complete::run(&paths, command),
+        UltragoalCommands::StartGoal(command) => complete::run(&paths, command),
         UltragoalCommands::Checkpoint(command) => checkpoint::run(&paths, command),
         UltragoalCommands::Steer(command) => steer::run(&paths, command),
     }

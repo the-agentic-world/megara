@@ -1,7 +1,7 @@
 use super::{flow, store::*, *};
-use crate::cli::UltragoalCompleteGoalsArgs;
+use crate::cli::UltragoalStartGoalArgs;
 
-pub(super) fn run(paths: &UltragoalPaths, args: UltragoalCompleteGoalsArgs) -> Result<()> {
+pub(super) fn run(paths: &UltragoalPaths, args: UltragoalStartGoalArgs) -> Result<()> {
     let mut plan = read_plan_required(paths)?;
     let timestamp = timestamp();
     let Some(index) = flow::next_goal_index(&plan.goals, args.retry_failed) else {

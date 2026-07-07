@@ -29,7 +29,7 @@ pub(super) fn run(paths: &UltragoalPaths, args: UltragoalCheckpointArgs) -> Resu
     }
     if status == "complete" && plan.goals[index].status != "active" {
         bail!(
-            "complete checkpoints require an active goal; run `MEGARA_BIN=\"${{MEGARA_BIN:-.agents/bin/megara}}\"; \"$MEGARA_BIN\" ultragoal complete-goals` first"
+            "complete checkpoints require an active goal; run `MEGARA_BIN=\"${{MEGARA_BIN:-.agents/bin/megara}}\"; \"$MEGARA_BIN\" ultragoal start-goal` first"
         );
     }
 

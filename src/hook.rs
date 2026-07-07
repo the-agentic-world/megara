@@ -12,10 +12,10 @@ use crate::cli::HookArgs;
 
 #[path = "hook/artifacts.rs"]
 mod artifacts;
-#[path = "hook/codex_plan.rs"]
-pub(crate) mod codex_plan;
 #[path = "hook/conversation.rs"]
 mod conversation;
+#[path = "hook/deep_interview_milestone.rs"]
+mod deep_interview_milestone;
 #[path = "hook/dispatch.rs"]
 mod dispatch;
 #[path = "hook/fsutil.rs"]
@@ -52,6 +52,8 @@ pub(crate) mod state_paths;
 mod stop;
 #[path = "hook/subagent.rs"]
 mod subagent;
+#[path = "hook/subagent_gate.rs"]
+mod subagent_gate;
 #[path = "hook/terminal.rs"]
 mod terminal;
 #[path = "hook/user_prompt.rs"]
@@ -66,10 +68,10 @@ use parser::{
 };
 use session_alias::reconcile_session_aliases;
 use state::{
-    answer_pending_question, new_state, reject_crystallized_without_spec,
-    reject_ralplan_handoff_not_ready, reject_ralplan_input_lock, reject_ralplan_without_plan,
-    reject_ralplan_without_reviews, require_ralplan_input_lock, update_terminal_state,
-    upsert_question,
+    answer_pending_question, mark_ralplan_input_lock_ready, new_state,
+    reject_crystallized_without_spec, reject_ralplan_handoff_not_ready, reject_ralplan_input_lock,
+    reject_ralplan_without_plan, reject_ralplan_without_reviews, require_ralplan_input_lock,
+    update_terminal_state, upsert_question,
 };
 use state_paths::{
     safe_part, scoped_state_dir, timestamp, unique_payload_path, value_to_string, workflow_paths,

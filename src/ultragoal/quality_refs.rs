@@ -18,6 +18,16 @@ pub(super) fn validate(value: &Value, key: &str, artifact_root: &Path) -> Result
     Ok(())
 }
 
+pub(super) fn validate_optional(value: &Value, key: &str, artifact_root: &Path) -> Result<()> {
+    let Some(items) = value.get(key) else {
+        return Ok(());
+    };
+    if items.as_array().is_some_and(Vec::is_empty) {
+        return Ok(());
+    }
+    validate(value, key, artifact_root)
+}
+
 pub(super) fn require_string_array(value: &Value, key: &str) -> Result<Vec<String>> {
     let items = value
         .get(key)

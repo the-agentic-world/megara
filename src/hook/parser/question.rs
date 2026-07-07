@@ -66,6 +66,7 @@ fn looks_like_deep_interview_turn(text: &str, options: &[String]) -> bool {
     let lower = text.to_ascii_lowercase();
     lower.contains("ambiguity")
         || text.contains("모호성")
+        || text.contains("모호도")
         || options
             .last()
             .is_some_and(|option| is_free_text_catch_all(option))

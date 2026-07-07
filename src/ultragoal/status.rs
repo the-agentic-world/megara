@@ -13,6 +13,7 @@ pub(super) fn run(
                 serde_json::to_string_pretty(&json!({
                     "session_id": session_id,
                     "path": paths.dir.display().to_string(),
+                    "evidence_dir": paths.evidence_dir.display().to_string(),
                     "state": "missing",
                     "counts": GoalCounts::default(),
                     "active_goal": Value::Null,
@@ -31,6 +32,7 @@ pub(super) fn run(
     let report = StatusReport {
         session_id: &plan.session_id,
         path: &paths.dir,
+        evidence_dir: &paths.evidence_dir,
         state: "ready",
         counts: goal_counts(&plan.goals),
         active_goal: plan.goals.iter().find(|goal| goal.status == "active"),

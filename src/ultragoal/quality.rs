@@ -29,11 +29,11 @@ pub(crate) fn validate_quality_gate(value: &Value, artifact_root: &Path) -> Resu
 
     let qa = section(value, "executorQa")?;
     require_str_eq(qa, "status", "passed")?;
-    require_str_eq(qa, "e2eStatus", "passed")?;
+    require_str_one_of(qa, "e2eStatus", &["passed", "skipped"])?;
     require_str_eq(qa, "redTeamStatus", "passed")?;
     require_substantive_str(qa, "evidence")?;
     quality_refs::require_string_array(qa, "commands")?;
-    quality_refs::validate(qa, "artifactRefs", artifact_root)?;
+    quality_refs::validate_optional(qa, "artifactRefs", artifact_root)?;
     require_empty_array(qa, "blockers")?;
 
     let iteration = section(value, "iteration")?;
@@ -43,7 +43,7 @@ pub(crate) fn validate_quality_gate(value: &Value, artifact_root: &Path) -> Resu
     }
     require_substantive_str(iteration, "evidence")?;
     quality_refs::require_string_array(iteration, "commands")?;
-    quality_refs::validate(iteration, "artifactRefs", artifact_root)?;
+    quality_refs::validate_optional(iteration, "artifactRefs", artifact_root)?;
     require_empty_array(iteration, "blockers")?;
     Ok(())
 }
@@ -70,6 +70,23 @@ fn require_str_eq(value: &Value, key: &str, expected: &str) -> Result<()> {
         .with_context(|| format!("quality gate missing string field {key}"))?;
     if !actual.eq_ignore_ascii_case(expected) {
         bail!("quality gate {key} must be {expected}, got {actual}");
+    }
+    Ok(())
+}
+
+fn require_str_one_of(value: &Value, key: &str, expected: &[&str]) -> Result<()> {
+    let actual = value
+        .get(key)
+        .and_then(Value::as_str)
+        .with_context(|| format!("quality gate missing string field {key}"))?;
+    if !expected
+        .iter()
+        .any(|candidate| actual.eq_ignore_ascii_case(candidate))
+    {
+        bail!(
+            "quality gate {key} must be one of {}, got {actual}",
+            expected.join(", ")
+        );
     }
     Ok(())
 }

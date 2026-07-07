@@ -21,7 +21,7 @@ Use this workflow after a request is clear enough to plan, but before implementa
 - The planner creates the first plan.
 - The architect reviews system shape, boundaries, and tradeoffs.
 - The critic rejects vague, unverifiable, or internally inconsistent plans.
-- When the runtime exposes subagent tools, run planner, architect, and critic as read-only subagent reviews. If subagent tools are unavailable, perform the same review loop in the main session without mutating files.
+- In the Codex runtime adapter, hooks inject a hidden requirement to run planner, architect, and critic as context-only, tool-free subagents. The pending-approval plan is continued until those subagent receipts are observed.
 - Iterate until the plan is executable, the user requests refinement, or a blocker is explicit.
 - Do not finish with a pending-approval plan until planner, architect, and critic passes have all been recorded, the planner and architect verdicts are approval-capable, and the critic verdict is `OKAY`.
 - Always finish approved planning with a pending-approval plan and clear execution options. Do not output runtime metadata.
@@ -29,6 +29,7 @@ Use this workflow after a request is clear enough to plan, but before implementa
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 - Do not send progress messages that merely narrate internal workflow mechanics such as reading this skill, checking locks, running review roles, inferring review coverage, persisting plans, or preparing handoff state. Keep those details internal. User-visible output should be the plan, a blocker, or an approval question.
+- Do not send commentary while spawning or waiting for planner, architect, or critic subagents. Wait silently and then send only the final pending-approval plan, a user-friendly blocker, or the approval question.
 
 ## Planning Shape
 
@@ -41,18 +42,44 @@ The plan must include:
 - Acceptance criteria.
 - Verification commands or evidence.
 - Risks, tradeoffs, and rollback notes where relevant.
+- Baseline failure handling whenever verification commands are part of the
+  plan: if a verification command already fails before the change, classify it
+  as pre-existing, avoid expanding scope to fix unrelated failures, and verify
+  no new failures plus targeted evidence for the approved work.
+- Plan-owned clarification whenever the missing detail can be closed by a
+  conservative verification rule. Do not block on details such as which exact
+  status widgets, keyboard no-op behavior, accessibility labels, baseline-test
+  semantics, or report surfaces to inspect. Pick the stricter product-facing
+  criterion, state it in the plan, and let execution validate it.
+
+The plan body must stay product-facing. Do not put workflow or handoff names
+such as `ralplan`, `ultragoal`, or `team` inside the plan body. Reserve approval
+targets for the final numbered approval choices only.
 
 ## Review Loop
 
-Use this review order before producing the pending-approval plan:
+Before producing the pending-approval plan, create one concrete internal draft
+plan and get three isolated Codex subagent reviews: planner, architect, and
+critic. Every review prompt must include the draft plan under review, not only
+the raw task or spec.
 
-1. Planner: draft the proportional execution plan from known facts.
-2. Architect: review boundaries, affected surfaces, sequencing, and reversibility.
-3. Critic: return `OKAY`, `ITERATE`, or `REJECT`.
+The planner checks proportionality and execution order. The architect checks
+boundaries, affected surfaces, sequencing, and reversibility. The critic returns
+`OKAY`, `ITERATE`, or `REJECT`.
 
-Prefer isolated read-only subagent context for each pass when available. Do not delegate final user-facing approval wording to a subagent; the main session owns the final plan and approval question.
+Subagent prompts must be short and must forbid tools, file reads, file writes,
+Megara workflow/skill invocation, nested subagents, implementation, and progress
+output. The main session owns the final user-facing plan and approval question.
 
-If the critic returns `ITERATE`, revise once and run the critic pass again. If the critic still blocks, stop with the blocker instead of inventing certainty.
+If the critic returns `ITERATE`, revise once and run the critic pass again. Turn
+critic requests about verification detail into explicit plan criteria instead of
+asking the user to re-decide them. If the critic still blocks, stop only when the
+missing fact cannot be safely planned around. If the blocker is user-resolvable,
+ask one compact clarification question with numbered choices; do not end with a
+generic list of unresolved review notes.
+
+If any subagent says no plan was provided, that pass is invalid. Rerun only that
+role with the draft plan included instead of stopping with a no-plan blocker.
 
 Planner `DRAFT` means the plan is still an intermediate draft. It may be recorded during review, but it is not approval-capable and must not be used in the final pending-approval response. Before asking for approval, the latest planner verdict must be `CLEAR`, `WATCH`, or `OKAY`.
 
@@ -62,7 +89,7 @@ The pending-approval plan is allowed only after these review conditions are true
 - Latest architect pass is `CLEAR`, `WATCH`, or `OKAY`.
 - Latest critic pass is `OKAY`.
 
-After each planner, architect, or critic pass, keep the review result internal. Do not write review notes to files directly and do not output review metadata, HTML comments, YAML-like control blocks, JSON, or code fences. Runtime hooks infer review coverage from the visible pending-approval plan and store runtime state internally.
+After each planner, architect, or critic pass, keep the review result internal. Do not write review notes to files directly and do not output review metadata, HTML comments, YAML-like control blocks, JSON, or code fences in the main user-facing response. Runtime hooks record subagent receipts and infer review coverage from the visible pending-approval plan.
 
 ## Plan Gate
 

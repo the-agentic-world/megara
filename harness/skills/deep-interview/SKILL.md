@@ -19,8 +19,13 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - In parseable blocks, free-text values such as `question`, `options`, `rationale`, and `summary` should use the configured locale unless they are technical literals.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 - Do not copy English section headings into user-facing output. Translate final-spec labels such as `Round 0: Topology Confirmation`, `remaining ambiguity`, `weakest dimension`, and `next target` into the configured locale when they appear in the final artifact.
-- Inspect repository facts before asking the user about facts the repository can answer.
-- Start with Round 0 topology confirmation: identify top-level components or outcomes and ask whether the shape is correct.
+- Start with Round 0 topology confirmation before broad repository inspection:
+  identify top-level components or outcomes from the user request and ask
+  whether the shape is correct.
+- After Round 0 is answered, do not block the immediate next question on
+  repository inspection. Ask one compact follow-up from the confirmed topology
+  first, then inspect repository facts only when the next decision depends on
+  facts the repository can answer.
 - Score remaining ambiguity after each answer as a percentage, not a 0-10 rating.
 - Keep active interview output compact for humans; do not include technical hook blocks in active user-facing answers.
 - Show the current ambiguity score on every active interview question.
@@ -113,7 +118,9 @@ After each user answer, update the scores and carry them into the final crystall
 <configured-locale ambiguity label>: NN%
 ```
 
-For Round 0, estimate the initial ambiguity from the user's request and repository facts. If there is not enough information to make a useful estimate, show `100%`.
+For Round 0, estimate the initial ambiguity from the user's request and any
+already-loaded project context. Do not read project files just to prepare Round
+0. If there is not enough information to make a useful estimate, show `100%`.
 
 Do not show dimension-level score details in active question turns. If you need a private score note, keep it out of the user-facing answer.
 
@@ -135,30 +142,19 @@ Megara hooks back this workflow with append-only local state. Treat active quest
 
 - Codex App delegation wrappers such as `<codex_delegation><input>...</input>` are runtime transport details. The hook records the effective user prompt from inside `<input>`; do not mirror wrappers in user-facing prose.
 - Each user answer should respond only to the current visible question. The runtime records the answer, pending question, and conversation event locally.
-- Use read-only subagents for lateral review at milestone transitions and before final crystallization when the runtime exposes subagent tools. Use them for research, contradiction checks, simplification, or architecture blind-spot checks.
+- Use subagents for lateral review at milestone transitions and before final crystallization when the runtime exposes subagent tools. Provide the compact interview context they need in the prompt and tell them to make a short judgment from that context only.
+- Deep-interview lateral-review subagents must not call tools, read files, write files, invoke Megara workflows or skills, spawn nested subagents, implement, or perform long exploration.
 - Do not move the active question/answer loop into a subagent. The user-facing question stays in the main session.
-- If subagent tools are unavailable, continue in the main session and keep the same read-only review discipline.
+- In the Codex runtime adapter, the hook may inject a hidden subagent instruction at workflow start and continue the turn if final crystallization is attempted before the required subagent receipt is observed. Follow that continuation instruction silently.
+- Deep-interview does not require Codex Plan mode. Do not ask the user to toggle `/plan`, resend the same request in Plan mode, or choose a fallback path because of Plan mode.
 - Once the final spec crystallizes, stop. The next workflow must be `ralplan`, and implementation mutation is blocked by the runtime until `ralplan` owns or approves the handoff.
-
-## Codex Plan-Mode Activation
-
-When running under the Codex runtime adapter, native Codex Plan mode is required for the first deep-interview turn.
-
-Runtime hooks attempt to activate Codex Plan mode before Round 0 when all conditions are true:
-
-- current request starts deep-interview,
-- current request did not already start with `/plan`,
-- hook payload does not report `permission_mode: plan`.
-
-If automatic activation succeeds, begin Round 0 normally.
-
-If automatic activation fails, do not begin Round 0. Tell the user in the configured locale to activate Codex Plan mode first, then resend the same deep-interview request. Do not offer a "continue without Plan mode" option.
-
-Do not show an ambiguity score, record a pending interview question, emit `Megara Workflow State`, inspect files, run tools, or start implementation during Plan-mode activation handling. A `/plan` text prefix is not enough by itself; skip this section only when the runtime or transcript reports Plan mode.
 
 ## Round 0: Topology Confirmation
 
-Before scoring, enumerate top-level components from the user's idea and any repo context.
+Before scoring, enumerate top-level components from the user's idea and any
+already-loaded repo context. Do not run broad searches or read source files
+before the first topology question unless the user's prompt explicitly asks for
+a repository audit before interviewing.
 
 - Prefer 1-6 components.
 - Components are outcomes that can succeed or fail independently.
@@ -193,6 +189,8 @@ Active interview turns must be compact. Show only the information needed for the
 3. One targeted question.
 4. A short numbered option list with exactly four options.
 
+Do not send progress or commentary messages while reading files, checking runtime state, spawning subagents, waiting for subagents, updating ledgers, or preparing the next gate. Wait silently and then send only the compact next question or the final crystallized spec.
+
 Do not print technical hook-gate headers, parseable gate blocks, full score tables, dimension score tables, full topology tables, all established facts, all open gaps, trigger history, lateral-review notes, transcript summaries, semantic ledger updates, or internal reasoning during active question turns. Keep those details in local records and the final crystallized lock artifact.
 
 Never include labels such as `weakest dimension`, `next target`, `Interview ledger update`, `Established facts`, or `Open gaps` in an active question turn. The user only needs the ambiguity score, next question, and answer choices.
@@ -206,11 +204,21 @@ Classify the interview as greenfield or brownfield.
 - Greenfield: no meaningful existing implementation or the user is asking for a new standalone artifact.
 - Brownfield: existing source, config, data, or behavior will be changed or integrated.
 
-For brownfield work, gather facts before asking decision questions:
+For brownfield work, keep the first post-Round-0 follow-up fast. Ask one compact
+scope, priority, or verification question from the confirmed topology before a
+repository fact pass unless the user explicitly requested an audit-first flow.
+After that, gather facts before asking decision questions that depend on
+repository facts:
 
-- Search/read focused files, docs, package manifests, tests, or configuration.
+- Use a minimal fact pass: inspect file names/manifests first, then read at most
+  five focused source, test, docs, or configuration files needed for the next
+  question.
+- Avoid broad full-file dumps, exhaustive test reads, or repository-wide
+  exploration during an active question turn.
 - Cite the file path, symbol, or pattern that triggered the question.
 - Do not ask the user to restate facts the repository can answer.
+- Return to exactly one compact question as soon as the next decision point is
+  clear.
 
 If the initial context is too large, summarize it first. Preserve user intent, constraints, decisions, unknowns, cited files, and explicit non-goals. Use the summary for scoring and questions instead of carrying raw oversized text forward.
 
@@ -309,21 +317,21 @@ Use milestone bands:
 | refined | above active target through 30% |
 | target reached | <= active target |
 
-At milestone transitions, run a read-only lateral review before the next question. Use the existing internal fragments when available:
+At milestone transitions, run a lateral review before the next question. Use the existing internal fragments when available:
 
 - `researcher`: external facts, prior art, version/compatibility constraints.
 - `contrarian`: assumptions that may be false or habitual.
 - `simplifier`: the smallest valuable version.
 - `architect`: system shape, ownership, integration, and migration risks.
 
-When the runtime supports subagent tools, request exactly one read-only subagent reviewer for each milestone transition. Choose the persona that matches the weakest remaining ambiguity dimension:
+When the runtime supports subagent tools, request exactly one subagent reviewer for each milestone transition. The prompt must include the current compact context, must forbid tool calls and file reads, and must ask for a short final-answer-only verdict from prompt context only. Choose the persona that matches the weakest remaining ambiguity dimension:
 
 - `researcher` for missing external facts, versions, compatibility, or prior art.
 - `contrarian` for contradictions, hidden assumptions, or risky defaults.
 - `simplifier` for oversized scope or unclear minimum viable value.
 - `architect` for ownership, integration, migration, or system-boundary risk.
 
-Before final crystallization, request one final read-only subagent review unless a subagent was already used in the immediately preceding milestone step. Use subagents as advisory reviewers only; their output should be distilled into at most one main-session question or one final-spec adjustment.
+Before final crystallization, request one final subagent review unless a subagent was already used in the immediately preceding milestone step. In Codex, the default required receipt is an `architect` subagent. Use subagents as advisory reviewers only; their output should be distilled into at most one main-session question or one final-spec adjustment.
 
 Fold only the highest-value finding into the next single question. The panel does not add extra questions, does not decide requirements, and does not permit implementation.
 

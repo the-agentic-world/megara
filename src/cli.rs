@@ -22,8 +22,8 @@ pub use install::{DoctorArgs, HookArgs, InstallArgs};
 pub use resolve::{resolve_scope, resolve_target};
 pub use templates::{TargetCommands, TemplateCommands};
 pub use ultragoal::{
-    UltragoalArgs, UltragoalCheckpointArgs, UltragoalCommands, UltragoalCompleteGoalsArgs,
-    UltragoalCreateGoalsArgs, UltragoalGoalStatusArg, UltragoalStatusArgs, UltragoalSteerArgs,
+    UltragoalArgs, UltragoalCheckpointArgs, UltragoalCommands, UltragoalCreateGoalsArgs,
+    UltragoalGoalStatusArg, UltragoalStartGoalArgs, UltragoalStatusArgs, UltragoalSteerArgs,
     UltragoalSteerKindArg,
 };
 pub use update::UpdateArgs;

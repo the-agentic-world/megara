@@ -21,7 +21,8 @@ pub enum UltragoalCommands {
     /// Create durable goals from an approved ralplan handoff.
     CreateGoals(UltragoalCreateGoalsArgs),
     /// Select or resume the next goal.
-    CompleteGoals(UltragoalCompleteGoalsArgs),
+    #[command(name = "start-goal", alias = "complete-goals")]
+    StartGoal(UltragoalStartGoalArgs),
     /// Record a goal checkpoint and evidence.
     Checkpoint(UltragoalCheckpointArgs),
     /// Add controlled steering information.
@@ -51,7 +52,7 @@ pub struct UltragoalCreateGoalsArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct UltragoalCompleteGoalsArgs {
+pub struct UltragoalStartGoalArgs {
     #[arg(long)]
     pub retry_failed: bool,
     #[arg(long)]

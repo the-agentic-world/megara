@@ -9,9 +9,11 @@ pub(super) struct LinkedSpec {
 
 pub(super) fn linked_deep_interview_spec(paths: &WorkflowPaths) -> Option<LinkedSpec> {
     let state = deep_interview_state(paths)?;
-    if state.get("status").and_then(Value::as_str) != Some("crystallized") {
-        return None;
-    }
+    linked_spec_from_state(&state).or_else(|| superseded_linked_spec(paths, &state))
+}
+
+fn linked_spec_from_state(state: &Value) -> Option<LinkedSpec> {
+    (state.get("status").and_then(Value::as_str) == Some("crystallized")).then_some(())?;
     Some(LinkedSpec {
         path: state.get("spec_path")?.as_str()?.to_string(),
         sha256: state.get("spec_sha256")?.as_str()?.to_string(),
@@ -21,6 +23,12 @@ pub(super) fn linked_deep_interview_spec(paths: &WorkflowPaths) -> Option<Linked
             .unwrap_or_default()
             .to_string(),
     })
+}
+
+fn superseded_linked_spec(paths: &WorkflowPaths, state: &Value) -> Option<LinkedSpec> {
+    let superseded_by = state.get("stale_superseded_by")?.as_str()?;
+    let state = deep_interview_state_for_session(paths, superseded_by)?;
+    linked_spec_from_state(&state)
 }
 
 pub(super) fn ralplan_input_lock_blocker(
@@ -47,10 +55,14 @@ pub(super) fn active_deep_interview_state(paths: &WorkflowPaths) -> Option<Value
 }
 
 fn deep_interview_state(paths: &WorkflowPaths) -> Option<Value> {
+    deep_interview_state_for_session(paths, &paths.session_id)
+}
+
+fn deep_interview_state_for_session(paths: &WorkflowPaths, session_id: &str) -> Option<Value> {
     let workflow_base = paths.workflow_dir.parent()?;
     let deep_state_path = workflow_base
         .join(DEEP_INTERVIEW)
-        .join(format!("{}.json", safe_part(&paths.session_id)));
+        .join(format!("{}.json", safe_part(session_id)));
     let state = load_json(&deep_state_path)?;
     (state.get("skill").and_then(Value::as_str) == Some(DEEP_INTERVIEW)).then_some(state)
 }

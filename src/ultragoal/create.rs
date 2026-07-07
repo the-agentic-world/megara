@@ -42,7 +42,7 @@ pub(super) fn run(
         })
         .collect::<Vec<_>>();
 
-    fs::create_dir_all(&paths.dir)?;
+    fs::create_dir_all(&paths.evidence_dir)?;
     write_text_atomic(&paths.brief_file, ensure_trailing_newline(&brief).as_str())?;
     let plan = UltragoalPlan {
         version: 1,
