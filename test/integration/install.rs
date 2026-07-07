@@ -140,13 +140,19 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Keep active interview output compact for humans"));
     assert!(skill.contains("Show the current ambiguity score on every active interview question"));
     assert!(skill.contains("exactly four visible options"));
+    assert!(skill.contains("Show one recommendation line before the options"));
+    assert!(skill.contains("what you recommend and why"));
+    assert!(skill.contains("(Recommended)"));
     assert!(skill
-        .contains("The user only needs the ambiguity score, next question, and answer choices"));
+        .contains("The user only needs the ambiguity score, next question, recommendation, and answer choices"));
     assert!(skill.contains("do not include technical hook blocks"));
     assert!(skill.contains("short numbered visible option list"));
     assert!(skill.contains("1. <option 1>"));
+    assert!(skill.contains("1. <option 1> (Recommended)"));
     assert!(skill.contains("3. <option 3>"));
     assert!(skill.contains("4. <configured-locale direct input / not in listed options>"));
+    assert!(skill.contains("Append the literal suffix `(Recommended)`"));
+    assert!(skill.contains("Do not mark option 4 as recommended"));
     assert!(skill.contains("user may answer with the option number"));
     assert!(skill.contains("direct input / not in listed options"));
     assert!(skill.contains("Do not include technical gate blocks"));

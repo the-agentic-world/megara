@@ -22,7 +22,10 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
         state["pending_question"]["question"],
         "What proves this is done?"
     );
-    assert_eq!(state["pending_question"]["options"][0], "Unit tests");
+    assert_eq!(
+        state["pending_question"]["options"][0],
+        "Unit tests (Recommended)"
+    );
     assert_eq!(state["pending_question"]["options"][2], "Manual QA");
     assert_eq!(
         state["pending_question"]["options"][3],
@@ -502,6 +505,9 @@ fn deep_interview_answer_injects_milestone_preflight_context() {
     assert!(stdout.contains("active ambiguity target is 15%"));
     assert!(stdout.contains("if the next visible ambiguity score is <= 15%"));
     assert!(stdout.contains("do not ask an ordinary interview question"));
+    assert!(stdout.contains("one recommendation line before the options"));
+    assert!(stdout.contains("because the active ambiguity target has been reached"));
+    assert!(stdout.contains("(Recommended)"));
 }
 
 #[test]

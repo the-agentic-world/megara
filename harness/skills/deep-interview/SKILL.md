@@ -30,6 +30,7 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Keep active interview output compact for humans; do not include technical hook blocks in active user-facing answers.
 - Show the current ambiguity score on every active interview question.
 - Use exactly four visible options on every active interview question: three concrete choices plus one configured-locale free-text catch-all option for answers outside the listed choices.
+- Show one recommendation line before the options. Explain what you recommend and why in the configured locale, then mark exactly one concrete option with the literal suffix `(Recommended)`.
 - Target the weakest active component and dimension each round.
 - Continue until ambiguity reaches the active ambiguity target, then ask whether to crystallize for `ralplan` or continue to the next stricter target.
 - End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
@@ -78,7 +79,9 @@ Each target means the interview has enough clarity for that precision level only
 
 Milestone decision questions are still active interview questions. They must show the current ambiguity score and exactly four visible numbered options:
 
-1. Proceed to `ralplan` with the current crystallized spec.
+Default recommendation: proceed to `ralplan` because the active ambiguity target has been reached and the current spec is clear enough for planning.
+
+1. Proceed to `ralplan` with the current crystallized spec. (Recommended)
 2. Continue deep-interview to the next ambiguity target.
 3. Continue deep-interview only on a named component or risk.
 4. Direct input / not in the listed options.
@@ -172,7 +175,9 @@ Ask exactly one first-round topology confirmation question. Use configured-local
 
 <configured-locale single confirmation question about adding, removing, merging, splitting, or deferring components>
 
-1. <configured-locale accept as-is option>
+<configured-locale recommendation label>: <configured-locale recommended option> - <configured-locale one-sentence reason>
+
+1. <configured-locale accept as-is option> (Recommended)
 2. <configured-locale adjust components option>
 3. <configured-locale defer or prioritize components option>
 4. <configured-locale direct input / not in listed options>
@@ -187,13 +192,14 @@ Active interview turns must be compact. Show only the information needed for the
 1. Exactly one compact ambiguity score line.
 2. One short context sentence only when it materially helps the user answer.
 3. One targeted question.
-4. A short numbered option list with exactly four options.
+4. One short recommendation line explaining what you recommend and why.
+5. A short numbered option list with exactly four options.
 
 Do not send progress or commentary messages while reading files, checking runtime state, spawning subagents, waiting for subagents, updating ledgers, or preparing the next gate. Wait silently and then send only the compact next question or the final crystallized spec.
 
 Do not print technical hook-gate headers, parseable gate blocks, full score tables, dimension score tables, full topology tables, all established facts, all open gaps, trigger history, lateral-review notes, transcript summaries, semantic ledger updates, or internal reasoning during active question turns. Keep those details in local records and the final crystallized lock artifact.
 
-Never include labels such as `weakest dimension`, `next target`, `Interview ledger update`, `Established facts`, or `Open gaps` in an active question turn. The user only needs the ambiguity score, next question, and answer choices.
+Never include labels such as `weakest dimension`, `next target`, `Interview ledger update`, `Established facts`, or `Open gaps` in an active question turn. The user only needs the ambiguity score, next question, recommendation, and answer choices.
 
 Final crystallized output may be longer because it becomes the persisted markdown lock artifact. Even then, avoid duplicating round details beyond what is needed for `ralplan`.
 
@@ -257,7 +263,9 @@ Do not include technical gate blocks in active question answers. Runtime hooks i
 
 <single question text?>
 
-1. <option 1>
+<configured-locale recommendation label>: <recommended option> - <one-sentence reason this is recommended>
+
+1. <option 1> (Recommended)
 2. <option 2>
 3. <option 3>
 4. <configured-locale direct input / not in listed options>
@@ -268,6 +276,9 @@ Rules:
 - The visible question should be one line ending with a question mark.
 - Do not omit `options`; provide exactly four visible options.
 - Number each option from 1 in order.
+- Include exactly one recommendation line before the numbered options. It must say which option you recommend and why.
+- Append the literal suffix `(Recommended)` to exactly one of options 1-3. Do not mark option 4 as recommended.
+- If none of options 1-3 is safe to recommend, rewrite options 1-3 so one conservative, reversible, or information-preserving option is recommendable.
 - The user may answer with the option number or with free text.
 - Options 1-3 must be concrete choices that answer the question.
 - Option 4 must always be a configured-locale catch-all such as "direct input / not in listed options". This option is visible UX, not a restriction on free-text answers.
