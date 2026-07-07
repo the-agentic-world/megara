@@ -160,6 +160,35 @@ fn git_guard_feedback_leak_is_blocked_before_user_output() {
     assert!(!stdout.contains("<hook_prompt"));
 }
 
+#[test]
+fn git_guard_ignores_internal_hook_feedback_as_user_prompt() {
+    let dir = git_project();
+    let payload = format!(
+        r#"{{"session_id":"sess-hook-feedback","cwd":"{}","prompt":"<hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">Megara needs an internal git cleanup pass before the final response.</hook_prompt>"}}"#,
+        dir.path().display()
+    );
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload.as_bytes(),
+    );
+
+    assert_success(&output);
+    assert!(String::from_utf8_lossy(&output.stdout).trim().is_empty());
+    assert!(!dir
+        .path()
+        .join(".megara/state/hooks/git-guard/sess-hook-feedback.json")
+        .exists());
+    let conversation =
+        fs::read_to_string(dir.path().join(".megara/state/hooks/conversation.jsonl"))
+            .unwrap_or_default();
+    assert!(!conversation.contains("internal git cleanup pass"));
+    assert!(!conversation.contains("<hook_prompt"));
+}
+
 fn git_project() -> tempfile::TempDir {
     let dir = tempdir().unwrap();
     git(dir.path(), &["init"]);

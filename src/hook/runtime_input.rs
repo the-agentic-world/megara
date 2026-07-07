@@ -65,6 +65,8 @@ pub(crate) fn effective_prompt_from_payload(payload: &Value) -> Option<String> {
         .get("prompt")
         .and_then(Value::as_str)
         .map(effective_prompt_text)
+        .filter(|prompt| !prompt.trim().is_empty())
+        .filter(|prompt| !is_internal_hook_feedback(prompt))
 }
 
 pub(crate) fn assistant_message_from_payload(payload: &Value) -> Option<String> {
@@ -90,7 +92,9 @@ pub(crate) fn effective_prompt_text(prompt: &str) -> String {
 }
 
 fn clean_effective_prompt(prompt: &str) -> String {
-    html_unescape_basic(prompt).trim().to_string()
+    strip_hook_prompt_blocks(&html_unescape_basic(prompt))
+        .trim()
+        .to_string()
 }
 
 fn extract_delegated_input(prompt: &str) -> Option<&str> {
@@ -113,6 +117,73 @@ fn html_unescape_basic(value: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&amp;", "&")
+}
+
+pub(crate) fn is_internal_hook_feedback(text: &str) -> bool {
+    let unescaped = html_unescape_basic(text);
+    let stripped = strip_hook_prompt_blocks(&unescaped);
+    if stripped.trim().is_empty() && contains_hook_prompt_tag(&unescaped) {
+        return true;
+    }
+
+    let lowered = stripped.trim().to_ascii_lowercase();
+    if lowered.is_empty() {
+        return false;
+    }
+
+    INTERNAL_HOOK_FEEDBACK_PREFIXES
+        .iter()
+        .any(|prefix| lowered.starts_with(prefix))
+}
+
+pub(crate) fn contains_internal_hook_feedback(text: &str) -> bool {
+    let unescaped = html_unescape_basic(text);
+    if contains_hook_prompt_tag(&unescaped) {
+        return true;
+    }
+    let lowered = unescaped.to_ascii_lowercase();
+    INTERNAL_HOOK_FEEDBACK_PREFIXES
+        .iter()
+        .any(|prefix| lowered.contains(prefix))
+}
+
+const INTERNAL_HOOK_FEEDBACK_PREFIXES: &[&str] = &[
+    "megara git guard:",
+    "megara mutation guard:",
+    "megara deep-interview reached",
+    "megara needs an internal git cleanup pass before the final response",
+    "megara internal guard feedback must stay hidden",
+    "megara runtime artifact or state paths are internal",
+    "internal megara workflow instruction",
+    "keep this runtime instruction internal",
+];
+
+fn contains_hook_prompt_tag(text: &str) -> bool {
+    text.to_ascii_lowercase().contains("<hook_prompt")
+}
+
+fn strip_hook_prompt_blocks(text: &str) -> String {
+    let mut output = String::new();
+    let mut cursor = 0;
+    loop {
+        let lowered = text[cursor..].to_ascii_lowercase();
+        let Some(relative_start) = lowered.find("<hook_prompt") else {
+            output.push_str(&text[cursor..]);
+            break;
+        };
+        let start = cursor + relative_start;
+        output.push_str(&text[cursor..start]);
+        let Some(relative_tag_end) = text[start..].find('>') else {
+            break;
+        };
+        let body_start = start + relative_tag_end + 1;
+        let lowered_after_tag = text[body_start..].to_ascii_lowercase();
+        let Some(relative_end) = lowered_after_tag.find("</hook_prompt>") else {
+            break;
+        };
+        cursor = body_start + relative_end + "</hook_prompt>".len();
+    }
+    output
 }
 
 fn classify_surface(meta: Option<&TranscriptMeta>, payload: &Value) -> RuntimeSurface {

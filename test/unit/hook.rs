@@ -155,6 +155,45 @@ fn effective_prompt_extracts_plan_prefix_from_delegated_input() {
 }
 
 #[test]
+fn effective_prompt_ignores_standalone_hook_feedback() {
+    let payload = json!({
+        "prompt": "<hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">Megara needs an internal git cleanup pass before the final response.</hook_prompt>"
+    });
+
+    assert_eq!(effective_prompt_from_payload(&payload), None);
+}
+
+#[test]
+fn effective_prompt_strips_hook_feedback_and_keeps_user_answer() {
+    let prompt = "<codex_delegation><input><hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">Megara deep-interview reached 14% ambiguity at the active 15% target. Keep this runtime instruction internal.</hook_prompt>\n\n1</input></codex_delegation>";
+
+    let effective = effective_prompt_text(prompt);
+
+    assert_eq!(effective, "1");
+}
+
+#[test]
+fn effective_prompt_ignores_raw_internal_guard_feedback() {
+    let payload = json!({
+        "prompt": "MEGARA git guard: commit required before completion. Stage explicit files only."
+    });
+
+    assert_eq!(effective_prompt_from_payload(&payload), None);
+}
+
+#[test]
+fn effective_prompt_keeps_user_bug_report_about_hook_feedback() {
+    let payload = json!({
+        "prompt": "훅 피드백 또 생김\nMegara needs an internal git cleanup pass before the final response\n사용자 입력으로 오입력 되지 않게 조치하라."
+    });
+
+    assert_eq!(
+        effective_prompt_from_payload(&payload).as_deref(),
+        Some("훅 피드백 또 생김\nMegara needs an internal git cleanup pass before the final response\n사용자 입력으로 오입력 되지 않게 조치하라.")
+    );
+}
+
+#[test]
 fn runtime_context_reads_transcript_surface() {
     let dir = tempfile::tempdir().unwrap();
     let transcript = dir.path().join("session.jsonl");

@@ -293,17 +293,7 @@ fn block_visible_runtime_reference(
 }
 
 fn contains_internal_hook_feedback(text: &str) -> bool {
-    let lowered = text.to_ascii_lowercase();
-    [
-        "<hook_prompt",
-        "megara git guard:",
-        "megara mutation guard:",
-        "megara deep-interview reached",
-        "internal megara workflow instruction",
-        "keep this runtime instruction internal",
-    ]
-    .iter()
-    .any(|needle| lowered.contains(needle))
+    runtime_input::contains_internal_hook_feedback(text)
 }
 
 fn contains_runtime_reference(text: &str) -> bool {

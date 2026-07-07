@@ -113,6 +113,7 @@ pub fn run(args: HookArgs) -> Result<i32> {
     let payload = serde_json::from_str::<Value>(&payload_text).unwrap_or_else(|_| json!({}));
     let payload_bytes = payload_text.len();
     let runtime_context = runtime_input::runtime_context(&payload);
+    let has_effective_user_prompt = runtime_context.effective_prompt.is_some();
 
     let safe_runtime = safe_part(&options.runtime);
     let safe_event = safe_part(&options.event);
@@ -156,7 +157,7 @@ pub fn run(args: HookArgs) -> Result<i32> {
         &payload_file,
         payload_bytes,
     )?;
-    if options.event == "UserPromptSubmit" {
+    if options.event == "UserPromptSubmit" && has_effective_user_prompt {
         git_guard::capture_baseline_if_absent(
             &timestamp,
             &state_dir,
