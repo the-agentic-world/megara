@@ -137,6 +137,17 @@ fn non_writable_current_install_dir_errors_without_user_fallback() {
 }
 
 #[test]
+fn update_installer_env_does_not_force_strict_install_dir() {
+    let env = update::installer_env("v1.2.3", Path::new("/usr/local/bin"));
+    assert!(env
+        .iter()
+        .any(|(key, value)| *key == "MEGARA_INSTALL_DIR" && value == OsStr::new("/usr/local/bin")));
+    assert!(!env
+        .iter()
+        .any(|(key, _)| *key == "MEGARA_INSTALL_DIR_STRICT"));
+}
+
+#[test]
 fn legacy_installer_binary_is_cleaned_when_installing_elsewhere() {
     assert!(update::should_cleanup_legacy_binary(
         Path::new("/usr/local/bin/megara"),

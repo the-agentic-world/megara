@@ -1,6 +1,6 @@
 use std::{
     env,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     fs::{self, OpenOptions},
     path::{Path, PathBuf},
     process::Command,
@@ -145,19 +145,25 @@ fn install_release(tag: &str, install_dir: &Path) -> Result<()> {
         bail!("failed to download Megara installer");
     }
 
-    let status = Command::new("sh")
-        .arg(&script)
-        .env("MEGARA_VERSION", tag)
-        .env("MEGARA_INSTALL_DIR", install_dir)
-        .env("MEGARA_INSTALL_DIR_STRICT", "1")
-        .env("MEGARA_REPO", REPO)
-        .status()
-        .context("failed to run Megara installer")?;
+    let mut command = Command::new("sh");
+    command.arg(&script);
+    for (key, value) in installer_env(tag, install_dir) {
+        command.env(key, value);
+    }
+    let status = command.status().context("failed to run Megara installer")?;
     let _ = fs::remove_dir_all(&temp_dir);
     if !status.success() {
         bail!("Megara installer failed");
     }
     Ok(())
+}
+
+pub(crate) fn installer_env(tag: &str, install_dir: &Path) -> Vec<(&'static str, OsString)> {
+    vec![
+        ("MEGARA_VERSION", OsString::from(tag)),
+        ("MEGARA_INSTALL_DIR", install_dir.as_os_str().to_os_string()),
+        ("MEGARA_REPO", OsString::from(REPO)),
+    ]
 }
 
 fn refresh_harnesses(args: UpdateArgs, megara_bin: &Path) -> Result<Vec<String>> {
