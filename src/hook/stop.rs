@@ -119,13 +119,19 @@ pub(super) fn handle_stop(
         deep_interview_milestone::QuestionDecision::Block { reason, kind } => {
             state["active"] = json!(true);
             let event = match kind {
-                deep_interview_milestone::QuestionBlockKind::MilestoneDecisionRequired => {
+                deep_interview_milestone::QuestionBlockKind::MilestoneDecision => {
                     state["phase"] = json!("milestone_decision_required");
                     state["status"] = json!("milestone_decision_required");
                     state["milestone_blocked_at"] = json!(timestamp);
                     "milestone_decision_required"
                 }
-                deep_interview_milestone::QuestionBlockKind::CrystallizedSpecRequired => {
+                deep_interview_milestone::QuestionBlockKind::OrdinaryQuestion => {
+                    state["phase"] = json!("interviewing");
+                    state["status"] = json!("interviewing");
+                    state["ordinary_question_blocked_at"] = json!(timestamp);
+                    "ordinary_question_required"
+                }
+                deep_interview_milestone::QuestionBlockKind::CrystallizedSpec => {
                     state["phase"] = json!("crystallizing");
                     state["status"] = json!("crystallizing");
                     state["crystallization_blocked_at"] = json!(timestamp);
@@ -296,6 +302,10 @@ fn contains_runtime_reference(text: &str) -> bool {
         "~/.megara/state",
         "/.megara/artifacts",
         "/.megara/state",
+        "<hook_prompt",
+        "megara deep-interview reached",
+        "internal megara workflow instruction",
+        "keep this runtime instruction internal",
     ]
     .iter()
     .any(|needle| lowered.contains(needle))

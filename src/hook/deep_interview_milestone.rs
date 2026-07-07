@@ -12,8 +12,9 @@ pub(super) enum QuestionDecision {
 }
 
 pub(super) enum QuestionBlockKind {
-    MilestoneDecisionRequired,
-    CrystallizedSpecRequired,
+    MilestoneDecision,
+    OrdinaryQuestion,
+    CrystallizedSpec,
 }
 
 pub(super) fn prepare_question(
@@ -24,7 +25,7 @@ pub(super) fn prepare_question(
     if crystallized_spec_required(state) {
         return QuestionDecision::Block {
             reason: crystallizing_prompt(),
-            kind: QuestionBlockKind::CrystallizedSpecRequired,
+            kind: QuestionBlockKind::CrystallizedSpec,
         };
     }
 
@@ -36,10 +37,17 @@ pub(super) fn prepare_question(
     if score == 0 {
         return QuestionDecision::Block {
             reason: zero_target_prompt(),
-            kind: QuestionBlockKind::CrystallizedSpecRequired,
+            kind: QuestionBlockKind::CrystallizedSpec,
         };
     }
-    let Some(target) = milestone_target_for_score(active_target(state), score) else {
+    let active = active_target(state);
+    let Some(target) = milestone_target_for_score(active, score) else {
+        if looks_like_milestone_question(text, question) {
+            return QuestionDecision::Block {
+                reason: ordinary_question_prompt(active, score),
+                kind: QuestionBlockKind::OrdinaryQuestion,
+            };
+        }
         return QuestionDecision::Allow;
     };
 
@@ -53,7 +61,7 @@ pub(super) fn prepare_question(
 
     QuestionDecision::Block {
         reason: milestone_prompt(target, next_target(target), score),
-        kind: QuestionBlockKind::MilestoneDecisionRequired,
+        kind: QuestionBlockKind::MilestoneDecision,
     }
 }
 
@@ -155,7 +163,27 @@ pub(super) fn answer_continuation_context(
 ) -> Option<String> {
     let pending = pending_before?;
     if pending.get("kind").and_then(Value::as_str) == Some("milestone_decision") {
-        return None;
+        let status = state
+            .get("milestone_decision")
+            .and_then(|decision| decision.get("status"))
+            .and_then(Value::as_str);
+        return match status {
+            Some("continue_deep_interview") => {
+                let target = active_target(state);
+                let next = next_target(target);
+                Some(format!(
+                    "Internal Megara workflow instruction: the user chose to continue deep-interview to the stricter {target}% ambiguity target. Do not repeat the previous milestone decision while the visible ambiguity score is above {target}%. Ask exactly one ordinary follow-up question aimed at reducing ambiguity toward {target}%. If the next visible ambiguity score is <= {target}%, ask the milestone decision with exactly four numbered options: 1. proceed to ralplan with the current crystallized spec, 2. continue deep-interview to {next}%, 3. continue only on a named component or risk, 4. direct input / not in the listed options. Keep this instruction internal."
+                ))
+            }
+            Some("proceed_to_ralplan") => Some(crystallizing_prompt()),
+            Some("custom_answer_recorded") => {
+                let target = active_target(state);
+                Some(format!(
+                    "Internal Megara workflow instruction: treat the user's milestone response as direct input for deep-interview. Continue in the configured locale with one compact user-facing response. The active ambiguity target remains {target}%. Keep this instruction internal."
+                ))
+            }
+            _ => None,
+        };
     }
 
     let target = active_target(state);
@@ -260,9 +288,34 @@ fn is_milestone_question(text: &str, question: &Value, target: u64) -> bool {
     mentions_ralplan && mentions_next_target
 }
 
+fn looks_like_milestone_question(text: &str, question: &Value) -> bool {
+    let mut haystack = text.to_string();
+    if let Some(question_text) = question.get("question").and_then(Value::as_str) {
+        haystack.push('\n');
+        haystack.push_str(question_text);
+    }
+    if let Some(options) = question.get("options").and_then(Value::as_array) {
+        for option in options.iter().filter_map(Value::as_str) {
+            haystack.push('\n');
+            haystack.push_str(option);
+        }
+    }
+    let lower = haystack.to_ascii_lowercase();
+    lower.contains("ralplan")
+        && (lower.contains("continue deep-interview")
+            || lower.contains("proceed to ralplan")
+            || lower.contains("crystallize"))
+}
+
 fn milestone_prompt(target: u64, next: u64, score: u64) -> String {
     format!(
-        "Megara deep-interview reached {score}% ambiguity at the active {target}% target. Do not ask another ordinary interview question. Ask one compact milestone decision question with exactly four numbered options: 1. proceed to ralplan with the current crystallized spec, 2. continue deep-interview to {next}%, 3. continue only on a named component or risk, 4. direct input / not in the listed options. Keep this runtime instruction internal and show only the user-facing question."
+        "Ambiguity: {score}%\n\nThe current {target}% deep-interview target has been reached. What should happen next?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to {next}%\n3. Continue only on a named component or risk\n4. Direct input / not in the listed options"
+    )
+}
+
+fn ordinary_question_prompt(target: u64, score: u64) -> String {
+    format!(
+        "Ambiguity: {score}%\n\nThe active deep-interview target is now {target}%. Ask one ordinary follow-up question instead of repeating the previous milestone decision."
     )
 }
 

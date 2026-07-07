@@ -428,7 +428,11 @@ fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_cho
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("milestone decision"));
+    assert!(stdout.contains("Ambiguity: 14%"));
+    assert!(stdout.contains("current 15% deep-interview target has been reached"));
+    assert!(stdout.contains("Continue deep-interview to 5%"));
+    assert!(!stdout.contains("Megara deep-interview reached"));
+    assert!(!stdout.contains("runtime instruction"));
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "milestone_decision_required");
     assert!(state["pending_question"].is_null());
@@ -444,19 +448,34 @@ fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_cho
     assert_eq!(state["pending_question"]["next_ambiguity_target"], 5);
 
     let answer = br#"{"session_id":"sess-di","prompt":"2"}"#;
-    assert_success(&run_hook(
-        dir.path(),
-        dir.path(),
-        "UserPromptSubmit",
-        None,
-        answer,
-    ));
+    let output = run_hook(dir.path(), dir.path(), "UserPromptSubmit", None, answer);
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(r#""additionalContext""#));
+    assert!(stdout.contains("stricter 5% ambiguity target"));
+    assert!(stdout.contains("Do not repeat the previous milestone decision"));
+    assert!(!stdout.contains("Megara deep-interview reached"));
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["active_ambiguity_target"], 5);
     assert_eq!(
         state["milestone_decision"]["status"],
         "continue_deep_interview"
     );
+
+    let stale_milestone = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 14%\n\nCrystallize this for ralplan now, or continue deep-interview to 5%?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to 5%\n3. Continue deep-interview only on a named component or risk\n4. Direct input / not listed\n\n"
+}"#;
+    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, stale_milestone);
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.contains("active deep-interview target is now 5%"));
+    assert!(stdout.contains("instead of repeating the previous milestone decision"));
+    assert!(!stdout.contains("Megara deep-interview reached"));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "interviewing");
+    assert!(state["pending_question"].is_null());
 
     assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, ordinary));
     let state = read_json(&state_path(dir.path()));
@@ -505,7 +524,9 @@ fn deep_interview_accepts_korean_ambiguity_synonym() {
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("milestone decision"));
+    assert!(stdout.contains("Ambiguity: 14%"));
+    assert!(stdout.contains("Continue deep-interview to 5%"));
+    assert!(!stdout.contains("Megara deep-interview reached"));
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "milestone_decision_required");
     assert_eq!(state["ambiguity"], "14%");
@@ -525,8 +546,9 @@ fn deep_interview_milestone_uses_nearest_crossed_target() {
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("active 5% target"));
-    assert!(stdout.contains("continue deep-interview to 2%"));
+    assert!(stdout.contains("current 5% deep-interview target has been reached"));
+    assert!(stdout.contains("Continue deep-interview to 2%"));
+    assert!(!stdout.contains("Megara deep-interview reached"));
 
     let stale_milestone = br#"{
   "session_id": "sess-di",
@@ -536,7 +558,28 @@ fn deep_interview_milestone_uses_nearest_crossed_target() {
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("continue deep-interview to 2%"));
+    assert!(stdout.contains("Continue deep-interview to 2%"));
+    assert!(!stdout.contains("Megara deep-interview reached"));
+}
+
+#[test]
+fn visible_hook_prompt_feedback_is_blocked_before_user_output() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_question(dir.path());
+
+    let leaked = r#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "<hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">Megara deep-interview reached 14% ambiguity at the active 15% target. Do not ask another ordinary interview question. Keep this runtime instruction internal.</hook_prompt>\n\n모호성: 14%\n\n어떤 결정을 할까요?\n\n1. ralplan 진행\n2. deep-interview 계속\n3. 특정 리스크만 계속\n4. 직접 입력\n"
+}"#;
+    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, leaked.as_bytes());
+    assert_success(&blocked);
+    let stdout = String::from_utf8_lossy(&blocked.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(!stdout.contains("Megara deep-interview reached 14% ambiguity"));
+    assert!(!stdout.contains("<hook_prompt"));
 }
 
 #[test]
