@@ -19,9 +19,10 @@ fn explicit_install_dir_wins() {
         Some(PathBuf::from("/tmp/megara-bin")),
         PathBuf::from("/usr/local/bin"),
         true,
-        PathBuf::from("/home/user"),
+        Some(PathBuf::from("/home/user/.local/bin")),
         None,
-    );
+    )
+    .unwrap();
     assert_eq!(dir, PathBuf::from("/tmp/megara-bin"));
     assert_eq!(messages, vec!["Using MEGARA_INSTALL_DIR=/tmp/megara-bin"]);
 }
@@ -32,9 +33,10 @@ fn writable_current_install_dir_is_reused() {
         None,
         PathBuf::from("/opt/megara/bin"),
         true,
-        PathBuf::from("/home/user"),
+        Some(PathBuf::from("/home/user/.local/bin")),
         None,
-    );
+    )
+    .unwrap();
     assert_eq!(dir, PathBuf::from("/opt/megara/bin"));
     assert!(messages.is_empty());
 }
@@ -45,9 +47,10 @@ fn non_writable_current_install_dir_falls_back_to_user_bin() {
         None,
         PathBuf::from("/usr/local/bin"),
         false,
-        PathBuf::from("/home/user"),
+        Some(PathBuf::from("/home/user/.local/bin")),
         None,
-    );
+    )
+    .unwrap();
     assert_eq!(dir, PathBuf::from("/home/user/.local/bin"));
     assert!(messages
         .iter()
@@ -63,13 +66,39 @@ fn fallback_path_message_changes_when_user_bin_is_on_path() {
         None,
         PathBuf::from("/usr/local/bin"),
         false,
-        PathBuf::from("/home/user"),
+        Some(PathBuf::from("/home/user/.local/bin")),
         Some(OsStr::new("/home/user/.local/bin:/usr/local/bin")),
-    );
+    )
+    .unwrap();
     assert_eq!(dir, PathBuf::from("/home/user/.local/bin"));
     assert!(messages
         .iter()
         .any(|message| message.contains("appears before /usr/local/bin")));
+}
+
+#[test]
+fn non_writable_current_install_dir_can_use_secondary_user_bin() {
+    let (dir, messages) = update::choose_install_dir(
+        None,
+        PathBuf::from("/usr/local/bin"),
+        false,
+        Some(PathBuf::from("/home/user/bin")),
+        None,
+    )
+    .unwrap();
+    assert_eq!(dir, PathBuf::from("/home/user/bin"));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("installing binary to /home/user/bin")));
+}
+
+#[test]
+fn non_writable_current_install_dir_errors_without_user_fallback() {
+    let err = update::choose_install_dir(None, PathBuf::from("/usr/local/bin"), false, None, None)
+        .unwrap_err();
+    assert!(err
+        .to_string()
+        .contains("no writable install directory found"));
 }
 
 #[test]

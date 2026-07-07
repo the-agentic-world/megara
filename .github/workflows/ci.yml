@@ -25,8 +25,8 @@ jobs:
       - run: cargo test --locked
       - run: sh -n install.sh
 
-  macos-build:
-    name: macOS Build (${{ matrix.target }})
+  build:
+    name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -35,6 +35,8 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

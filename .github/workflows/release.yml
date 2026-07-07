@@ -45,6 +45,8 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -67,7 +69,11 @@ jobs:
           mkdir -p "dist/megara-v${version}-${{ matrix.target }}"
           cp "target/${{ matrix.target }}/release/megara" "dist/megara-v${version}-${{ matrix.target }}/"
           tar -C "dist/megara-v${version}-${{ matrix.target }}" -czf "${archive}" "megara"
-          shasum -a 256 "${archive}" > "${archive}.sha256"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "${archive}" > "${archive}.sha256"
+          else
+            sha256sum "${archive}" > "${archive}.sha256"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: megara-${{ matrix.target }}
@@ -93,12 +99,17 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           targets=(
             "aarch64-apple-darwin"
+            "x86_64-unknown-linux-gnu"
           )
           for target in "${targets[@]}"; do
             archive="megara-v${version}-${target}.tar.gz"
             test -s "dist/${archive}"
             test -s "dist/${archive}.sha256"
-            (cd dist && shasum -a 256 -c "${archive}.sha256")
+            if command -v shasum >/dev/null 2>&1; then
+              (cd dist && shasum -a 256 -c "${archive}.sha256")
+            else
+              (cd dist && sha256sum -c "${archive}.sha256")
+            fi
             tar -tzf "dist/${archive}" | grep -qx "megara"
           done
           cp install.sh dist/install.sh
@@ -121,6 +132,8 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
     steps:
       - name: Install from published release script
         shell: bash
@@ -131,6 +144,16 @@ jobs:
           MEGARA_VERSION="${GITHUB_REF_NAME}" MEGARA_INSTALL_DIR="${RUNNER_TEMP}/bin" sh "${RUNNER_TEMP}/install.sh"
           "${RUNNER_TEMP}/bin/megara" --version
           "${RUNNER_TEMP}/bin/megara" targets list --json | grep -q '"name": "codex"'
+      - name: Install with default fallback path
+        shell: bash
+        run: |
+          set -euo pipefail
+          home="${RUNNER_TEMP}/home-fallback"
+          mkdir -p "${home}/.local/bin"
+          chmod a-w "${home}/.local/bin"
+          HOME="${home}" MEGARA_VERSION="${GITHUB_REF_NAME}" MEGARA_SKIP_LEGACY_CLEANUP=1 sh "${RUNNER_TEMP}/install.sh"
+          "${home}/bin/megara" --version
+          "${home}/bin/megara" targets list --json | grep -q '"name": "codex"'
 
   prune-releases:
     name: Keep latest 5 releases

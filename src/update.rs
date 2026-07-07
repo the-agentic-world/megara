@@ -263,13 +263,13 @@ fn selected_install_dir() -> Result<(PathBuf, Vec<String>)> {
         .map(PathBuf::from);
     let home = home_dir()?;
     let path_env = env::var_os("PATH");
-    Ok(choose_install_dir(
+    choose_install_dir(
         explicit,
         current.clone(),
         dir_is_writable(&current),
-        home,
+        writable_user_install_dir(&home),
         path_env.as_deref(),
-    ))
+    )
 }
 
 fn cleanup_legacy_binary(current_bin: &Path, installed_bin: &Path) -> Vec<String> {
@@ -323,19 +323,23 @@ pub(crate) fn choose_install_dir(
     explicit: Option<PathBuf>,
     current: PathBuf,
     current_writable: bool,
-    home: PathBuf,
+    writable_fallback: Option<PathBuf>,
     path_env: Option<&OsStr>,
-) -> (PathBuf, Vec<String>) {
+) -> Result<(PathBuf, Vec<String>)> {
     if let Some(path) = explicit {
         let message = format!("Using MEGARA_INSTALL_DIR={}", path.display());
-        return (path, vec![message]);
+        return Ok((path, vec![message]));
     }
 
     if current_writable {
-        return (current, Vec::new());
+        return Ok((current, Vec::new()));
     }
 
-    let fallback = default_user_install_dir(&home);
+    let Some(fallback) = writable_fallback else {
+        bail!(
+            "no writable install directory found; set MEGARA_INSTALL_DIR to a writable directory"
+        );
+    };
     let mut messages = vec![format!(
         "Current install dir is not writable: {}; installing binary to {}",
         current.display(),
@@ -353,11 +357,41 @@ pub(crate) fn choose_install_dir(
             fallback.display()
         ));
     }
-    (fallback, messages)
+    Ok((fallback, messages))
 }
 
-fn default_user_install_dir(home: &Path) -> PathBuf {
-    home.join(".local/bin")
+fn writable_user_install_dir(home: &Path) -> Option<PathBuf> {
+    user_install_candidates(home)
+        .into_iter()
+        .find(|path| ensure_writable_dir(path))
+}
+
+fn user_install_candidates(home: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(path) = env::var_os("XDG_BIN_HOME")
+        .filter(|value| !value.as_os_str().is_empty())
+        .map(PathBuf::from)
+    {
+        candidates.push(path);
+    }
+    candidates.push(home.join(".local/bin"));
+    candidates.push(home.join("bin"));
+    candidates.push(home.join(".megara/bin"));
+    dedup_paths(candidates)
+}
+
+fn dedup_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut deduped = Vec::new();
+    for path in paths {
+        if !deduped.iter().any(|existing| existing == &path) {
+            deduped.push(path);
+        }
+    }
+    deduped
+}
+
+fn ensure_writable_dir(path: &Path) -> bool {
+    fs::create_dir_all(path).is_ok() && dir_is_writable(path)
 }
 
 fn path_contains_dir(path_env: Option<&OsStr>, dir: &Path) -> bool {

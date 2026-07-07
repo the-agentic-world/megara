@@ -16,6 +16,10 @@ default_install_dir() {
   fi
 
   [ -n "${HOME:-}" ] || die "HOME is not set; set MEGARA_INSTALL_DIR to a writable directory"
+  if [ -n "${XDG_BIN_HOME:-}" ]; then
+    printf '%s\n' "$XDG_BIN_HOME"
+    return
+  fi
   printf '%s\n' "$HOME/.local/bin"
 }
 
@@ -44,28 +48,72 @@ cleanup_legacy_binary() {
   fi
 }
 
+is_writable_dir() {
+  candidate="$1"
+  mkdir -p "$candidate" 2>/dev/null || return 1
+  [ -d "$candidate" ] || return 1
+
+  probe="${candidate}/.megara-write-test-$$"
+  (: > "$probe") 2>/dev/null || return 1
+  rm -f "$probe"
+}
+
+select_install_dir() {
+  if [ -n "${MEGARA_INSTALL_DIR:-}" ]; then
+    is_writable_dir "$install_dir" || die "install directory is not writable: $install_dir; set MEGARA_INSTALL_DIR to a writable directory"
+    return
+  fi
+
+  for candidate in "$install_dir" "$HOME/bin" "$HOME/.megara/bin"; do
+    [ -n "$candidate" ] || continue
+    if is_writable_dir "$candidate"; then
+      if [ "$candidate" != "$install_dir" ]; then
+        echo "Note: ${install_dir} is not writable. Installing to ${candidate}." >&2
+      fi
+      install_dir="$candidate"
+      return
+    fi
+  done
+
+  die "no writable install directory found; set MEGARA_INSTALL_DIR to a writable directory"
+}
+
+verify_checksum() {
+  if command -v shasum >/dev/null 2>&1; then
+    (cd "$tmpdir" && shasum -a 256 -c "${archive}.sha256") >/dev/null
+  elif command -v sha256sum >/dev/null 2>&1; then
+    (cd "$tmpdir" && sha256sum -c "${archive}.sha256") >/dev/null
+  else
+    die "required command not found: shasum or sha256sum"
+  fi
+}
+
 need curl
 need install
 need tar
 need uname
-need shasum
 
 install_dir="$(default_install_dir)"
+select_install_dir
 
 os="$(uname -s)"
 arch="$(uname -m)"
 
-[ "$os" = "Darwin" ] || die "only macOS is supported by this installer"
-
-case "$arch" in
-  arm64|aarch64)
+case "$os:$arch" in
+  Darwin:arm64|Darwin:aarch64)
     target="aarch64-apple-darwin"
     ;;
-  x86_64|amd64)
+  Darwin:x86_64|Darwin:amd64)
     die "macOS Intel is not supported by Megara release artifacts"
     ;;
+  Linux:x86_64|Linux:amd64)
+    target="x86_64-unknown-linux-gnu"
+    ;;
+  Linux:arm64|Linux:aarch64)
+    die "Linux arm64 is not supported by Megara release artifacts"
+    ;;
   *)
-    die "unsupported macOS architecture: $arch"
+    die "unsupported platform: ${os} ${arch}"
     ;;
 esac
 
@@ -96,14 +144,12 @@ echo "Downloading ${archive}"
 curl -fL "${base_url}/${archive}" -o "${tmpdir}/${archive}"
 curl -fL "${base_url}/${archive}.sha256" -o "${tmpdir}/${archive}.sha256"
 
-(cd "$tmpdir" && shasum -a 256 -c "${archive}.sha256") >/dev/null
+verify_checksum
 
 mkdir -p "${tmpdir}/extract"
 tar -xzf "${tmpdir}/${archive}" -C "${tmpdir}/extract"
 [ -x "${tmpdir}/extract/megara" ] || chmod +x "${tmpdir}/extract/megara"
 
-mkdir -p "$install_dir" || die "failed to create install directory: $install_dir"
-[ -w "$install_dir" ] || die "install directory is not writable: $install_dir; set MEGARA_INSTALL_DIR to a writable directory"
 install -m 755 "${tmpdir}/extract/megara" "${install_dir}/megara"
 cleanup_legacy_binary
 
