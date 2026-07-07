@@ -370,14 +370,10 @@ impl GitSnapshot {
         let branch = git_output(&repo_root, &["rev-parse", "--abbrev-ref", "HEAD"])
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        let status = git_lines(
-            &repo_root,
-            &["status", "--porcelain=v1", "--untracked-files=all"],
-        )
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|line| !status_path(line).is_some_and(is_runtime_path))
-        .collect::<Vec<_>>();
+        let status = git_status_lines(&repo_root)
+            .into_iter()
+            .filter(|line| !status_path(line).is_some_and(is_runtime_path))
+            .collect::<Vec<_>>();
         let tracked_diff = diff_fingerprint(&repo_root, false, None);
         let staged_diff = diff_fingerprint(&repo_root, true, None);
         let path_fingerprints = path_fingerprints(&repo_root, &status);
@@ -543,6 +539,21 @@ fn git_lines(repo_root: &Path, args: &[&str]) -> Option<Vec<String>> {
             .map(str::to_string)
             .collect()
     })
+}
+
+fn git_status_lines(repo_root: &Path) -> Vec<String> {
+    git_output(
+        repo_root,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    )
+    .map(|output| {
+        output
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 fn git_output(repo_root: &Path, args: &[&str]) -> Option<String> {

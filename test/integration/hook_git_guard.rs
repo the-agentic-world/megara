@@ -14,14 +14,16 @@ fn git_guard_allows_non_git_projects() {
 fn git_guard_blocks_uncommitted_agent_delta() {
     let dir = git_project();
     baseline_prompt(dir.path(), "sess-uncommitted");
-    fs::write(dir.path().join("app.txt"), "changed\n").unwrap();
+    fs::create_dir_all(dir.path().join("docs")).unwrap();
+    fs::write(dir.path().join("docs/2048-evidence.md"), "changed\n").unwrap();
 
     let output = completion(dir.path(), "sess-uncommitted");
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
     assert!(stdout.contains("commit required"));
-    assert!(stdout.contains("app.txt"));
+    assert!(stdout.contains("docs/2048-evidence.md"));
+    assert!(!stdout.contains(", ocs/2048-evidence.md"));
 }
 
 #[test]
