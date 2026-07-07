@@ -48,7 +48,7 @@ curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/
 특정 버전이나 설치 위치를 지정할 수 있습니다.
 
 ```bash
-curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/install.sh | MEGARA_VERSION=v1.1.2 MEGARA_INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/install.sh | MEGARA_VERSION=v1.1.3 MEGARA_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 설치 스크립트는 macOS arm64를 지원하며 기본 설치 위치는 `$HOME/.local/bin`입니다. 설치 후 `megara` 명령을 바로 사용하려면 이 경로가 `PATH`에 포함되어 있어야 합니다. 이전 기본 위치에 남은 Megara 바이너리는 `sudo` 없이 제거를 시도하며, 권한상 제거할 수 없으면 직접 제거 또는 `PATH` 우선순위 조정을 안내합니다.
