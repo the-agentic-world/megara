@@ -24,14 +24,14 @@ need() {
 }
 
 cleanup_legacy_binary() {
-  [ "${MEGARA_SKIP_LEGACY_CLEANUP:-}" != "1" ] || return
+  [ "${MEGARA_SKIP_LEGACY_CLEANUP:-}" != "1" ] || return 0
 
   legacy_dir="/usr/local/bin"
   legacy_bin="${legacy_dir}/megara"
   case "$install_dir" in
-    "$legacy_dir"|"$legacy_dir"/) return ;;
+    "$legacy_dir"|"$legacy_dir"/) return 0 ;;
   esac
-  [ -e "$legacy_bin" ] || return
+  [ -e "$legacy_bin" ] || return 0
 
   if [ -w "$legacy_dir" ]; then
     if rm -f "$legacy_bin"; then
