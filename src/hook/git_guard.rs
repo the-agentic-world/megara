@@ -123,17 +123,18 @@ pub(super) fn block_completion_if_needed(
         return Ok(None);
     }
 
+    let reasons = evaluation.reasons();
     append_jsonl(
         &state_dir.join("git-guard/events.jsonl"),
         &json!({
             "timestamp": timestamp,
             "event": "completion_blocked",
             "session_id": canonical_session_id(payload),
-            "reasons": evaluation.reasons,
+            "reasons": reasons,
             "payload": payload_file,
         }),
     )?;
-    Ok(Some(evaluation.message()))
+    Ok(Some(evaluation.user_safe_message()))
 }
 
 fn evaluate_repo(baseline: &GitSnapshot, current: &GitSnapshot) -> Result<GitEvaluation> {
@@ -303,7 +304,6 @@ struct GitEvaluation {
     forbidden_paths: BTreeSet<String>,
     commit_issues: Vec<String>,
     intent_issues: Vec<String>,
-    reasons: Vec<String>,
 }
 
 impl GitEvaluation {
@@ -315,31 +315,33 @@ impl GitEvaluation {
             && self.intent_issues.is_empty()
     }
 
-    fn message(mut self) -> String {
+    fn reasons(&self) -> Vec<String> {
+        let mut reasons = Vec::new();
         if !self.uncommitted_paths.is_empty() {
-            self.reasons.push(format!(
+            reasons.push(format!(
                 "uncommitted agent changes: {}",
                 preview_set(&self.uncommitted_paths)
             ));
         }
         if !self.overlap_paths.is_empty() {
-            self.reasons.push(format!(
+            reasons.push(format!(
                 "agent changes overlap pre-existing dirty paths: {}",
                 preview_set(&self.overlap_paths)
             ));
         }
         if !self.forbidden_paths.is_empty() {
-            self.reasons.push(format!(
+            reasons.push(format!(
                 "secret-like paths must not be committed: {}",
                 preview_set(&self.forbidden_paths)
             ));
         }
-        self.reasons.extend(self.commit_issues);
-        self.reasons.extend(self.intent_issues);
-        format!(
-            "MEGARA git guard: commit required before completion. {}. Stage explicit files only (`git add <file>`), create focused OMA /scm-style Conventional Commits, rerun verification, then answer again.",
-            self.reasons.join("; ")
-        )
+        reasons.extend(self.commit_issues.clone());
+        reasons.extend(self.intent_issues.clone());
+        reasons
+    }
+
+    fn user_safe_message(&self) -> String {
+        "Megara needs an internal git cleanup pass before the final response.".to_string()
     }
 }
 

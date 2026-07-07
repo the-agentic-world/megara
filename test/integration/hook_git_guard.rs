@@ -21,9 +21,14 @@ fn git_guard_blocks_uncommitted_agent_delta() {
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("commit required"));
-    assert!(stdout.contains("docs/2048-evidence.md"));
-    assert!(!stdout.contains(", ocs/2048-evidence.md"));
+    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(!stdout.contains("MEGARA git guard"));
+    assert!(!stdout.contains("Stage explicit files"));
+    assert!(!stdout.contains("docs/2048-evidence.md"));
+
+    let events = git_guard_events(dir.path());
+    assert!(events.contains("uncommitted agent changes: docs/2048-evidence.md"));
+    assert!(!events.contains(", ocs/2048-evidence.md"));
 }
 
 #[test]
@@ -60,7 +65,11 @@ fn git_guard_blocks_invalid_commit_message() {
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("commit type"));
+    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(!stdout.contains("commit type"));
+
+    let events = git_guard_events(dir.path());
+    assert!(events.contains("commit type"));
 }
 
 #[test]
@@ -89,7 +98,11 @@ fn git_guard_blocks_mixed_intent_commit() {
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("mixed path groups"));
+    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(!stdout.contains("mixed path groups"));
+
+    let events = git_guard_events(dir.path());
+    assert!(events.contains("mixed path groups"));
 }
 
 #[test]
@@ -122,7 +135,29 @@ fn git_guard_blocks_overlap_with_preexisting_dirty_path() {
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("overlap"));
+    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(!stdout.contains("overlap"));
+
+    let events = git_guard_events(dir.path());
+    assert!(events.contains("overlap"));
+}
+
+#[test]
+fn git_guard_feedback_leak_is_blocked_before_user_output() {
+    let dir = git_project();
+    baseline_prompt(dir.path(), "sess-leak");
+
+    let payload = format!(
+        r#"{{"session_id":"sess-leak","cwd":"{}","last_assistant_message":"<hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">MEGARA git guard: commit required before completion. Stage explicit files only (`git add <file>`), create focused OMA /scm-style Conventional Commits, rerun verification, then answer again.</hook_prompt>\n\n완료했습니다."}}"#,
+        dir.path().display()
+    );
+    let output = run_hook(dir.path(), dir.path(), "Stop", None, payload.as_bytes());
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(!stdout.contains("MEGARA git guard"));
+    assert!(!stdout.contains("Stage explicit files"));
+    assert!(!stdout.contains("<hook_prompt"));
 }
 
 fn git_project() -> tempfile::TempDir {
@@ -172,6 +207,10 @@ fn completion(project: &Path, session_id: &str) -> Output {
         project.display()
     );
     run_hook(project, project, "Stop", None, payload.as_bytes())
+}
+
+fn git_guard_events(project: &Path) -> String {
+    fs::read_to_string(project.join(".megara/state/hooks/git-guard/events.jsonl")).unwrap()
 }
 
 fn assert_success(output: &Output) {

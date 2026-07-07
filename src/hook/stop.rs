@@ -269,15 +269,14 @@ fn block_visible_runtime_reference(
     text: &str,
 ) -> Result<Option<String>> {
     let visible = parser::text_before_first_workflow_block(text);
-    if !contains_runtime_reference(&visible) || !has_workflow_state(state_dir, payload) {
+    let internal_hook_feedback = contains_internal_hook_feedback(&visible);
+    let runtime_reference = contains_runtime_reference(&visible);
+    if !internal_hook_feedback && (!runtime_reference || !has_workflow_state(state_dir, payload)) {
         return Ok(None);
     }
 
-    let paths = workflow_paths(
-        state_dir,
-        payload,
-        workflow_with_state(state_dir, payload).unwrap_or(ULTRAGOAL),
-    );
+    let workflow = workflow_with_state(state_dir, payload).unwrap_or(ULTRAGOAL);
+    let paths = workflow_paths(state_dir, payload, workflow);
     append_jsonl(
         &paths.events_file,
         &json!({
@@ -288,9 +287,23 @@ fn block_visible_runtime_reference(
         }),
     )?;
     Ok(Some(
-        "Megara runtime artifact or state paths are internal. Rewrite the response without .megara/.agents runtime paths, session ids, receipts, checkpoints, or quality-gate file links. Summarize only product-facing changes, verification commands, pass/fail results, and user-actionable blockers."
+        "Megara internal guard feedback must stay hidden. Rewrite the response with only product-facing changes, verification commands, pass/fail results, and user-actionable blockers."
             .to_string(),
     ))
+}
+
+fn contains_internal_hook_feedback(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    [
+        "<hook_prompt",
+        "megara git guard:",
+        "megara mutation guard:",
+        "megara deep-interview reached",
+        "internal megara workflow instruction",
+        "keep this runtime instruction internal",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
 }
 
 fn contains_runtime_reference(text: &str) -> bool {
@@ -302,10 +315,6 @@ fn contains_runtime_reference(text: &str) -> bool {
         "~/.megara/state",
         "/.megara/artifacts",
         "/.megara/state",
-        "<hook_prompt",
-        "megara deep-interview reached",
-        "internal megara workflow instruction",
-        "keep this runtime instruction internal",
     ]
     .iter()
     .any(|needle| lowered.contains(needle))
