@@ -97,11 +97,21 @@ pub struct InstallPlan {
     pub obsolete_files: Vec<PathBuf>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct StateMigrationSummary {
+    pub source: PathBuf,
+    pub destination: PathBuf,
+    pub moved: Vec<PathBuf>,
+    pub conflicts: Vec<PathBuf>,
+    pub removed_source: bool,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct InstallResult {
     pub options: InstallOptions,
     pub plan: InstallPlan,
     pub summary: WriteSummary,
+    pub migrations: Vec<StateMigrationSummary>,
     pub hook_trust: Option<codex::HookTrustSummary>,
     pub warnings: Vec<String>,
 }

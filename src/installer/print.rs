@@ -68,6 +68,25 @@ impl InstallResult {
             ));
         }
 
+        if !self.migrations.is_empty() {
+            sections.push(Section::new(
+                "Migration",
+                self.migrations
+                    .iter()
+                    .map(|migration| {
+                        format!(
+                            "legacy runtime state: source={}, destination={}, moved={}, conflicts={}, removed_source={}",
+                            migration.source.display(),
+                            migration.destination.display(),
+                            migration.moved.len(),
+                            migration.conflicts.len(),
+                            migration.removed_source
+                        )
+                    })
+                    .collect(),
+            ));
+        }
+
         if let Some(hook_trust) = &self.hook_trust {
             sections.push(Section::new(
                 "Hook Trust",

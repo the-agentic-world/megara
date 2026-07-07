@@ -9,6 +9,7 @@ use crate::{
     writer::{remove_managed_files, write_files},
 };
 
+use super::migration;
 use super::model::*;
 
 pub struct Planner<'a> {
@@ -69,6 +70,13 @@ impl<'a> Planner<'a> {
             &plan.obsolete_files,
             self.options.dry_run,
         )?);
+        let migrations = migration::migrate_legacy_project_state(
+            &plan.ssot_root,
+            &plan.runtime_root,
+            self.options.dry_run,
+        )?
+        .into_iter()
+        .collect::<Vec<_>>();
         let hook_trust = match self.options.target {
             TargetRuntime::Codex => Some(codex::ensure_hook_trust(
                 &plan.target_root.join("hooks.json"),
@@ -76,6 +84,15 @@ impl<'a> Planner<'a> {
             )?),
         };
         let mut warnings = runtime_dependency_issues(self.options.target);
+        for migration in &migrations {
+            if !migration.conflicts.is_empty() {
+                warnings.push(format!(
+                    "legacy runtime state migration left {} conflicting file(s) under {}; review them before removing the legacy state directory",
+                    migration.conflicts.len(),
+                    migration.source.display()
+                ));
+            }
+        }
         if matches!(self.options.action, InstallAction::Install)
             && self.options.target == TargetRuntime::Codex
         {
@@ -88,6 +105,7 @@ impl<'a> Planner<'a> {
             options: self.options.clone(),
             plan,
             summary,
+            migrations,
             hook_trust,
             warnings,
         })

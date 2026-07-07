@@ -1,5 +1,7 @@
 #[path = "installer/marker.rs"]
 mod marker;
+#[path = "installer/migration.rs"]
+mod migration;
 #[path = "installer/model.rs"]
 mod model;
 #[path = "installer/planner.rs"]

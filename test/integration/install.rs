@@ -371,3 +371,78 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("Do not copy English workflow headings"));
     assert!(agents_md.contains("free-text values such as `question`, `options`"));
 }
+
+#[test]
+fn install_migrates_legacy_project_runtime_state() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    let legacy_state = dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/legacy-session.json");
+    fs::create_dir_all(legacy_state.parent().unwrap()).unwrap();
+    fs::write(&legacy_state, r#"{"session_id":"legacy-session"}"#).unwrap();
+
+    let output = megara_with_codex_home(codex_home.path())
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Migration"));
+    assert!(stdout.contains("moved=1"));
+    assert!(!dir.path().join(".agents/state").exists());
+    assert!(dir
+        .path()
+        .join(".megara/state/workflows/deep-interview/legacy-session.json")
+        .exists());
+}
+
+#[test]
+fn install_keeps_conflicting_legacy_runtime_state_in_place() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    let legacy_state = dir
+        .path()
+        .join(".agents/state/workflows/deep-interview/session.json");
+    let migrated_state = dir
+        .path()
+        .join(".megara/state/workflows/deep-interview/session.json");
+    fs::create_dir_all(legacy_state.parent().unwrap()).unwrap();
+    fs::create_dir_all(migrated_state.parent().unwrap()).unwrap();
+    fs::write(&legacy_state, r#"{"source":"legacy"}"#).unwrap();
+    fs::write(&migrated_state, r#"{"source":"current"}"#).unwrap();
+
+    let output = megara_with_codex_home(codex_home.path())
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("conflicts=1"));
+    assert!(stdout.contains("legacy runtime state migration left 1 conflicting file"));
+    assert!(legacy_state.exists());
+    assert_eq!(
+        fs::read_to_string(migrated_state).unwrap(),
+        r#"{"source":"current"}"#
+    );
+}
