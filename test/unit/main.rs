@@ -16,6 +16,8 @@ mod paths;
 mod targets;
 #[path = "../../src/templates.rs"]
 mod templates;
+#[path = "../../src/tui.rs"]
+mod tui;
 #[path = "../../src/ui.rs"]
 mod ui;
 #[path = "../../src/ultragoal.rs"]
@@ -42,6 +44,8 @@ pub(crate) use writer::*;
 mod docs_tests;
 #[path = "hook.rs"]
 mod hook_tests;
+#[path = "tui.rs"]
+mod tui_tests;
 #[path = "ultragoal.rs"]
 mod ultragoal_tests;
 #[path = "writer.rs"]
