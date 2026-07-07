@@ -9,29 +9,17 @@ pub(super) fn handle_stop(
     let text = runtime_input::assistant_message_from_payload(payload).unwrap_or_default();
     let text = text.as_str();
 
-    if let Some(reason) =
-        block_visible_runtime_reference(timestamp, state_dir, payload, payload_file, text)?
-    {
-        println!(
-            "{}",
-            serde_json::to_string(&json!({
-                "decision": "block",
-                "reason": reason,
-            }))?
-        );
+    if record_visible_runtime_reference(timestamp, state_dir, payload, payload_file, text)? {
         return Ok(0);
     }
 
-    if let Some(reason) =
-        git_guard::block_completion_if_needed(timestamp, state_dir, payload, payload_file, text)?
-    {
-        println!(
-            "{}",
-            serde_json::to_string(&json!({
-                "decision": "block",
-                "reason": reason,
-            }))?
-        );
+    if git_guard::record_completion_issues_if_needed(
+        timestamp,
+        state_dir,
+        payload,
+        payload_file,
+        text,
+    )? {
         return Ok(0);
     }
 
@@ -49,24 +37,18 @@ pub(super) fn handle_stop(
         reconcile_session_aliases(timestamp, payload_file, &paths, &terminal.skill, payload)?;
         let mut state = load_json(&paths.session_file)
             .unwrap_or_else(|| new_state(&terminal.skill, timestamp, &paths.session_id, payload));
-        if terminal.skill == DEEP_INTERVIEW {
-            if let Some(reason) = subagent_gate::block_terminal_if_missing_receipts(
+        let missing_required_subagent_review = terminal.skill == DEEP_INTERVIEW
+            && subagent_gate::block_terminal_if_missing_receipts(
                 timestamp,
                 payload_file,
                 &paths,
                 &terminal,
                 &mut state,
-            )? {
-                write_json_atomic(&paths.session_file, &state)?;
-                println!(
-                    "{}",
-                    serde_json::to_string(&json!({
-                        "decision": "block",
-                        "reason": reason,
-                    }))?
-                );
-                return Ok(0);
-            }
+            )?
+            .is_some();
+        if missing_required_subagent_review {
+            write_json_atomic(&paths.session_file, &state)?;
+            return Ok(0);
         }
         match terminal.skill.as_str() {
             DEEP_INTERVIEW => terminal::handle_deep_interview_terminal(
@@ -116,7 +98,7 @@ pub(super) fn handle_stop(
     }
     match question_decision {
         deep_interview_milestone::QuestionDecision::Allow => {}
-        deep_interview_milestone::QuestionDecision::Block { reason, kind } => {
+        deep_interview_milestone::QuestionDecision::Block { kind } => {
             state["active"] = json!(true);
             let event = match kind {
                 deep_interview_milestone::QuestionBlockKind::MilestoneDecision => {
@@ -149,13 +131,6 @@ pub(super) fn handle_stop(
                     "payload": payload_file,
                 }),
             )?;
-            println!(
-                "{}",
-                serde_json::to_string(&json!({
-                    "decision": "block",
-                    "reason": reason,
-                }))?
-            );
             return Ok(0);
         }
     }
@@ -261,18 +236,18 @@ fn mark_stale_deep_interview_peers(
     Ok(())
 }
 
-fn block_visible_runtime_reference(
+fn record_visible_runtime_reference(
     timestamp: &str,
     state_dir: &Path,
     payload: &Value,
     payload_file: &Path,
     text: &str,
-) -> Result<Option<String>> {
+) -> Result<bool> {
     let visible = parser::text_before_first_workflow_block(text);
     let internal_hook_feedback = contains_internal_hook_feedback(&visible);
     let runtime_reference = contains_runtime_reference(&visible);
     if !internal_hook_feedback && (!runtime_reference || !has_workflow_state(state_dir, payload)) {
-        return Ok(None);
+        return Ok(false);
     }
 
     let workflow = workflow_with_state(state_dir, payload).unwrap_or(ULTRAGOAL);
@@ -286,10 +261,7 @@ fn block_visible_runtime_reference(
             "payload": payload_file,
         }),
     )?;
-    Ok(Some(
-        "Megara internal guard feedback must stay hidden. Rewrite the response with only product-facing changes, verification commands, pass/fail results, and user-actionable blockers."
-            .to_string(),
-    ))
+    Ok(true)
 }
 
 fn contains_internal_hook_feedback(text: &str) -> bool {

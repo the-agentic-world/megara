@@ -227,8 +227,7 @@ fn ralplan_start_injects_subagent_context_and_gates_pending_approval() {
     let blocked = stop_message(dir.path(), "sess-rp-subagents", message);
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("planner, architect, critic"));
+    assert!(stdout.trim().is_empty());
 
     let state_path = workflow_state_path(dir.path(), RALPLAN, "sess-rp-subagents");
     let state = read_json(&state_path);
@@ -274,10 +273,7 @@ fn ralplan_missing_receipts_do_not_respawn_in_flight_roles() {
     let blocked = stop_message(dir.path(), "sess-rp-inflight", message);
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains("architect, critic"));
-    assert!(stdout.contains("in-flight roles: planner"));
-    assert!(stdout.contains("Do not spawn duplicate/replacement subagents"));
-    assert!(stdout.contains("pending plan as the reviewed draft"));
+    assert!(stdout.trim().is_empty());
 
     let state = read_state(dir.path(), RALPLAN, "sess-rp-inflight");
     assert_eq!(

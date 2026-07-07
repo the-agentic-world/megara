@@ -20,8 +20,7 @@ fn git_guard_blocks_uncommitted_agent_delta() {
     let output = completion(dir.path(), "sess-uncommitted");
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("MEGARA git guard"));
     assert!(!stdout.contains("Stage explicit files"));
     assert!(!stdout.contains("docs/2048-evidence.md"));
@@ -64,8 +63,7 @@ fn git_guard_blocks_invalid_commit_message() {
     let output = completion(dir.path(), "sess-invalid-message");
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("commit type"));
 
     let events = git_guard_events(dir.path());
@@ -97,8 +95,7 @@ fn git_guard_blocks_mixed_intent_commit() {
     let output = completion(dir.path(), "sess-mixed");
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("mixed path groups"));
 
     let events = git_guard_events(dir.path());
@@ -134,8 +131,7 @@ fn git_guard_blocks_overlap_with_preexisting_dirty_path() {
     let output = completion(dir.path(), "sess-overlap");
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("internal git cleanup pass"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("overlap"));
 
     let events = git_guard_events(dir.path());
@@ -154,10 +150,16 @@ fn git_guard_feedback_leak_is_blocked_before_user_output() {
     let output = run_hook(dir.path(), dir.path(), "Stop", None, payload.as_bytes());
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("MEGARA git guard"));
     assert!(!stdout.contains("Stage explicit files"));
     assert!(!stdout.contains("<hook_prompt"));
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".megara/state/workflows/ultragoal/events.jsonl"),
+    )
+    .unwrap();
+    assert!(events.contains("\"event\":\"visible_runtime_reference_blocked\""));
 }
 
 #[test]

@@ -303,8 +303,7 @@ fn deep_interview_start_injects_subagent_context_and_requires_receipt() {
     );
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("architect"));
+    assert!(stdout.trim().is_empty());
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "subagent_review_required");
     assert!(state.get("spec_path").is_none());
@@ -427,10 +426,7 @@ fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_cho
     let blocked = run_hook(dir.path(), dir.path(), "Stop", None, ordinary);
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("Ambiguity: 14%"));
-    assert!(stdout.contains("current 15% deep-interview target has been reached"));
-    assert!(stdout.contains("Continue deep-interview to 5%"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("Megara deep-interview reached"));
     assert!(!stdout.contains("runtime instruction"));
     let state = read_json(&state_path(dir.path()));
@@ -469,9 +465,7 @@ fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_cho
     let blocked = run_hook(dir.path(), dir.path(), "Stop", None, stale_milestone);
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("active deep-interview target is now 5%"));
-    assert!(stdout.contains("instead of repeating the previous milestone decision"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("Megara deep-interview reached"));
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "interviewing");
@@ -523,9 +517,7 @@ fn deep_interview_accepts_korean_ambiguity_synonym() {
     let blocked = run_hook(dir.path(), dir.path(), "Stop", None, ordinary.as_bytes());
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("Ambiguity: 14%"));
-    assert!(stdout.contains("Continue deep-interview to 5%"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("Megara deep-interview reached"));
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "milestone_decision_required");
@@ -545,9 +537,7 @@ fn deep_interview_milestone_uses_nearest_crossed_target() {
     let blocked = run_hook(dir.path(), dir.path(), "Stop", None, ordinary);
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("current 5% deep-interview target has been reached"));
-    assert!(stdout.contains("Continue deep-interview to 2%"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("Megara deep-interview reached"));
 
     let stale_milestone = br#"{
@@ -557,8 +547,7 @@ fn deep_interview_milestone_uses_nearest_crossed_target() {
     let blocked = run_hook(dir.path(), dir.path(), "Stop", None, stale_milestone);
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("Continue deep-interview to 2%"));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("Megara deep-interview reached"));
 }
 
@@ -577,9 +566,15 @@ fn visible_hook_prompt_feedback_is_blocked_before_user_output() {
     let blocked = run_hook(dir.path(), dir.path(), "Stop", None, leaked.as_bytes());
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
+    assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("Megara deep-interview reached 14% ambiguity"));
     assert!(!stdout.contains("<hook_prompt"));
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".megara/state/workflows/deep-interview/events.jsonl"),
+    )
+    .unwrap();
+    assert!(events.contains("\"event\":\"visible_runtime_reference_blocked\""));
 }
 
 #[test]
@@ -614,8 +609,7 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
     let blocked = run_hook(dir.path(), dir.path(), "Stop", None, followup_question);
     assert_success(&blocked);
     let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("crystallized markdown spec"));
+    assert!(stdout.trim().is_empty());
 
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "crystallizing");

@@ -94,33 +94,33 @@ pub(super) fn block_unsafe_staging_if_needed(
     ))
 }
 
-pub(super) fn block_completion_if_needed(
+pub(super) fn record_completion_issues_if_needed(
     timestamp: &str,
     state_dir: &Path,
     payload: &Value,
     payload_file: &Path,
     assistant_message: &str,
-) -> Result<Option<String>> {
+) -> Result<bool> {
     let Some(state) = load_json(&guard_path(state_dir, payload)) else {
-        return Ok(None);
+        return Ok(false);
     };
     if !looks_like_completion(assistant_message) {
-        return Ok(None);
+        return Ok(false);
     }
 
     let Some(baseline) = GitSnapshot::from_state(&state) else {
-        return Ok(None);
+        return Ok(false);
     };
     let Some(current) = GitSnapshot::capture_at(&baseline.repo_root)? else {
-        return Ok(None);
+        return Ok(false);
     };
     if current.repo_root != baseline.repo_root {
-        return Ok(None);
+        return Ok(false);
     }
 
     let evaluation = evaluate_repo(&baseline, &current)?;
     if evaluation.is_clear() {
-        return Ok(None);
+        return Ok(false);
     }
 
     let reasons = evaluation.reasons();
@@ -134,7 +134,7 @@ pub(super) fn block_completion_if_needed(
             "payload": payload_file,
         }),
     )?;
-    Ok(Some(evaluation.user_safe_message()))
+    Ok(true)
 }
 
 fn evaluate_repo(baseline: &GitSnapshot, current: &GitSnapshot) -> Result<GitEvaluation> {
@@ -338,10 +338,6 @@ impl GitEvaluation {
         reasons.extend(self.commit_issues.clone());
         reasons.extend(self.intent_issues.clone());
         reasons
-    }
-
-    fn user_safe_message(&self) -> String {
-        "Megara needs an internal git cleanup pass before the final response.".to_string()
     }
 }
 

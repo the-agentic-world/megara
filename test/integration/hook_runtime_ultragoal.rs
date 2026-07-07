@@ -60,8 +60,7 @@ fn hook_blocks_visible_runtime_artifact_links_during_workflow() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#""decision":"block""#));
-    assert!(stdout.contains("internal guard feedback must stay hidden"));
+    assert!(stdout.trim().is_empty());
 
     let events = fs::read_to_string(
         dir.path()

@@ -5,10 +5,7 @@ const TARGETS: &[u64] = &[15, 5, 2, 0];
 
 pub(super) enum QuestionDecision {
     Allow,
-    Block {
-        reason: String,
-        kind: QuestionBlockKind,
-    },
+    Block { kind: QuestionBlockKind },
 }
 
 pub(super) enum QuestionBlockKind {
@@ -24,7 +21,6 @@ pub(super) fn prepare_question(
 ) -> QuestionDecision {
     if crystallized_spec_required(state) {
         return QuestionDecision::Block {
-            reason: crystallizing_prompt(),
             kind: QuestionBlockKind::CrystallizedSpec,
         };
     }
@@ -36,7 +32,6 @@ pub(super) fn prepare_question(
 
     if score == 0 {
         return QuestionDecision::Block {
-            reason: zero_target_prompt(),
             kind: QuestionBlockKind::CrystallizedSpec,
         };
     }
@@ -44,7 +39,6 @@ pub(super) fn prepare_question(
     let Some(target) = milestone_target_for_score(active, score) else {
         if looks_like_milestone_question(text, question) {
             return QuestionDecision::Block {
-                reason: ordinary_question_prompt(active, score),
                 kind: QuestionBlockKind::OrdinaryQuestion,
             };
         }
@@ -60,7 +54,6 @@ pub(super) fn prepare_question(
     }
 
     QuestionDecision::Block {
-        reason: milestone_prompt(target, next_target(target), score),
         kind: QuestionBlockKind::MilestoneDecision,
     }
 }
@@ -305,18 +298,6 @@ fn looks_like_milestone_question(text: &str, question: &Value) -> bool {
         && (lower.contains("continue deep-interview")
             || lower.contains("proceed to ralplan")
             || lower.contains("crystallize"))
-}
-
-fn milestone_prompt(target: u64, next: u64, score: u64) -> String {
-    format!(
-        "Ambiguity: {score}%\n\nThe current {target}% deep-interview target has been reached. What should happen next?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to {next}%\n3. Continue only on a named component or risk\n4. Direct input / not in the listed options"
-    )
-}
-
-fn ordinary_question_prompt(target: u64, score: u64) -> String {
-    format!(
-        "Ambiguity: {score}%\n\nThe active deep-interview target is now {target}%. Ask one ordinary follow-up question instead of repeating the previous milestone decision."
-    )
 }
 
 fn zero_target_prompt() -> String {

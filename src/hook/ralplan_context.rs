@@ -58,23 +58,17 @@ pub(super) fn handle_ralplan_terminal(
         }
     }
 
-    if terminal.status == "pending_approval" {
-        if let Some(reason) = subagent_gate::block_terminal_if_missing_receipts(
+    let missing_required_subagent_reviews = terminal.status == "pending_approval"
+        && subagent_gate::block_terminal_if_missing_receipts(
             timestamp,
             payload_file,
             paths,
             terminal,
             state,
-        )? {
-            println!(
-                "{}",
-                serde_json::to_string(&json!({
-                    "decision": "block",
-                    "reason": reason,
-                }))?
-            );
-            return Ok(());
-        }
+        )?
+        .is_some();
+    if missing_required_subagent_reviews {
+        return Ok(());
     }
 
     if terminal.status == "pending_approval" {
