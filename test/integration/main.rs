@@ -74,6 +74,7 @@ mod docs;
 mod doctor;
 mod hook_deep_interview;
 mod hook_deep_interview_support;
+mod hook_git_guard;
 mod hook_ralplan_approval;
 mod hook_ralplan_direct;
 mod hook_ralplan_handoff;

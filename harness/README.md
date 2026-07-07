@@ -86,6 +86,11 @@ In the Megara repository, `harness/` is the bundled harness source. After instal
 - During active `deep-interview`, `ralplan`, or `ultragoal` goal-planning, the hook blocks obvious shell-based mutations and known write/edit tools unless `MEGARA_MUTATION_GUARD=warn` or `MEGARA_MUTATION_GUARD=off` is set.
 - After `deep-interview` crystallizes, the hook still blocks obvious implementation mutation until a `ralplan` state becomes active or approved for the same session.
 - `ultragoal` permits implementation mutation only after `.agents/bin/megara ultragoal start-goal` selects an active goal.
+- In Git repositories, hooks capture a workflow baseline and block completion claims until agent-created changes after that baseline are committed as focused OMA `/scm`-style Conventional Commits.
+  - Megara never stages, commits, or pushes automatically.
+  - Existing dirty state from before the baseline is protected and is not forced into the agent commit.
+  - Use explicit `git add <file>` paths; `git add .` and `git add -A` are rejected.
+  - Commit messages must use `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `style`, or `perf`, with an optional scope and a lowercase, imperative, period-free subject of 72 characters or less.
 - Codex App reads hooks at session start. After project-scope install, open a new saved-project or exact-directory session; projectless sessions may create a sibling directory without this harness.
 - Codex `SessionStart` reinforces `caveman` so new or resumed sessions receive the default active style context.
 - `deep-interview` and `ralplan` lock artifacts are hook-managed. Agents must not directly edit `.megara/state/workflows/deep-interview/**` or `.megara/state/workflows/ralplan/**`; direct write attempts are guarded even when a workflow is no longer active.

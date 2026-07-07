@@ -342,6 +342,9 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("Runtime artifact paths under `.megara/state`"));
     assert!(agents_md.contains("Do not link them, cite them as deliverables"));
     assert!(agents_md.contains("quality-gate JSON"));
+    assert!(agents_md.contains("block completion until agent-created changes are committed"));
+    assert!(agents_md.contains("OMA `/scm`-style Conventional Commits"));
+    assert!(agents_md.contains("never `git add .` or `git add -A`"));
     assert!(agents_md.contains("## Codex Runtime Adapter"));
     assert!(agents_md.contains("This projected harness is running inside Codex"));
     assert!(agents_md.contains("Deep-interview does not require Codex Plan mode"));

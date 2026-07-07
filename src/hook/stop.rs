@@ -22,6 +22,19 @@ pub(super) fn handle_stop(
         return Ok(0);
     }
 
+    if let Some(reason) =
+        git_guard::block_completion_if_needed(timestamp, state_dir, payload, payload_file, text)?
+    {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "decision": "block",
+                "reason": reason,
+            }))?
+        );
+        return Ok(0);
+    }
+
     for review in review_passes_from_text(text) {
         let paths = workflow_paths(state_dir, payload, RALPLAN);
         reconcile_session_aliases(timestamp, payload_file, &paths, RALPLAN, payload)?;

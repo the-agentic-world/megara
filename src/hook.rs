@@ -20,6 +20,8 @@ mod deep_interview_milestone;
 mod dispatch;
 #[path = "hook/fsutil.rs"]
 pub(crate) mod fsutil;
+#[path = "hook/git_guard.rs"]
+mod git_guard;
 #[path = "hook/mutation.rs"]
 pub(crate) mod mutation;
 #[path = "hook/parser.rs"]
@@ -74,8 +76,8 @@ use state::{
     update_terminal_state, upsert_question,
 };
 use state_paths::{
-    safe_part, scoped_state_dir, timestamp, unique_payload_path, value_to_string, workflow_paths,
-    WorkflowPaths,
+    canonical_session_id, safe_part, scoped_state_dir, timestamp, unique_payload_path,
+    value_to_string, workflow_paths, WorkflowPaths,
 };
 
 const DEEP_INTERVIEW: &str = "deep-interview";
@@ -154,5 +156,35 @@ pub fn run(args: HookArgs) -> Result<i32> {
         &payload_file,
         payload_bytes,
     )?;
+    if options.event == "UserPromptSubmit" {
+        git_guard::capture_baseline_if_absent(
+            &timestamp,
+            &state_dir,
+            &payload,
+            &payload_file,
+            "user_prompt",
+        )?;
+    }
+    if options.event == "PreToolUse" {
+        if let Some(reason) = git_guard::block_unsafe_staging_if_needed(
+            &timestamp,
+            &state_dir,
+            &options,
+            &payload,
+            &payload_file,
+        )? {
+            eprintln!("{reason}");
+            return Ok(42);
+        }
+        if mutation_signal(&payload).is_some() {
+            git_guard::capture_baseline_if_absent(
+                &timestamp,
+                &state_dir,
+                &payload,
+                &payload_file,
+                "pre_tool",
+            )?;
+        }
+    }
     dispatch::run_workflow_event(&state_dir, &timestamp, &options, &payload, &payload_file)
 }
