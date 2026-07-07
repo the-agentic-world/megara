@@ -160,9 +160,12 @@ const INTERNAL_HOOK_FEEDBACK_PREFIXES: &[&str] = &[
     "megara git guard:",
     "megara mutation guard:",
     "megara deep-interview reached",
+    "megara deep-interview milestone approval already selected ralplan",
     "megara needs an internal git cleanup pass before the final response",
     "megara internal guard feedback must stay hidden",
     "megara runtime artifact or state paths are internal",
+    "megara requires context-only, tool-free subagent review",
+    "megara requires ralplan review receipts before approval",
     "internal megara workflow instruction",
     "keep this runtime instruction internal",
 ];

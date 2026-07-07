@@ -221,6 +221,33 @@ fn effective_prompt_ignores_raw_internal_guard_feedback() {
 }
 
 #[test]
+fn effective_prompt_ignores_raw_crystallization_feedback() {
+    let payload = json!({
+        "prompt": "Megara deep-interview milestone approval already selected ralplan. Do not ask another question or milestone decision. Emit the final user-facing crystallized markdown spec for ralplan as the final answer of this turn. Keep runtime metadata internal."
+    });
+
+    assert_eq!(effective_prompt_from_payload(&payload), None);
+}
+
+#[test]
+fn assistant_message_ignores_raw_crystallization_feedback() {
+    let payload = json!({
+        "last_assistant_message": "Megara deep-interview milestone approval already selected ralplan. Do not ask another question or milestone decision. Emit the final user-facing crystallized markdown spec for ralplan as the final answer of this turn. Keep runtime metadata internal."
+    });
+
+    assert_eq!(assistant_message_from_payload(&payload), None);
+}
+
+#[test]
+fn assistant_message_ignores_raw_subagent_receipt_feedback() {
+    let payload = json!({
+        "last_assistant_message": "Megara requires context-only, tool-free subagent review before deep-interview can crystallize. Missing receipt roles: architect. Wait for in-flight roles to finish, fold the useful findings into the final spec or next question, then retry crystallization. Keep this runtime instruction internal and do not show Megara metadata to the user."
+    });
+
+    assert_eq!(assistant_message_from_payload(&payload), None);
+}
+
+#[test]
 fn effective_prompt_keeps_user_bug_report_about_hook_feedback() {
     let payload = json!({
         "prompt": "훅 피드백 또 생김\nMegara needs an internal git cleanup pass before the final response\n사용자 입력으로 오입력 되지 않게 조치하라."
