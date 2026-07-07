@@ -16,6 +16,8 @@ pub struct InstallArgs {
     pub force: bool,
     #[arg(long)]
     pub json: bool,
+    #[arg(long)]
+    pub no_interactive: bool,
 }
 
 #[derive(Debug, Args)]
@@ -26,6 +28,8 @@ pub struct DoctorArgs {
     pub target: Option<TargetArg>,
     #[arg(long)]
     pub json: bool,
+    #[arg(long)]
+    pub no_interactive: bool,
 }
 
 #[derive(Debug, Args)]

@@ -19,4 +19,6 @@ pub struct UpdateArgs {
     pub target: TargetArg,
     #[arg(long)]
     pub force: bool,
+    #[arg(long)]
+    pub no_interactive: bool,
 }
