@@ -74,23 +74,7 @@ fn git_guard_blocks_invalid_commit_message() {
 fn git_guard_blocks_mixed_intent_commit() {
     let dir = git_project();
     baseline_prompt(dir.path(), "sess-mixed");
-    for path in [
-        "src/app.rs",
-        "src/lib.rs",
-        "docs/guide.md",
-        "tests/app.rs",
-        "harness/rules.md",
-        "Cargo.toml",
-    ] {
-        let full = dir.path().join(path);
-        fs::create_dir_all(full.parent().unwrap()).unwrap();
-        fs::write(full, "changed\n").unwrap();
-        git(dir.path(), &["add", path]);
-    }
-    git(
-        dir.path(),
-        &["commit", "-m", "feat: add broad project changes"],
-    );
+    mixed_intent_commit(dir.path());
 
     let output = completion(dir.path(), "sess-mixed");
     assert_success(&output);
@@ -100,6 +84,44 @@ fn git_guard_blocks_mixed_intent_commit() {
 
     let events = git_guard_events(dir.path());
     assert!(events.contains("mixed path groups"));
+}
+
+#[test]
+fn git_guard_refreshes_clean_stale_baseline_on_new_user_prompt() {
+    let dir = git_project();
+    baseline_prompt(dir.path(), "sess-stale");
+    mixed_intent_commit(dir.path());
+
+    let blocked = completion(dir.path(), "sess-stale");
+    assert_success(&blocked);
+    assert!(git_guard_events(dir.path()).contains("mixed path groups"));
+
+    baseline_prompt(dir.path(), "sess-stale");
+    let output = completion(dir.path(), "sess-stale");
+
+    assert_success(&output);
+    assert!(String::from_utf8_lossy(&output.stdout).trim().is_empty());
+    let events = git_guard_events(dir.path());
+    assert!(events.contains("\"event\":\"git_baseline_refreshed\""));
+    let refresh_index = events
+        .rfind("\"event\":\"git_baseline_refreshed\"")
+        .unwrap();
+    assert!(!events[refresh_index..].contains("\"event\":\"completion_blocked\""));
+}
+
+#[test]
+fn git_guard_does_not_refresh_dirty_baseline_on_new_user_prompt() {
+    let dir = git_project();
+    baseline_prompt(dir.path(), "sess-dirty-refresh");
+    fs::write(dir.path().join("app.txt"), "dirty\n").unwrap();
+
+    baseline_prompt(dir.path(), "sess-dirty-refresh");
+    let output = completion(dir.path(), "sess-dirty-refresh");
+
+    assert_success(&output);
+    let events = git_guard_events(dir.path());
+    assert!(!events.contains("\"event\":\"git_baseline_refreshed\""));
+    assert!(events.contains("uncommitted agent changes: app.txt"));
 }
 
 #[test]
@@ -213,6 +235,26 @@ fn git(project: &Path, args: &[&str]) {
         args,
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn mixed_intent_commit(project: &Path) {
+    for path in [
+        "src/app.rs",
+        "src/lib.rs",
+        "docs/guide.md",
+        "tests/app.rs",
+        "harness/rules.md",
+        "Cargo.toml",
+    ] {
+        let full = project.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, "changed\n").unwrap();
+        git(project, &["add", path]);
+    }
+    git(
+        project,
+        &["commit", "-m", "feat: add broad project changes"],
     );
 }
 

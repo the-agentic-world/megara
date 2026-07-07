@@ -29,20 +29,15 @@ pub(super) fn capture_baseline_if_absent(
     }
     let path = guard_path(state_dir, payload);
     if path.exists() {
+        if reason == "user_prompt" {
+            refresh_clean_baseline_if_needed(timestamp, state_dir, payload, payload_file, &path)?;
+        }
         return Ok(());
     }
     let Some(snapshot) = GitSnapshot::capture(payload)? else {
         return Ok(());
     };
-    let state = json!({
-        "version": 1,
-        "session_id": canonical_session_id(payload),
-        "captured_at": timestamp,
-        "capture_reason": reason,
-        "repo_root": snapshot.repo_root,
-        "baseline": snapshot.to_json(),
-        "payload": payload_file,
-    });
+    let state = baseline_state(timestamp, payload, payload_file, reason, &snapshot);
     write_json_atomic(&path, &state)?;
     append_jsonl(
         &state_dir.join("git-guard/events.jsonl"),
@@ -54,6 +49,65 @@ pub(super) fn capture_baseline_if_absent(
             "payload": payload_file,
         }),
     )
+}
+
+fn refresh_clean_baseline_if_needed(
+    timestamp: &str,
+    state_dir: &Path,
+    payload: &Value,
+    payload_file: &Path,
+    path: &Path,
+) -> Result<()> {
+    let Some(previous) = load_json(path) else {
+        return Ok(());
+    };
+    let Some(previous_baseline) = GitSnapshot::from_state(&previous) else {
+        return Ok(());
+    };
+    let Some(current) = GitSnapshot::capture(payload)? else {
+        return Ok(());
+    };
+    if current.repo_root != previous_baseline.repo_root || !current.is_clean() {
+        return Ok(());
+    }
+    if current.head == previous_baseline.head
+        && current.branch == previous_baseline.branch
+        && current.path_fingerprints == previous_baseline.path_fingerprints
+    {
+        return Ok(());
+    }
+
+    let state = baseline_state(timestamp, payload, payload_file, "user_prompt", &current);
+    write_json_atomic(path, &state)?;
+    append_jsonl(
+        &state_dir.join("git-guard/events.jsonl"),
+        &json!({
+            "timestamp": timestamp,
+            "event": "git_baseline_refreshed",
+            "session_id": canonical_session_id(payload),
+            "previous_head": previous_baseline.head,
+            "head": current.head,
+            "payload": payload_file,
+        }),
+    )
+}
+
+fn baseline_state(
+    timestamp: &str,
+    payload: &Value,
+    payload_file: &Path,
+    reason: &str,
+    snapshot: &GitSnapshot,
+) -> Value {
+    json!({
+        "version": 1,
+        "session_id": canonical_session_id(payload),
+        "captured_at": timestamp,
+        "capture_reason": reason,
+        "repo_root": snapshot.repo_root,
+        "baseline": snapshot.to_json(),
+        "payload": payload_file,
+    })
 }
 
 pub(super) fn block_unsafe_staging_if_needed(
@@ -447,6 +501,10 @@ impl GitSnapshot {
             "staged_diff": self.staged_diff,
             "path_fingerprints": self.path_fingerprints,
         })
+    }
+
+    fn is_clean(&self) -> bool {
+        self.status.is_empty() && self.path_fingerprints.is_empty()
     }
 }
 
