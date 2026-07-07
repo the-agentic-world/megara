@@ -6,6 +6,7 @@ mod installer;
 mod paths;
 mod targets;
 mod templates;
+mod tui;
 mod ui;
 mod ultragoal;
 mod update;
@@ -24,7 +25,10 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Install(args) => {
-            let options = InstallOptions::resolve(args, true, InstallAction::Install)?;
+            let Some(args) = tui::prepare_install(args)? else {
+                return Ok(());
+            };
+            let options = InstallOptions::resolve(args, false, InstallAction::Install)?;
             let result = Planner::new(&registry, options).execute()?;
             result.print()?;
         }
@@ -34,9 +38,18 @@ fn main() -> Result<()> {
             result.print()?;
         }
         Commands::Doctor(args) => {
-            let options = args.resolve()?;
+            let use_tui = tui::use_doctor_tui(&args);
+            let options = if use_tui {
+                tui::doctor_tui_options(args)?
+            } else {
+                args.resolve()?
+            };
             let report = doctor::run(&registry, options)?;
-            report.print()?;
+            if use_tui {
+                tui::show_doctor_report(&report)?;
+            } else {
+                report.print()?;
+            }
         }
         Commands::Hook(args) => {
             let exit_code = hook::run(args)?;
@@ -49,7 +62,12 @@ fn main() -> Result<()> {
             DocsCommands::Init(args) => docs::init(args)?,
             DocsCommands::Check(args) => docs::check(args)?,
         },
-        Commands::Update(args) => update::run(args)?,
+        Commands::Update(args) => {
+            if tui::use_update_tui(&args) && !tui::confirm_update(&args)? {
+                return Ok(());
+            }
+            update::run(args)?
+        }
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {
                 let list = registry.template_names();
