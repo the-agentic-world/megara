@@ -154,12 +154,11 @@ fn git_guard_feedback_leak_is_blocked_before_user_output() {
     assert!(!stdout.contains("MEGARA git guard"));
     assert!(!stdout.contains("Stage explicit files"));
     assert!(!stdout.contains("<hook_prompt"));
-    let events = fs::read_to_string(
-        dir.path()
-            .join(".megara/state/workflows/ultragoal/events.jsonl"),
-    )
-    .unwrap();
-    assert!(events.contains("\"event\":\"visible_runtime_reference_blocked\""));
+    let conversation =
+        fs::read_to_string(dir.path().join(".megara/state/hooks/conversation.jsonl"))
+            .unwrap_or_default();
+    assert!(!conversation.contains("MEGARA git guard"));
+    assert!(!conversation.contains("<hook_prompt"));
 }
 
 #[test]

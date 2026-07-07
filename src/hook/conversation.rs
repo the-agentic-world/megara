@@ -50,7 +50,7 @@ pub(super) fn record_conversation_event(
     entry.insert("surface".to_string(), json!(context.surface.as_str()));
     entry.insert("payload".to_string(), json!(payload_file));
     if let Some(raw_content) = payload.get(field).and_then(Value::as_str) {
-        if raw_content != content {
+        if raw_content != content && !runtime_input::contains_internal_hook_feedback(raw_content) {
             entry.insert("raw_content".to_string(), json!(raw_content));
         }
     }

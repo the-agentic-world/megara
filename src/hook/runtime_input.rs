@@ -70,12 +70,13 @@ pub(crate) fn effective_prompt_from_payload(payload: &Value) -> Option<String> {
 }
 
 pub(crate) fn assistant_message_from_payload(payload: &Value) -> Option<String> {
-    payload
+    if let Some(raw) = payload
         .get("last_assistant_message")
         .and_then(Value::as_str)
-        .map(str::to_string)
-        .filter(|text| !text.trim().is_empty())
-        .or_else(|| assistant_message_from_transcript(payload))
+    {
+        return assistant_message_text(raw);
+    }
+    assistant_message_from_transcript(payload).and_then(|text| assistant_message_text(&text))
 }
 
 pub(crate) fn effective_prompt_text(prompt: &str) -> String {
@@ -88,13 +89,21 @@ pub(crate) fn effective_prompt_text(prompt: &str) -> String {
             return clean_effective_prompt(input);
         }
     }
-    prompt.to_string()
+    clean_effective_prompt(prompt)
 }
 
 fn clean_effective_prompt(prompt: &str) -> String {
     strip_hook_prompt_blocks(&html_unescape_basic(prompt))
         .trim()
         .to_string()
+}
+
+fn assistant_message_text(text: &str) -> Option<String> {
+    let cleaned = clean_effective_prompt(text);
+    if cleaned.trim().is_empty() || is_internal_hook_feedback(&cleaned) {
+        return None;
+    }
+    Some(cleaned)
 }
 
 fn extract_delegated_input(prompt: &str) -> Option<&str> {

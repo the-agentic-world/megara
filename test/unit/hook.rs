@@ -164,12 +164,51 @@ fn effective_prompt_ignores_standalone_hook_feedback() {
 }
 
 #[test]
+fn effective_prompt_ignores_escaped_standalone_hook_feedback() {
+    let payload = json!({
+        "prompt": "&lt;hook_prompt hook_run_id=&quot;stop:5:/tmp/hooks.json&quot;&gt;Megara needs an internal git cleanup pass before the final response.&lt;/hook_prompt&gt;"
+    });
+
+    assert_eq!(effective_prompt_from_payload(&payload), None);
+}
+
+#[test]
+fn effective_prompt_strips_non_delegated_hook_feedback_and_keeps_user_answer() {
+    let prompt = "<hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">Megara deep-interview reached 14% ambiguity at the active 15% target. Keep this runtime instruction internal.</hook_prompt>\n\n1";
+
+    let effective = effective_prompt_text(prompt);
+
+    assert_eq!(effective, "1");
+}
+
+#[test]
 fn effective_prompt_strips_hook_feedback_and_keeps_user_answer() {
     let prompt = "<codex_delegation><input><hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">Megara deep-interview reached 14% ambiguity at the active 15% target. Keep this runtime instruction internal.</hook_prompt>\n\n1</input></codex_delegation>";
 
     let effective = effective_prompt_text(prompt);
 
     assert_eq!(effective, "1");
+}
+
+#[test]
+fn assistant_message_strips_hook_feedback_blocks() {
+    let payload = json!({
+        "last_assistant_message": "<hook_prompt hook_run_id=\"stop:5:/tmp/hooks.json\">Megara needs an internal git cleanup pass before the final response.</hook_prompt>\n\n완료했습니다."
+    });
+
+    assert_eq!(
+        assistant_message_from_payload(&payload).as_deref(),
+        Some("완료했습니다.")
+    );
+}
+
+#[test]
+fn assistant_message_ignores_standalone_hook_feedback() {
+    let payload = json!({
+        "last_assistant_message": "&lt;hook_prompt hook_run_id=&quot;stop:5:/tmp/hooks.json&quot;&gt;Megara needs an internal git cleanup pass before the final response.&lt;/hook_prompt&gt;"
+    });
+
+    assert_eq!(assistant_message_from_payload(&payload), None);
 }
 
 #[test]

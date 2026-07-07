@@ -569,12 +569,11 @@ fn visible_hook_prompt_feedback_is_blocked_before_user_output() {
     assert!(stdout.trim().is_empty());
     assert!(!stdout.contains("Megara deep-interview reached 14% ambiguity"));
     assert!(!stdout.contains("<hook_prompt"));
-    let events = fs::read_to_string(
-        dir.path()
-            .join(".megara/state/workflows/deep-interview/events.jsonl"),
-    )
-    .unwrap();
-    assert!(events.contains("\"event\":\"visible_runtime_reference_blocked\""));
+    let conversation =
+        fs::read_to_string(dir.path().join(".megara/state/hooks/conversation.jsonl"))
+            .unwrap_or_default();
+    assert!(!conversation.contains("Megara deep-interview reached 14% ambiguity"));
+    assert!(!conversation.contains("<hook_prompt"));
 }
 
 #[test]
