@@ -97,6 +97,16 @@ fn installs_project_scope_codex_harness() {
     assert!(ultragoal.contains("ultragoal 승인"));
     assert!(ultragoal.contains("실행 단위 생성"));
     assert!(ultragoal.contains("Do not mention goals being opened, selected, approved, converted, or split into execution units"));
+    let team = fs::read_to_string(dir.path().join(".agents/skills/team/SKILL.md")).unwrap();
+    assert!(team.contains("The current session is always the team leader"));
+    assert!(team.contains("correlation id and teammate id"));
+    assert!(team.contains("Final synthesis is allowed only after every required teammate"));
+    assert!(team.contains("Codex App"));
+    assert!(team.contains("The current App thread is the team leader"));
+    assert!(team.contains("Codex CLI"));
+    assert!(team.contains("Target Warp layout: two columns"));
+    assert!(team.contains("Warp pane 생성 실패로 subagent fallback 사용"));
+    assert!(team.contains("Message Contract"));
     let skill =
         fs::read_to_string(dir.path().join(".agents/skills/deep-interview/SKILL.md")).unwrap();
     assert!(skill.starts_with("---\n"));

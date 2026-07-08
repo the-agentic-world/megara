@@ -86,6 +86,9 @@ fn update_refreshes_project_harness_and_removes_legacy_codex_skills() {
         .path()
         .join(".agents/skills/insane-search/SKILL.md")
         .exists());
+    let team = fs::read_to_string(dir.path().join(".agents/skills/team/SKILL.md")).unwrap();
+    assert!(team.contains("The current session is always the team leader"));
+    assert!(team.contains("Warp pane 생성 실패로 subagent fallback 사용"));
     assert!(dir.path().join(".agents/bin/insane-search").exists());
     let wrapper = fs::read_to_string(dir.path().join(".agents/bin/insane-search")).unwrap();
     assert!(wrapper.contains(r#"runtime_root="$root_dir/../.megara""#));
