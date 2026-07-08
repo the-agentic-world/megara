@@ -85,6 +85,7 @@ mod hook_ralplan_support;
 mod hook_runtime;
 mod hook_runtime_scope;
 mod hook_runtime_ultragoal;
+mod hook_team;
 mod install;
 mod install_global;
 mod install_listing;

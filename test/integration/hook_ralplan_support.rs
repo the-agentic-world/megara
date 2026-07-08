@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) const RALPLAN: &str = "ralplan";
 pub(super) const DEEP_INTERVIEW: &str = "deep-interview";
+pub(super) const TEAM: &str = "team";
 
 pub(super) fn assert_success(output: &Output) {
     assert!(
