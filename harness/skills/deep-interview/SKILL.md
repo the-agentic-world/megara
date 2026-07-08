@@ -16,6 +16,7 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Ask one question at a time.
 - Write every user-facing sentence in the configured locale, including progress updates, questions, option labels, assumptions, score explanations, and final summaries.
 - Keep parseable block keys, file paths, commands, config keys, API names, and quoted source text unchanged.
+- For technical concepts, prefer natural terms in the configured locale when they exist. If an English-only technical term must remain, add a short explanation in the configured locale on first use, preferably as a footnote or parenthetical note.
 - In parseable blocks, free-text values such as `question`, `options`, `rationale`, and `summary` should use the configured locale unless they are technical literals.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 - Do not copy English section headings into user-facing output. Translate final-spec labels such as `Round 0: Topology Confirmation`, `remaining ambiguity`, `weakest dimension`, and `next target` into the configured locale when they appear in the final artifact.

@@ -171,6 +171,8 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("pipeline_lock"));
     assert!(skill.contains("Write every user-facing sentence in the configured locale"));
     assert!(skill.contains("option labels"));
+    assert!(skill.contains("prefer natural terms in the configured locale"));
+    assert!(skill.contains("short explanation in the configured locale"));
     assert!(skill.contains("free-text values"));
     assert!(skill.contains("Do not copy English section headings"));
     assert!(skill.contains("Round 0: Topology Confirmation"));
@@ -262,6 +264,8 @@ fn installs_project_scope_codex_harness() {
     assert!(ralplan.contains("generic list of unresolved review notes"));
     assert!(ralplan.contains("Do not put workflow or handoff names"));
     assert!(ralplan.contains("final numbered approval choices"));
+    assert!(ralplan.contains("prefer natural terms in the configured locale"));
+    assert!(ralplan.contains("short explanation in the configured locale"));
     let ultragoal =
         fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
     assert!(ultragoal.contains(r#"MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}""#));
@@ -361,6 +365,8 @@ fn installs_project_scope_codex_harness() {
     let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
     assert!(agents_md.contains("## Locale"));
     assert!(agents_md.contains("Locale: `ko-KR`"));
+    assert!(agents_md.contains("prefer natural terms in the configured locale"));
+    assert!(agents_md.contains("short explanation in the configured locale"));
     assert!(agents_md.contains("Hook output and Megara CLI state are runtime internals"));
     assert!(agents_md.contains("Runtime artifact paths under `.megara/state`"));
     assert!(agents_md.contains("Do not link them, cite them as deliverables"));

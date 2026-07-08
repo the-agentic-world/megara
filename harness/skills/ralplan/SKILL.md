@@ -27,6 +27,7 @@ Use this workflow after a request is clear enough to plan, but before implementa
 - Always finish approved planning with a pending-approval plan and clear execution options. Do not output runtime metadata.
 - Write every user-facing sentence in the configured locale, including progress updates, plan headings, option labels, assumptions, risks, and final summaries.
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
+- For technical concepts, prefer natural terms in the configured locale when they exist. If an English-only technical term must remain, add a short explanation in the configured locale on first use, preferably as a footnote or parenthetical note.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 - Do not send progress messages that merely narrate internal workflow mechanics such as reading this skill, checking locks, running review roles, inferring review coverage, persisting plans, or preparing handoff state. Keep those details internal. User-visible output should be the plan, a blocker, or an approval question.
 - Do not send commentary while spawning or waiting for planner, architect, or critic subagents. Wait silently and then send only the final pending-approval plan, a user-friendly blocker, or the approval question.

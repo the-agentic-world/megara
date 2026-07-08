@@ -9,6 +9,7 @@ In the Megara repository, `harness/` is the bundled harness source. After instal
 - `megara.toml` is the SSOT harness configuration.
 - `locale` controls user-facing response language in projected runtimes.
 - Technical literals such as file paths, commands, package names, config keys, and quoted source text stay unchanged even when prose follows the configured locale.
+- For technical concepts, prefer natural terms in the configured locale when they exist. If an English-only technical term must remain, add a short explanation in the configured locale on first use, preferably as a footnote or parenthetical note.
 - The locale rule covers progress updates, clarification questions, option labels, plans, verification notes, and final summaries.
 - Structured block keys stay parseable, while free-text block values should follow the configured locale unless they are technical literals.
 

@@ -18,6 +18,7 @@ Use this workflow when approved work benefits from multiple coordinated roles.
 - Merge lane results only after conflicts and verification are settled.
 - Write every user-facing sentence in the configured locale, including progress updates, lane assignments, status reports, review findings, and final summaries.
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
+- For technical concepts, prefer natural terms in the configured locale when they exist. If an English-only technical term must remain, add a short explanation in the configured locale on first use, preferably as a footnote or parenthetical note.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 - Do not show raw runtime metadata, hook fields, state paths, sha256 values, or workflow gate labels in visible prose. Runtime metadata is internal-only.
 

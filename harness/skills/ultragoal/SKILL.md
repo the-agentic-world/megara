@@ -21,6 +21,7 @@ Use this workflow when an approved plan should be executed to completion with du
 - Do not ask the user to resolve work the agent can investigate or fix.
 - Write every user-facing sentence in the configured locale, including progress updates, active goal reports, verification notes, blocker reports, and final summaries.
 - Keep file paths, commands, config keys, API names, and quoted source text unchanged.
+- For technical concepts, prefer natural terms in the configured locale when they exist. If an English-only technical term must remain, add a short explanation in the configured locale on first use, preferably as a footnote or parenthetical note.
 - Before sending a response, replace stock English workflow phrases with configured-locale prose. Do not mix languages in explanatory prose.
 - Run Megara CLI commands silently and use their output internally. Do not narrate session ids, state files, handoff files, goal-planning status, active-goal selection, checkpoint attempts, completion receipts, ledger writes, or quality-gate JSON handling in user-visible progress messages.
 - Runtime artifact paths under `.megara/state`, `.megara/artifacts`, `~/.megara/state`, or `~/.megara/artifacts` are internal-only. Do not link them, cite them as deliverables, list them as changed files, or include them in final user-facing summaries. Translate their contents into product-facing verification notes instead.
