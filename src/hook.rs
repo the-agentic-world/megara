@@ -56,6 +56,8 @@ mod stop;
 mod subagent;
 #[path = "hook/subagent_gate.rs"]
 mod subagent_gate;
+#[path = "hook/team.rs"]
+mod team;
 #[path = "hook/terminal.rs"]
 mod terminal;
 #[path = "hook/user_prompt.rs"]
@@ -83,7 +85,8 @@ use state_paths::{
 const DEEP_INTERVIEW: &str = "deep-interview";
 const RALPLAN: &str = "ralplan";
 const ULTRAGOAL: &str = "ultragoal";
-const WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN, ULTRAGOAL];
+const TEAM: &str = "team";
+const WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN, ULTRAGOAL, TEAM];
 const MUTATION_GUARD_WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN, ULTRAGOAL];
 
 #[derive(Debug)]
