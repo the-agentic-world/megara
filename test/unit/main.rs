@@ -14,6 +14,8 @@ mod installer;
 mod paths;
 #[path = "../../src/targets.rs"]
 mod targets;
+#[path = "../../src/team.rs"]
+mod team;
 #[path = "../../src/templates.rs"]
 mod templates;
 #[path = "../../src/tui.rs"]
@@ -47,6 +49,8 @@ pub(crate) use writer::*;
 mod docs_tests;
 #[path = "hook.rs"]
 mod hook_tests;
+#[path = "team.rs"]
+mod team_tests;
 #[path = "tui.rs"]
 mod tui_tests;
 #[path = "ultragoal.rs"]

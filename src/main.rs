@@ -5,6 +5,7 @@ mod hook;
 mod installer;
 mod paths;
 mod targets;
+mod team;
 mod templates;
 mod tui;
 mod ui;
