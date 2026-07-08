@@ -1,6 +1,7 @@
 use std::{env, path::PathBuf};
 
 use anyhow::{Context, Result};
+use toml::Value;
 
 use crate::{
     paths::{InstallPaths, TargetRuntime},
@@ -31,8 +32,9 @@ impl<'a> Planner<'a> {
         )?);
         let projection_registry = match self.options.action {
             InstallAction::Install => {
-                files.extend(ssot_files(paths.ssot_root.clone(), self.registry));
-                self.registry.clone()
+                let registry = registry_with_locale(self.registry, self.options.locale.as_deref())?;
+                files.extend(ssot_files(paths.ssot_root.clone(), &registry));
+                registry
             }
             InstallAction::Sync => TemplateRegistry::from_ssot_root(&paths.ssot_root)?,
         };
@@ -126,6 +128,33 @@ fn ssot_files(root: PathBuf, registry: &TemplateRegistry) -> Vec<PlannedFile> {
             PlannedFile::new(root.join(&template.relative_path), template.content.clone())
         })
         .collect()
+}
+
+fn registry_with_locale(
+    registry: &TemplateRegistry,
+    locale: Option<&str>,
+) -> Result<TemplateRegistry> {
+    let Some(locale) = locale else {
+        return Ok(registry.clone());
+    };
+    let Some(config) = registry.config() else {
+        return Ok(registry.clone());
+    };
+    let content = render_config_template(&config.content, Some(locale))?;
+    Ok(registry.with_config_content(content))
+}
+
+fn render_config_template(content: &str, locale: Option<&str>) -> Result<String> {
+    let Some(locale) = locale else {
+        return Ok(content.to_string());
+    };
+    let mut value: Value = content
+        .parse()
+        .context("failed to parse bundled Megara config template")?;
+    if let Some(table) = value.as_table_mut() {
+        table.insert("locale".to_string(), Value::String(locale.to_string()));
+    }
+    toml::to_string_pretty(&value).context("failed to render Megara config template")
 }
 
 pub(crate) fn runtime_support_files(

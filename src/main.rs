@@ -33,7 +33,7 @@ fn main() -> Result<()> {
             result.print()?;
         }
         Commands::Sync(args) => {
-            let options = InstallOptions::resolve(args, false, InstallAction::Sync)?;
+            let options = InstallOptions::resolve(args.into(), false, InstallAction::Sync)?;
             let result = Planner::new(&registry, options).execute()?;
             result.print()?;
         }

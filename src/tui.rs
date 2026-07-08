@@ -110,7 +110,7 @@ pub(crate) fn use_install_tui_for(args: &InstallArgs, terminal: bool, ci: bool) 
         && !ci
         && !args.no_interactive
         && !args.json
-        && (args.scope.is_none() || args.target.is_none())
+        && (args.locale.is_none() || args.scope.is_none() || args.target.is_none())
 }
 
 pub(crate) fn use_update_tui_for(args: &UpdateArgs, terminal: bool, ci: bool) -> bool {
@@ -162,6 +162,33 @@ fn install_wizard_with<F>(mut args: InstallArgs, mut choose: F) -> Result<Option
 where
     F: FnMut(&str, &str, &[MenuOption]) -> Result<Option<usize>>,
 {
+    if args.locale.is_none() {
+        let selected = choose(
+            "Megara Install",
+            "Choose the user-facing response locale.",
+            &[
+                MenuOption::new("Korean (ko-KR)", "Recommended default for Korean teams."),
+                MenuOption::new("English (en-US)", "Use English for user-facing responses."),
+                MenuOption::new(
+                    "Japanese (ja-JP)",
+                    "Use Japanese for user-facing responses.",
+                ),
+                MenuOption::new(
+                    "Chinese (zh-CN)",
+                    "Use Simplified Chinese for user-facing responses.",
+                ),
+            ],
+        )?;
+        args.locale = match selected {
+            Some(0) => Some("ko-KR".to_string()),
+            Some(1) => Some("en-US".to_string()),
+            Some(2) => Some("ja-JP".to_string()),
+            Some(3) => Some("zh-CN".to_string()),
+            Some(_) => unreachable!("menu returned an out-of-range option"),
+            None => return Ok(None),
+        };
+    }
+
     if args.scope.is_none() {
         let selected = choose(
             "Megara Install",
@@ -195,7 +222,8 @@ where
     let selected = choose(
         "Megara Install",
         &format!(
-            "scope={}, target={}, dry-run={}, force={}",
+            "locale={}, scope={}, target={}, dry-run={}, force={}",
+            args.locale.as_deref().unwrap_or("ko-KR"),
             scope_label(args.scope.expect("scope selected")),
             target_label(args.target.expect("target selected")),
             args.dry_run,

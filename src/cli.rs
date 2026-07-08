@@ -18,7 +18,7 @@ mod update;
 pub use common::{ScopeArg, TargetArg};
 #[allow(unused_imports)]
 pub use docs::{DocsArgs, DocsCheckArgs, DocsCommands, DocsInitArgs};
-pub use install::{DoctorArgs, HookArgs, InstallArgs};
+pub use install::{DoctorArgs, HookArgs, InstallArgs, SyncArgs};
 pub use resolve::{resolve_scope, resolve_target};
 pub use templates::{TargetCommands, TemplateCommands};
 pub use ultragoal::{
@@ -42,7 +42,7 @@ pub enum Commands {
     /// Run the harness installer wizard.
     Install(InstallArgs),
     /// Reproject managed runtime files from the Megara SSOT.
-    Sync(InstallArgs),
+    Sync(SyncArgs),
     /// Inspect installation health and drift.
     Doctor(DoctorArgs),
     /// Inspect bundled harness templates.

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use serde::Serialize;
 
 use crate::{
@@ -24,6 +24,7 @@ pub struct InstallOptions {
     pub action: InstallAction,
     pub scope: InstallScope,
     pub target: TargetRuntime,
+    pub locale: Option<String>,
     pub dry_run: bool,
     pub force: bool,
     pub json: bool,
@@ -35,11 +36,26 @@ impl InstallOptions {
             action,
             scope: resolve_scope(args.scope, interactive)?,
             target: resolve_target(args.target, interactive)?,
+            locale: normalize_locale(args.locale)?,
             dry_run: args.dry_run,
             force: args.force,
             json: args.json,
         })
     }
+}
+
+fn normalize_locale(locale: Option<String>) -> Result<Option<String>> {
+    let Some(locale) = locale else {
+        return Ok(None);
+    };
+    let locale = locale.trim().to_string();
+    if locale.is_empty() {
+        bail!("--locale must not be empty");
+    }
+    if locale.chars().any(char::is_control) {
+        bail!("--locale must not contain control characters");
+    }
+    Ok(Some(locale))
 }
 
 #[derive(Clone, Debug, Serialize)]

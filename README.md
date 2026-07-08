@@ -68,7 +68,7 @@ cargo build --release
 
 ## 사용법
 
-설치 wizard를 실행합니다.
+설치 wizard를 실행합니다. 첫 문항에서 사용자-facing 응답 locale을 선택합니다.
 
 ```bash
 megara install
@@ -78,6 +78,12 @@ megara install
 
 ```bash
 megara install --scope project --target codex
+```
+
+locale을 명시해 비대화형 설치도 할 수 있습니다.
+
+```bash
+megara install --scope project --target codex --locale ko-KR
 ```
 
 전역 범위에 설치합니다.

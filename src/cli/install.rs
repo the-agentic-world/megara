@@ -10,6 +10,8 @@ pub struct InstallArgs {
     pub scope: Option<ScopeArg>,
     #[arg(long, value_enum)]
     pub target: Option<TargetArg>,
+    #[arg(long, value_name = "LOCALE", help = "Set user-facing response locale")]
+    pub locale: Option<String>,
     #[arg(long)]
     pub dry_run: bool,
     #[arg(long)]
@@ -18,6 +20,36 @@ pub struct InstallArgs {
     pub json: bool,
     #[arg(long)]
     pub no_interactive: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SyncArgs {
+    #[arg(long, value_enum)]
+    pub scope: Option<ScopeArg>,
+    #[arg(long, value_enum)]
+    pub target: Option<TargetArg>,
+    #[arg(long)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub force: bool,
+    #[arg(long)]
+    pub json: bool,
+    #[arg(long)]
+    pub no_interactive: bool,
+}
+
+impl From<SyncArgs> for InstallArgs {
+    fn from(args: SyncArgs) -> Self {
+        Self {
+            scope: args.scope,
+            target: args.target,
+            locale: None,
+            dry_run: args.dry_run,
+            force: args.force,
+            json: args.json,
+            no_interactive: args.no_interactive,
+        }
+    }
 }
 
 #[derive(Debug, Args)]

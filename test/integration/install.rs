@@ -437,6 +437,34 @@ fn install_migrates_legacy_project_runtime_state() {
 }
 
 #[test]
+fn install_project_scope_honors_locale_arg() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+
+    let output = megara_with_codex_home(codex_home.path())
+        .arg("install")
+        .arg("--scope")
+        .arg("project")
+        .arg("--target")
+        .arg("codex")
+        .arg("--locale")
+        .arg("en-US")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let megara_config = fs::read_to_string(dir.path().join(".agents/megara.toml")).unwrap();
+    assert!(megara_config.contains("locale = \"en-US\""));
+    let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
+    assert!(agents_md.contains("Locale: `en-US`"));
+}
+
+#[test]
 fn install_keeps_conflicting_legacy_runtime_state_in_place() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();

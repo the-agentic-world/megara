@@ -62,6 +62,17 @@ impl TemplateRegistry {
         self.by_kind(TemplateKind::Config).into_iter().next()
     }
 
+    pub(crate) fn with_config_content(&self, content: String) -> Self {
+        let mut files = self.files.clone();
+        if let Some(template) = files
+            .iter_mut()
+            .find(|template| template.kind == TemplateKind::Config)
+        {
+            template.content = content;
+        }
+        Self { files }
+    }
+
     pub fn workflows(&self) -> Vec<&HarnessTemplate> {
         self.by_kind(TemplateKind::Workflow)
     }

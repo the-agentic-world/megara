@@ -10,6 +10,7 @@ fn install_args(scope: Option<ScopeArg>, target: Option<TargetArg>) -> InstallAr
     InstallArgs {
         scope,
         target,
+        locale: None,
         dry_run: false,
         force: false,
         json: false,
@@ -41,6 +42,10 @@ fn install_tui_only_handles_missing_tty_inputs() {
     assert!(use_install_tui_for(&missing, true, false));
 
     let complete = install_args(Some(ScopeArg::Project), Some(TargetArg::Codex));
+    assert!(use_install_tui_for(&complete, true, false));
+
+    let mut complete = complete;
+    complete.locale = Some("ko-KR".to_string());
     assert!(!use_install_tui_for(&complete, true, false));
     assert!(!use_install_tui_for(&missing, false, false));
     assert!(!use_install_tui_for(&missing, true, true));
@@ -97,11 +102,17 @@ fn scripted_install_wizard_collects_missing_values_and_confirms() {
     let args = install_args(None, None);
     let result = scripted_install_wizard(
         args,
-        &[TuiInput::Select(1), TuiInput::Confirm, TuiInput::Select(0)],
+        &[
+            TuiInput::Select(1),
+            TuiInput::Select(1),
+            TuiInput::Confirm,
+            TuiInput::Select(0),
+        ],
     )
     .expect("wizard should succeed")
     .expect("wizard should confirm");
 
+    assert_eq!(result.locale.as_deref(), Some("en-US"));
     assert_eq!(result.scope, Some(ScopeArg::Global));
     assert_eq!(result.target, Some(TargetArg::Codex));
 }
@@ -118,10 +129,14 @@ fn scripted_install_wizard_preserves_existing_flags() {
     let mut args = install_args(Some(ScopeArg::Project), None);
     args.dry_run = true;
     args.force = true;
-    let result = scripted_install_wizard(args, &[TuiInput::Confirm, TuiInput::Confirm])
-        .expect("wizard should succeed")
-        .expect("wizard should confirm");
+    let result = scripted_install_wizard(
+        args,
+        &[TuiInput::Select(0), TuiInput::Confirm, TuiInput::Confirm],
+    )
+    .expect("wizard should succeed")
+    .expect("wizard should confirm");
 
+    assert_eq!(result.locale.as_deref(), Some("ko-KR"));
     assert_eq!(result.scope, Some(ScopeArg::Project));
     assert_eq!(result.target, Some(TargetArg::Codex));
     assert!(result.dry_run);
