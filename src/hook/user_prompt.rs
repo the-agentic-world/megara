@@ -159,7 +159,11 @@ pub(super) fn handle_user_prompt(
                 state["input_spec_persisted_at"] = json!(spec.persisted_at);
             }
         }
-        subagent_gate::register_requirement(timestamp, &mut state, workflow, payload_file);
+        if workflow == TEAM {
+            team::register_requirement(timestamp, &mut state, payload, &prompt, payload_file);
+        } else {
+            subagent_gate::register_requirement(timestamp, &mut state, workflow, payload_file);
+        }
         let session_id = state
             .get("session_id")
             .map(value_to_string)
@@ -175,7 +179,11 @@ pub(super) fn handle_user_prompt(
                 "payload": payload_file,
             }),
         )?;
-        subagent_gate::print_user_prompt_context(workflow)?;
+        if workflow == TEAM {
+            team::print_user_prompt_context(payload, &prompt, &state)?;
+        } else {
+            subagent_gate::print_user_prompt_context(workflow)?;
+        }
     }
     Ok(0)
 }

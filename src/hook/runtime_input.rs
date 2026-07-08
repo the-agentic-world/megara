@@ -166,7 +166,9 @@ const INTERNAL_HOOK_FEEDBACK_PREFIXES: &[&str] = &[
     "megara runtime artifact or state paths are internal",
     "megara requires context-only, tool-free subagent review",
     "megara requires ralplan review receipts before approval",
+    "megara requires teammate receipts before team completion",
     "internal megara workflow instruction",
+    "internal megara team instruction",
     "keep this runtime instruction internal",
 ];
 

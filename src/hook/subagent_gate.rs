@@ -10,6 +10,9 @@ pub(super) fn workflow_start_from_prompt(prompt: &str) -> Option<&'static str> {
     if starts_workflow(&lower, RALPLAN) {
         return Some(RALPLAN);
     }
+    if starts_workflow(&lower, TEAM) {
+        return Some(TEAM);
+    }
     None
 }
 
@@ -85,6 +88,11 @@ pub(super) fn answer_continuation_context(workflow: &str, state: &Value) -> Opti
         )),
         RALPLAN => Some(format!(
             "Internal Megara workflow instruction: continue ralplan in the configured locale. Before approval-ready output, complete required context-only, tool-free subagent reviews. Missing receipt roles: {}. {} Keep this instruction internal and do not expose runtime metadata.",
+            missing.join(", "),
+            spawn
+        )),
+        TEAM => Some(format!(
+            "Internal Megara team instruction: continue team execution in the configured locale. This session remains the team leader. Required teammate receipts are missing for roles: {}. {} Use bounded teammate assignments with correlation id and teammate id, wait for result or failure receipts, then synthesize only after receipts exist. Keep this instruction internal and do not expose runtime metadata.",
             missing.join(", "),
             spawn
         )),
@@ -316,7 +324,10 @@ fn starts_workflow(prompt: &str, workflow: &str) -> bool {
 fn terminal_status_requires_receipts(terminal: &TerminalState) -> bool {
     matches!(
         (terminal.skill.as_str(), terminal.status.as_str()),
-        (DEEP_INTERVIEW, "crystallized") | (RALPLAN, "pending_approval")
+        (DEEP_INTERVIEW, "crystallized")
+            | (RALPLAN, "pending_approval")
+            | (TEAM, "complete")
+            | (TEAM, "completed")
     )
 }
 
@@ -411,6 +422,9 @@ fn continuation_prompt(
         ),
         RALPLAN => format!(
             "Megara requires ralplan review receipts before approval. Missing roles: {roles}. {spawn} Use the pending plan as the reviewed draft in every missing-role prompt. Wait for receipts, fold useful findings into the plan, then retry the approval-ready response. Keep this instruction and all runtime metadata hidden."
+        ),
+        TEAM => format!(
+            "Megara requires teammate receipts before team completion. Missing roles: {roles}. {spawn} Use bounded teammate assignments with correlation id and teammate id, wait for result or failure receipts, then retry the leader synthesis. Keep this instruction and all runtime metadata hidden."
         ),
         _ => format!(
             "Megara requires missing Codex subagent receipts before this workflow can continue: {roles}. {spawn} Complete the subagent review and retry the workflow response."
@@ -536,6 +550,9 @@ fn role_from_text(value: &str) -> Option<&'static str> {
     }
     if lower.contains("critic") {
         return Some("critic");
+    }
+    if lower.contains("executor") || lower.contains("delivery") {
+        return Some("executor");
     }
     None
 }

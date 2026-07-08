@@ -1,5 +1,5 @@
 use super::parse_block;
-use crate::hook::{DEEP_INTERVIEW, RALPLAN, WORKFLOWS};
+use crate::hook::{DEEP_INTERVIEW, RALPLAN, TEAM, WORKFLOWS};
 
 #[derive(Debug)]
 pub(crate) struct TerminalState {
@@ -66,6 +66,16 @@ fn workflow_state_from_visible_text(text: &str) -> Option<TerminalState> {
         });
     }
 
+    if looks_like_visible_team_complete(text) {
+        return Some(TerminalState {
+            skill: TEAM.to_string(),
+            status: "complete".to_string(),
+            ambiguity: String::new(),
+            next: String::new(),
+            plan_id: None,
+        });
+    }
+
     None
 }
 
@@ -121,6 +131,23 @@ fn looks_like_visible_deep_interview_crystallized(text: &str) -> bool {
         .take(10)
         .any(|line| line.trim_end().ends_with('?') || line.trim_end().ends_with('？'));
     lower.contains("ralplan") && visible_section_score(text) >= 3 && !has_pending_question
+}
+
+fn looks_like_visible_team_complete(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    let has_team = lower.contains("team")
+        || lower.contains("teammate")
+        || text.contains("팀")
+        || text.contains("팀메이트");
+    let has_synthesis = lower.contains("synthesis")
+        || lower.contains("integration")
+        || text.contains("합성")
+        || text.contains("통합");
+    let has_verification =
+        lower.contains("verification") || text.contains("검증") || text.contains("확인");
+    let has_completion =
+        lower.contains("complete") || lower.contains("done") || text.contains("완료");
+    has_team && has_synthesis && has_verification && has_completion
 }
 
 fn visible_section_score(text: &str) -> usize {
