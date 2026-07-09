@@ -28,6 +28,7 @@ pub(super) fn handle_user_prompt(
             &prompt,
             payload_file,
         ) {
+            let handoff_target = decision.handoff_target.clone();
             let session_id = state
                 .get("session_id")
                 .map(value_to_string)
@@ -45,6 +46,16 @@ pub(super) fn handle_user_prompt(
                     "payload": payload_file,
                 }),
             )?;
+            if handoff_target.as_str() == Some(TEAM) {
+                start_team_from_ralplan_handoff(
+                    timestamp,
+                    state_dir,
+                    payload,
+                    payload_file,
+                    &state,
+                    &prompt,
+                )?;
+            }
             return Ok(0);
         }
     }
@@ -206,6 +217,71 @@ fn print_additional_context(context: &str) -> Result<()> {
         }))?
     );
     Ok(())
+}
+
+fn start_team_from_ralplan_handoff(
+    timestamp: &str,
+    state_dir: &Path,
+    payload: &Value,
+    payload_file: &Path,
+    ralplan_state: &Value,
+    approval_prompt: &str,
+) -> Result<()> {
+    let paths = workflow_paths(state_dir, payload, TEAM);
+    reconcile_session_aliases(timestamp, payload_file, &paths, TEAM, payload)?;
+    let mut state = load_json(&paths.session_file)
+        .unwrap_or_else(|| new_state(TEAM, timestamp, &paths.session_id, payload));
+    let team_prompt =
+        approved_plan_text(ralplan_state).unwrap_or_else(|| approval_prompt.trim().to_string());
+
+    team::register_requirement(
+        timestamp,
+        state_dir,
+        &mut state,
+        payload,
+        &team_prompt,
+        payload_file,
+    );
+    state["source_workflow"] = json!(RALPLAN);
+    if let Some(plan_id) = ralplan_state.get("approved_plan_id").cloned() {
+        state["source_plan_id"] = plan_id;
+    } else if let Some(plan_id) = ralplan_state.get("plan_id").cloned() {
+        state["source_plan_id"] = plan_id;
+    }
+    if let Some(plan_sha256) = ralplan_state.get("approved_plan_sha256").cloned() {
+        state["source_plan_sha256"] = plan_sha256;
+    } else if let Some(plan_sha256) = ralplan_state.get("plan_sha256").cloned() {
+        state["source_plan_sha256"] = plan_sha256;
+    }
+    state["source_handoff_target"] = json!(TEAM);
+
+    let session_id = state
+        .get("session_id")
+        .map(value_to_string)
+        .unwrap_or_else(|| "unknown-session".to_string());
+    write_json_atomic(&paths.session_file, &state)?;
+    append_jsonl(
+        &paths.events_file,
+        &json!({
+            "timestamp": timestamp,
+            "event": "ralplan_team_handoff_started",
+            "session_id": session_id,
+            "workflow": TEAM,
+            "source_workflow": RALPLAN,
+            "source_plan_id": state.get("source_plan_id").cloned().unwrap_or(Value::Null),
+            "source_plan_sha256": state.get("source_plan_sha256").cloned().unwrap_or(Value::Null),
+            "payload": payload_file,
+        }),
+    )?;
+    team::print_user_prompt_context(payload, &team_prompt, &state)
+}
+
+fn approved_plan_text(ralplan_state: &Value) -> Option<String> {
+    let plan_path = ralplan_state.get("plan_path").and_then(Value::as_str)?;
+    fs::read_to_string(plan_path)
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
 }
 
 fn is_subagent_prompt(payload: &Value) -> bool {

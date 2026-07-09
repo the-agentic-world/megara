@@ -298,3 +298,72 @@ fn team_completion_is_blocked_until_teammate_receipts_exist() {
     assert_eq!(state["phase"], "complete");
     assert_eq!(state["subagent_orchestration"]["status"], "satisfied");
 }
+
+#[test]
+fn ralplan_team_numeric_approval_opens_team_workflow() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let session_id = "sess-rp-team-handoff";
+    assert_success(&user_prompt(
+        dir.path(),
+        session_id,
+        "$ralplan implement Codex hook runtime adapter integration",
+    ));
+    submit_role_subagent_review(dir.path(), session_id, "planner", "CLEAR");
+    submit_role_subagent_review(dir.path(), session_id, "architect", "CLEAR");
+    submit_role_subagent_review(dir.path(), session_id, "critic", "OKAY");
+    submit_plan(
+        dir.path(),
+        session_id,
+        "rp-team-handoff",
+        "implement Codex hook runtime adapter integration",
+    );
+    let ralplan_state = read_state(dir.path(), RALPLAN, session_id);
+    assert_eq!(ralplan_state["phase"], "pending_approval");
+
+    let transcript = dir.path().join("app-session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"session_meta","payload":{"source":"vscode","originator":"Codex Desktop"}}"#,
+    )
+    .unwrap();
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "cwd": dir.path(),
+        "transcript_path": transcript,
+        "prompt": "3",
+    })
+    .to_string();
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload.as_bytes(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("this Codex App session is the team leader"));
+    assert!(stdout.contains("planner, architect, executor, critic"));
+
+    let approved = read_state(dir.path(), RALPLAN, session_id);
+    assert_eq!(approved["phase"], "approved");
+    assert_eq!(approved["approved_handoff_target"], TEAM);
+
+    let team_state = read_state(dir.path(), TEAM, session_id);
+    assert_eq!(team_state["source_workflow"], RALPLAN);
+    assert_eq!(team_state["source_plan_id"], "rp-team-handoff");
+    assert_eq!(team_state["team"]["surface"], "app");
+    assert_eq!(team_state["team"]["leader"], "current-session");
+    assert_eq!(team_state["team"]["transport"], "subagent-fallback");
+    assert_eq!(team_state["subagent_orchestration"]["status"], "required");
+    assert_eq!(team_state["subagent_orchestration"]["roles"][0], "planner");
+    assert_eq!(
+        team_state["subagent_orchestration"]["roles"][1],
+        "architect"
+    );
+    assert_eq!(team_state["subagent_orchestration"]["roles"][2], "executor");
+    assert_eq!(team_state["subagent_orchestration"]["roles"][3], "critic");
+}
