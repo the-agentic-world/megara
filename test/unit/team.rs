@@ -24,12 +24,12 @@ fn selects_architecture_coverage_for_runtime_work() {
 }
 
 #[test]
-fn warp_layout_keeps_leader_left_and_teammates_right() {
-    let layout = team::warp_layout(3).unwrap();
+fn split_layout_keeps_leader_left_and_teammates_right() {
+    let layout = team::split_layout(3).unwrap();
     assert_eq!(layout.left_column, "leader");
     assert_eq!(layout.right_rows, 3);
-    assert!(team::warp_layout(1).is_none());
-    assert!(team::warp_layout(5).is_none());
+    assert!(team::split_layout(1).is_none());
+    assert!(team::split_layout(5).is_none());
 }
 
 #[test]
@@ -61,10 +61,27 @@ fn malformed_team_message_cannot_complete() {
 }
 
 #[test]
-fn warp_is_fallback_by_default() {
-    assert!(!team::warp_is_supported_by_default());
+fn cli_split_transports_are_limited() {
+    assert_eq!(team::cli_split_transports(), ["cmux", "tmux", "orca"]);
     assert_eq!(
         team::FALLBACK_NOTICE,
-        "Warp pane 생성 실패로 subagent fallback 사용"
+        "CLI split pane 생성 실패로 subagent fallback 사용"
     );
+}
+
+#[test]
+fn parses_known_team_roles() {
+    assert_eq!(team::parse_role("planner"), Some(team::TeamRole::Planner));
+    assert_eq!(
+        team::parse_role("architect"),
+        Some(team::TeamRole::Architect)
+    );
+    assert_eq!(team::parse_role("executor"), Some(team::TeamRole::Executor));
+    assert_eq!(team::parse_role("critic"), Some(team::TeamRole::Critic));
+    assert_eq!(team::parse_role("unknown"), None);
+}
+
+#[test]
+fn team_correlation_id_is_safe() {
+    assert_eq!(team::team_correlation_id("12:34/path"), "team-12-34-path");
 }

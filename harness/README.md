@@ -60,6 +60,13 @@ In the Megara repository, `harness/` is the bundled harness source. After instal
   - `session_meta.payload.source == "vscode"` with `thread_source == "subagent"` and a `<codex_delegation><input>...</input>` prompt wrapper indicates a Codex App delegated thread in observed Codex `0.142.5` payloads.
   - Prompt and workflow detection must run on the effective user prompt. For delegated Codex App payloads, extract the text inside `<input>...</input>` before checking slash commands or Megara skill triggers.
 - Codex subagent spawning is a model-turn capability, not a hook command capability. Hooks can observe `SubagentStart`/`SubagentStop` and can add context or block a turn, but they must not assume they can directly call Codex's internal spawn tools from a hook process.
+- Codex CLI team mode uses executable split-pane routes only through `cmux`, `tmux`, or `orca`:
+  - `megara team split --transport auto` selects `cmux`, then `tmux`, then `orca`.
+  - The target layout is two columns: leader guidance on the left, teammate panes stacked on the right.
+  - Teammate panes run `megara team teammate`, which invokes `codex exec` and records teammate result/failure receipts.
+  - Hooks collect those receipts before allowing team completion.
+  - Warp, AppleScript, private UI events, keyboard automation, and other terminal surfaces are not supported split-pane transports.
+  - If `cmux`, `tmux`, and `orca` split-pane creation, Codex CLI execution, or receipt collection fails, the workflow falls back to Codex subagents with one visible fallback notice.
 - Hook state is append-only by default:
   - `.megara/state/hooks/events.jsonl` indexes every hook event.
   - `.megara/state/hooks/payloads/<runtime>/<event>/*.json` stores every raw payload.

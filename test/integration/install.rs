@@ -104,8 +104,12 @@ fn installs_project_scope_codex_harness() {
     assert!(team.contains("Codex App"));
     assert!(team.contains("The current App thread is the team leader"));
     assert!(team.contains("Codex CLI"));
-    assert!(team.contains("Target Warp layout: two columns"));
-    assert!(team.contains("Warp pane 생성 실패로 subagent fallback 사용"));
+    assert!(team.contains("Split-pane teammates are limited to `cmux`, `tmux`, and `orca`"));
+    assert!(team.contains("Target split layout: two columns"));
+    assert!(team.contains(r#""$MEGARA_BIN" team split"#));
+    assert!(team.contains("megara team teammate"));
+    assert!(team.contains("Do not use Warp"));
+    assert!(team.contains("CLI split pane 생성 실패로 subagent fallback 사용"));
     assert!(team.contains("Message Contract"));
     let skill =
         fs::read_to_string(dir.path().join(".agents/skills/deep-interview/SKILL.md")).unwrap();

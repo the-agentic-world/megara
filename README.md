@@ -203,6 +203,15 @@ $ultragoal "방금 승인한 계획을 목표로 나눠 구현하고, 각 목표
 $team "승인된 계획을 구현, 검증, 문서 lane으로 나눠 병렬로 진행해줘"
 ```
 
+Codex CLI에서 `$team`은 split pane transport를 `cmux`, `tmux`, `orca`로만 제한합니다. Megara hook이 팀 작업을 감지하면 내부적으로 task와 correlation id를 준비하고, leader 세션은 다음 형태의 helper를 실행합니다.
+
+```bash
+MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
+"$MEGARA_BIN" team split --transport auto --roles executor,critic --correlation-id <id> --open
+```
+
+이 helper는 사용 가능한 transport를 `cmux -> tmux -> orca` 순서로 고르고 teammate pane을 만듭니다. pane들은 `megara team teammate`를 통해 `codex exec`를 실행하고 teammate result/failure receipt를 남깁니다. 원래 CLI 세션은 canonical team leader로 남아 receipt를 모아 최종 합성을 합니다. 세 transport 모두 사용할 수 없거나 Codex CLI 실행, receipt 수집 중 하나라도 실패하면 한 줄 fallback notice 후 Codex subagent를 사용합니다.
+
 일반적인 흐름은 다음과 같습니다.
 
 1. 모호한 아이디어는 `$deep-interview`로 명세화합니다.

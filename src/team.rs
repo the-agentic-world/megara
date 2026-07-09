@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-pub(crate) const FALLBACK_NOTICE: &str = "Warp pane 생성 실패로 subagent fallback 사용";
+pub(crate) const FALLBACK_NOTICE: &str = "CLI split pane 생성 실패로 subagent fallback 사용";
+
+#[path = "team/split.rs"]
+pub(crate) mod split;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -72,7 +75,7 @@ impl TeamRole {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WarpPaneLayout {
+pub(crate) struct SplitPaneLayout {
     pub left_column: &'static str,
     pub right_rows: usize,
 }
@@ -92,7 +95,9 @@ pub(crate) fn select_teammates(task: &str) -> Vec<TeamRole> {
             "boundary",
             "cross-file",
             "cross module",
-            "warp",
+            "cmux",
+            "tmux",
+            "orca",
             "codex",
         ],
     ) || task.contains("아키텍처")
@@ -127,6 +132,24 @@ pub(crate) fn role_names(roles: &[TeamRole]) -> Vec<&'static str> {
     roles.iter().map(|role| role.as_str()).collect()
 }
 
+pub(crate) fn parse_role(value: &str) -> Option<TeamRole> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "planner" => Some(TeamRole::Planner),
+        "architect" => Some(TeamRole::Architect),
+        "executor" => Some(TeamRole::Executor),
+        "critic" => Some(TeamRole::Critic),
+        _ => None,
+    }
+}
+
+pub(crate) fn team_correlation_id(timestamp: &str) -> String {
+    format!("team-{}", safe_correlation_part(timestamp))
+}
+
+pub(crate) fn cli_split_transports() -> [&'static str; 3] {
+    ["cmux", "tmux", "orca"]
+}
+
 pub(crate) fn message_contract_kinds() -> [&'static str; 6] {
     [
         TeamMessageKind::Assignment.as_str(),
@@ -151,20 +174,30 @@ pub(crate) fn message_contract_example(correlation_id: &str, teammate_id: &str) 
     message
 }
 
-pub(crate) fn warp_layout(teammate_count: usize) -> Option<WarpPaneLayout> {
+pub(crate) fn split_layout(teammate_count: usize) -> Option<SplitPaneLayout> {
     if !(2..=4).contains(&teammate_count) {
         return None;
     }
-    Some(WarpPaneLayout {
+    Some(SplitPaneLayout {
         left_column: "leader",
         right_rows: teammate_count,
     })
 }
 
-pub(crate) fn warp_is_supported_by_default() -> bool {
-    false
-}
-
 fn contains_any(text: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| text.contains(needle))
+}
+
+fn safe_correlation_part(value: &str) -> String {
+    let safe = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    safe.trim_matches('-').to_string()
 }

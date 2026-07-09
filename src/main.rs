@@ -15,7 +15,7 @@ mod writer;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Commands, DocsCommands, TargetCommands, TemplateCommands};
+use cli::{Cli, Commands, DocsCommands, TargetCommands, TeamCommands, TemplateCommands};
 use installer::{InstallAction, InstallOptions, Planner};
 use templates::TemplateRegistry;
 
@@ -59,6 +59,19 @@ fn main() -> Result<()> {
             }
         }
         Commands::Ultragoal(args) => ultragoal::run(args)?,
+        Commands::Team(args) => match args.command {
+            TeamCommands::Split(args) => {
+                let report = team::split::prepare_from_cli(args)?;
+                if report.json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    report.print()?;
+                }
+            }
+            TeamCommands::Teammate(args) => {
+                team::split::run_teammate_from_cli(args)?;
+            }
+        },
         Commands::Docs(args) => match args.command {
             DocsCommands::Init(args) => docs::init(args)?,
             DocsCommands::Check(args) => docs::check(args)?,

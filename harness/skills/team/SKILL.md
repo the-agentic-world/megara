@@ -42,12 +42,20 @@ Use this workflow when approved work benefits from multiple coordinated roles. T
 ## Codex CLI
 
 - The current CLI session is the team leader.
-- Prefer Warp pane teammates only when stable pane creation and message exchange are available.
-- Target Warp layout: two columns, leader on the left, right column split into one row per teammate.
-- If Warp pane creation or message exchange fails, print exactly one fallback notice and use Codex subagents instead:
+- Split-pane teammates are limited to `cmux`, `tmux`, and `orca`.
+- Prefer the executable split-pane path before falling back to Codex subagents.
+- Target split layout: two columns, leader on the left, right column split into one row per teammate.
+- The supported executable path is the Megara split helper:
+  - Run `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"`.
+  - Run `"$MEGARA_BIN" team split --transport auto --roles <comma-separated roles> --correlation-id <id> --open`.
+  - Auto transport order is `cmux`, then `tmux`, then `orca`.
+  - Each teammate pane runs `megara team teammate`, which invokes `codex exec` and records a teammate result or failure receipt.
+- Do not use Warp, AppleScript, private UI events, keyboard automation, or any terminal outside `cmux`, `tmux`, and `orca` as the product split-pane path.
+- The original CLI session remains the canonical team leader. Split panes are companion teammate surfaces with receipt-backed message exchange.
+- If `cmux`, `tmux`, and `orca` split-pane creation, Codex CLI execution, or receipt collection is unavailable or fails, print exactly one fallback notice and use Codex subagents instead:
 
 ```text
-Warp pane 생성 실패로 subagent fallback 사용
+CLI split pane 생성 실패로 subagent fallback 사용
 ```
 
 ## Message Contract
@@ -57,7 +65,7 @@ Warp pane 생성 실패로 subagent fallback 사용
 - `teammate-result`: teammate returns usable evidence.
 - `teammate-failure`: teammate cannot complete the assignment.
 - `leader-synthesis`: leader integrates teammate outputs.
-- `fallback-notice`: leader reports Warp fallback when needed.
+- `fallback-notice`: leader reports split-pane fallback at most once, without failure details or runtime metadata.
 
 ## Output
 

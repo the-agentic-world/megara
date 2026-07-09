@@ -8,6 +8,8 @@ mod docs;
 mod install;
 #[path = "cli/resolve.rs"]
 mod resolve;
+#[path = "cli/team.rs"]
+mod team;
 #[path = "cli/templates.rs"]
 mod templates;
 #[path = "cli/ultragoal.rs"]
@@ -20,6 +22,8 @@ pub use common::{ScopeArg, TargetArg};
 pub use docs::{DocsArgs, DocsCheckArgs, DocsCommands, DocsInitArgs};
 pub use install::{DoctorArgs, HookArgs, InstallArgs, SyncArgs};
 pub use resolve::{resolve_scope, resolve_target};
+#[allow(unused_imports)]
+pub use team::{TeamArgs, TeamCommands, TeamSplitArgs, TeamTeammateArgs};
 pub use templates::{TargetCommands, TemplateCommands};
 pub use ultragoal::{
     UltragoalArgs, UltragoalCheckpointArgs, UltragoalCommands, UltragoalCreateGoalsArgs,
@@ -57,6 +61,8 @@ pub enum Commands {
     },
     /// Manage durable goal execution state.
     Ultragoal(UltragoalArgs),
+    /// Prepare and run team workflow helpers.
+    Team(TeamArgs),
     /// Manage OKF knowledge bundles.
     Docs(DocsArgs),
     /// Update the Megara binary and installed harness files.

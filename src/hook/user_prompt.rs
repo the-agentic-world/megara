@@ -160,7 +160,14 @@ pub(super) fn handle_user_prompt(
             }
         }
         if workflow == TEAM {
-            team::register_requirement(timestamp, &mut state, payload, &prompt, payload_file);
+            team::register_requirement(
+                timestamp,
+                state_dir,
+                &mut state,
+                payload,
+                &prompt,
+                payload_file,
+            );
         } else {
             subagent_gate::register_requirement(timestamp, &mut state, workflow, payload_file);
         }

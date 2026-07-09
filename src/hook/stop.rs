@@ -37,6 +37,9 @@ pub(super) fn handle_stop(
         reconcile_session_aliases(timestamp, payload_file, &paths, &terminal.skill, payload)?;
         let mut state = load_json(&paths.session_file)
             .unwrap_or_else(|| new_state(&terminal.skill, timestamp, &paths.session_id, payload));
+        if terminal.skill == TEAM {
+            team::sync_split_receipts(timestamp, &mut state);
+        }
         let missing_required_subagent_review =
             matches!(terminal.skill.as_str(), DEEP_INTERVIEW | TEAM)
                 && subagent_gate::block_terminal_if_missing_receipts(
