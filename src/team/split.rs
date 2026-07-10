@@ -265,10 +265,16 @@ fn split_commands(transport: SplitTransport, teammate_commands: &[String]) -> Ve
         .enumerate()
         .map(|(index, command)| match transport {
             SplitTransport::Cmux if index == 0 => {
-                format!("cmux new-split right && cmux send {}", shell_quote(command))
+                format!(
+                    "cmux new-split right --focus true && env -u CMUX_SURFACE_ID cmux send {}",
+                    shell_quote(&cmux_send_text(command))
+                )
             }
             SplitTransport::Cmux => {
-                format!("cmux new-split down && cmux send {}", shell_quote(command))
+                format!(
+                    "env -u CMUX_SURFACE_ID cmux new-split down --focus true && env -u CMUX_SURFACE_ID cmux send {}",
+                    shell_quote(&cmux_send_text(command))
+                )
             }
             SplitTransport::Tmux if index == 0 => {
                 format!("tmux split-window -h {}", shell_quote(command))
@@ -299,13 +305,22 @@ fn run_split_commands(transport: SplitTransport, teammate_commands: &[String]) -
 fn run_cmux(teammate_commands: &[String]) -> Result<()> {
     for (index, command) in teammate_commands.iter().enumerate() {
         let direction = if index == 0 { "right" } else { "down" };
-        checked(
-            Command::new("cmux").args(["new-split", direction]),
-            "cmux new-split",
-        )?;
-        checked(Command::new("cmux").args(["send", command]), "cmux send")?;
+        let mut split = Command::new("cmux");
+        split.args(["new-split", direction, "--focus", "true"]);
+        if index > 0 {
+            split.env_remove("CMUX_SURFACE_ID");
+        }
+        checked(&mut split, "cmux new-split")?;
+        let mut send = Command::new("cmux");
+        send.env_remove("CMUX_SURFACE_ID");
+        send.args(["send", &cmux_send_text(command)]);
+        checked(&mut send, "cmux send")?;
     }
     Ok(())
+}
+
+fn cmux_send_text(command: &str) -> String {
+    format!("{command}\\n")
 }
 
 fn run_tmux(teammate_commands: &[String]) -> Result<()> {

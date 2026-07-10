@@ -202,6 +202,16 @@ fn team_split_command_prepares_cmux_and_orca_commands_without_opening() {
             .as_str()
             .unwrap()
             .contains(first_command));
+        if transport == "cmux" {
+            let first = report["commands"][0].as_str().unwrap();
+            let second = report["commands"][1].as_str().unwrap();
+            assert!(first.contains("--focus true"));
+            assert!(first.contains("env -u CMUX_SURFACE_ID cmux send"));
+            assert!(first.contains("\\n"));
+            assert!(second.contains("env -u CMUX_SURFACE_ID cmux new-split down --focus true"));
+            assert!(second.contains("env -u CMUX_SURFACE_ID cmux send"));
+            assert!(second.contains("\\n"));
+        }
     }
 }
 
