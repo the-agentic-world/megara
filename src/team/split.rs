@@ -98,10 +98,10 @@ pub(crate) fn run_teammate_from_cli(args: TeamTeammateArgs) -> Result<()> {
     let timestamp = timestamp();
     let content_file = args
         .receipt_dir
-        .join(format!("{}-{}.md", &args.role, &args.teammate_id));
+        .join(format!("{}-{}.md", args.role, args.teammate_id));
     let receipt_file = args
         .receipt_dir
-        .join(format!("{}-{}.json", &args.role, &args.teammate_id));
+        .join(format!("{}-{}.json", args.role, args.teammate_id));
     let (kind, status, content) = match output {
         Ok(output) if output.status.success() => (
             "teammate-result",
