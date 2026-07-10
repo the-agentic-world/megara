@@ -260,22 +260,6 @@ pub(super) fn additional_context(workflow: &str) -> Option<&'static str> {
     }
 }
 
-pub(super) fn print_user_prompt_context(workflow: &str) -> Result<()> {
-    let Some(context) = additional_context(workflow) else {
-        return Ok(());
-    };
-    println!(
-        "{}",
-        serde_json::to_string(&json!({
-            "hookSpecificOutput": {
-                "hookEventName": "UserPromptSubmit",
-                "additionalContext": context,
-            }
-        }))?
-    );
-    Ok(())
-}
-
 pub(super) fn answer_continuation_context(workflow: &str, state: &Value) -> Option<String> {
     let missing = missing_roles_for_state(state);
     if missing.is_empty() {

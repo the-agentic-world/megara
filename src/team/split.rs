@@ -90,8 +90,7 @@ pub(crate) fn run_teammate_from_cli(args: TeamTeammateArgs) -> Result<()> {
     })?;
     fs::create_dir_all(&args.receipt_dir)?;
     let output = Command::new(&args.codex_bin)
-        .arg("exec")
-        .arg(&assignment)
+        .args(codex_exec_args(&args.role, &assignment)?)
         .current_dir(&cwd)
         .output();
 
@@ -141,6 +140,19 @@ pub(crate) fn run_teammate_from_cli(args: TeamTeammateArgs) -> Result<()> {
     )?;
     println!("team teammate receipt recorded: {status}");
     Ok(())
+}
+
+pub(crate) fn codex_exec_args(role: &str, assignment: &str) -> Result<Vec<String>> {
+    let profile = crate::targets::codex::role_profile(role)
+        .ok_or_else(|| anyhow!("unknown Codex role profile: {role}"))?;
+    Ok(vec![
+        "exec".to_string(),
+        "--model".to_string(),
+        profile.model.to_string(),
+        "--config".to_string(),
+        format!("model_reasoning_effort=\"{}\"", profile.reasoning_effort),
+        assignment.to_string(),
+    ])
 }
 
 impl SplitPrepareReport {

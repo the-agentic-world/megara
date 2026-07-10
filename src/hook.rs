@@ -12,6 +12,8 @@ use crate::cli::HookArgs;
 
 #[path = "hook/artifacts.rs"]
 mod artifacts;
+#[path = "hook/codex_version.rs"]
+pub(crate) mod codex_version;
 #[path = "hook/conversation.rs"]
 mod conversation;
 #[path = "hook/deep_interview_milestone.rs"]

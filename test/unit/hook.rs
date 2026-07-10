@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+fn codex_versions_are_compared_numerically() {
+    assert!(is_outdated("codex-cli 0.143.9", "0.144.0"));
+    assert!(!is_outdated("codex-cli 0.144.0", "0.144.0"));
+    assert!(is_outdated("26.707.30750", "26.707.30751"));
+    assert!(!is_outdated("26.707.31428", "26.707.30751"));
+}
+
+#[test]
+fn codex_version_parser_rejects_non_versions() {
+    assert!(parse_numeric_version("codex-cli 0.144.0").is_some());
+    assert!(parse_numeric_version("not-a-version").is_none());
+}
+
+#[test]
 fn append_jsonl_keeps_concurrent_records_valid() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("events.jsonl");

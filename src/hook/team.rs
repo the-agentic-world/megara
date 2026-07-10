@@ -67,25 +67,7 @@ pub(super) fn register_requirement(
     state["updated_at"] = json!(timestamp);
 }
 
-pub(super) fn print_user_prompt_context(
-    payload: &Value,
-    prompt: &str,
-    state: &Value,
-) -> Result<()> {
-    let context = additional_context(payload, prompt, state);
-    println!(
-        "{}",
-        serde_json::to_string(&json!({
-            "hookSpecificOutput": {
-                "hookEventName": "UserPromptSubmit",
-                "additionalContext": context,
-            }
-        }))?
-    );
-    Ok(())
-}
-
-fn additional_context(payload: &Value, prompt: &str, state: &Value) -> String {
+pub(super) fn additional_context(payload: &Value, prompt: &str, state: &Value) -> String {
     let roles = state
         .get("subagent_orchestration")
         .and_then(|value| value.get("roles"))

@@ -16,6 +16,11 @@ pub(super) fn handle_user_prompt(
     if is_subagent_prompt(payload) {
         return Ok(0);
     }
+    let system_message = codex_version::outdated_notice_once(
+        state_dir,
+        payload,
+        runtime_input::runtime_context(payload).surface,
+    );
 
     let workflow_start = subagent_gate::workflow_start_from_prompt(&prompt);
 
@@ -47,7 +52,7 @@ pub(super) fn handle_user_prompt(
                 }),
             )?;
             if handoff_target.as_str() == Some(TEAM) {
-                start_team_from_ralplan_handoff(
+                let context = start_team_from_ralplan_handoff(
                     timestamp,
                     state_dir,
                     payload,
@@ -55,6 +60,9 @@ pub(super) fn handle_user_prompt(
                     &state,
                     &prompt,
                 )?;
+                print_user_prompt_output(Some(&context), system_message.as_deref())?;
+            } else {
+                print_user_prompt_output(None, system_message.as_deref())?;
             }
             return Ok(0);
         }
@@ -86,7 +94,10 @@ pub(super) fn handle_user_prompt(
                 "payload": payload_file,
             }),
         )?;
-        subagent_gate::print_user_prompt_context(RALPLAN)?;
+        print_user_prompt_output(
+            subagent_gate::additional_context(RALPLAN),
+            system_message.as_deref(),
+        )?;
         return Ok(0);
     }
 
@@ -164,15 +175,14 @@ pub(super) fn handle_user_prompt(
                 {
                     contexts.push(context);
                 }
-                if !contexts.is_empty() {
-                    print_additional_context(&contexts.join("\n\n"))?;
-                }
+                let context = (!contexts.is_empty()).then(|| contexts.join("\n\n"));
+                print_user_prompt_output(context.as_deref(), system_message.as_deref())?;
                 return Ok(0);
             }
             if let Some(context) =
                 subagent_gate::answer_continuation_context(DEEP_INTERVIEW, &state)
             {
-                print_additional_context(&context)?;
+                print_user_prompt_output(Some(&context), system_message.as_deref())?;
                 return Ok(0);
             }
         }
@@ -219,24 +229,41 @@ pub(super) fn handle_user_prompt(
             }),
         )?;
         if workflow == TEAM {
-            team::print_user_prompt_context(payload, &prompt, &state)?;
+            let context = team::additional_context(payload, &prompt, &state);
+            print_user_prompt_output(Some(&context), system_message.as_deref())?;
         } else {
-            subagent_gate::print_user_prompt_context(workflow)?;
+            print_user_prompt_output(
+                subagent_gate::additional_context(workflow),
+                system_message.as_deref(),
+            )?;
         }
+        return Ok(0);
     }
+    print_user_prompt_output(None, system_message.as_deref())?;
     Ok(0)
 }
 
-fn print_additional_context(context: &str) -> Result<()> {
-    println!(
-        "{}",
-        serde_json::to_string(&json!({
-            "hookSpecificOutput": {
+fn print_user_prompt_output(
+    additional_context: Option<&str>,
+    system_message: Option<&str>,
+) -> Result<()> {
+    if additional_context.is_none() && system_message.is_none() {
+        return Ok(());
+    }
+    let mut output = Map::new();
+    if let Some(system_message) = system_message {
+        output.insert("systemMessage".to_string(), json!(system_message));
+    }
+    if let Some(additional_context) = additional_context {
+        output.insert(
+            "hookSpecificOutput".to_string(),
+            json!({
                 "hookEventName": "UserPromptSubmit",
-                "additionalContext": context,
-            }
-        }))?
-    );
+                "additionalContext": additional_context,
+            }),
+        );
+    }
+    println!("{}", serde_json::to_string(&Value::Object(output))?);
     Ok(())
 }
 
@@ -247,7 +274,7 @@ fn start_team_from_ralplan_handoff(
     payload_file: &Path,
     ralplan_state: &Value,
     approval_prompt: &str,
-) -> Result<()> {
+) -> Result<String> {
     let paths = workflow_paths(state_dir, payload, TEAM);
     reconcile_session_aliases(timestamp, payload_file, &paths, TEAM, payload)?;
     let mut state = load_json(&paths.session_file)
@@ -294,7 +321,7 @@ fn start_team_from_ralplan_handoff(
             "payload": payload_file,
         }),
     )?;
-    team::print_user_prompt_context(payload, &team_prompt, &state)
+    Ok(team::additional_context(payload, &team_prompt, &state))
 }
 
 fn approved_plan_text(ralplan_state: &Value) -> Option<String> {

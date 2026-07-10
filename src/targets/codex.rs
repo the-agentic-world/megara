@@ -14,6 +14,8 @@ mod config;
 mod hooks;
 #[path = "codex/projection.rs"]
 mod projection;
+#[path = "codex/role_profile.rs"]
+mod role_profile;
 #[path = "codex/trust.rs"]
 mod trust;
 #[path = "codex/trust_hash.rs"]
@@ -21,6 +23,7 @@ mod trust_hash;
 #[path = "codex/trust_toml.rs"]
 mod trust_toml;
 
+pub(crate) use role_profile::role_profile;
 pub use trust::HookTrustSummary;
 
 const DEFAULT_LOCALE: &str = "ko-KR";

@@ -368,4 +368,25 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         description: "Plan critic agent",
         content: include_str!("../../harness/agents/critic.toml"),
     },
+    TemplateSpec {
+        name: "researcher",
+        kind: TemplateKind::Agent,
+        relative_path: "agents/researcher.toml",
+        description: "Evidence research agent",
+        content: include_str!("../../harness/agents/researcher.toml"),
+    },
+    TemplateSpec {
+        name: "contrarian",
+        kind: TemplateKind::Agent,
+        relative_path: "agents/contrarian.toml",
+        description: "Adversarial review agent",
+        content: include_str!("../../harness/agents/contrarian.toml"),
+    },
+    TemplateSpec {
+        name: "simplifier",
+        kind: TemplateKind::Agent,
+        relative_path: "agents/simplifier.toml",
+        description: "Scope simplification agent",
+        content: include_str!("../../harness/agents/simplifier.toml"),
+    },
 ];

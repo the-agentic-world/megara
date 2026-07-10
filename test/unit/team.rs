@@ -85,3 +85,39 @@ fn parses_known_team_roles() {
 fn team_correlation_id_is_safe() {
     assert_eq!(team::team_correlation_id("12:34/path"), "team-12-34-path");
 }
+
+#[test]
+fn codex_roles_use_recommended_gpt_5_6_profiles() {
+    let cases = [
+        ("executor", "gpt-5.6-terra", "high"),
+        ("planner", "gpt-5.6-terra", "high"),
+        ("architect", "gpt-5.6-sol", "xhigh"),
+        ("critic", "gpt-5.6-sol", "high"),
+        ("researcher", "gpt-5.6-terra", "medium"),
+        ("contrarian", "gpt-5.6-sol", "high"),
+        ("simplifier", "gpt-5.6-luna", "high"),
+    ];
+
+    for (role, model, reasoning_effort) in cases {
+        let profile = role_profile(role).unwrap();
+        assert_eq!(profile.model, model);
+        assert_eq!(profile.reasoning_effort, reasoning_effort);
+    }
+}
+
+#[test]
+fn cli_teammate_applies_role_model_and_reasoning_effort() {
+    let args = codex_exec_args("architect", "Review the runtime boundary.").unwrap();
+
+    assert_eq!(
+        args,
+        vec![
+            "exec",
+            "--model",
+            "gpt-5.6-sol",
+            "--config",
+            "model_reasoning_effort=\"xhigh\"",
+            "Review the runtime boundary.",
+        ]
+    );
+}

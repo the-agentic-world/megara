@@ -46,10 +46,15 @@ In the Megara repository, `harness/` is the bundled harness source. After instal
 
 ## Agents
 
-- `executor`
-- `planner`
-- `architect`
-- `critic`
+| Role | Codex model | Reasoning effort |
+| --- | --- | --- |
+| `executor` | `gpt-5.6-terra` | `high` |
+| `planner` | `gpt-5.6-terra` | `high` |
+| `architect` | `gpt-5.6-sol` | `xhigh` |
+| `critic` | `gpt-5.6-sol` | `high` |
+| `researcher` | `gpt-5.6-terra` | `medium` |
+| `contrarian` | `gpt-5.6-sol` | `high` |
+| `simplifier` | `gpt-5.6-luna` | `high` |
 
 ## Runtime Hooks
 

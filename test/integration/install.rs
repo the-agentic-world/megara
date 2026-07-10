@@ -76,8 +76,14 @@ fn installs_project_scope_codex_harness() {
         .join(".codex/skill-fragments/deep-interview/auto-research-greenfield.md")
         .exists());
     assert!(dir.path().join(".agents/agents/executor.toml").exists());
+    assert!(dir.path().join(".agents/agents/researcher.toml").exists());
+    assert!(dir.path().join(".agents/agents/contrarian.toml").exists());
+    assert!(dir.path().join(".agents/agents/simplifier.toml").exists());
     assert!(dir.path().join(".codex/hooks.json").exists());
     assert!(dir.path().join(".codex/agents/executor.toml").exists());
+    assert!(dir.path().join(".codex/agents/researcher.toml").exists());
+    assert!(dir.path().join(".codex/agents/contrarian.toml").exists());
+    assert!(dir.path().join(".codex/agents/simplifier.toml").exists());
     let agents_gitignore = fs::read_to_string(dir.path().join(".agents/.gitignore")).unwrap();
     assert!(agents_gitignore.contains("MEGARA:MANAGED"));
     assert!(agents_gitignore.contains("state/"));
@@ -332,20 +338,20 @@ fn installs_project_scope_codex_harness() {
             .get("codex")
             .and_then(|codex| codex.get("model"))
             .and_then(toml::Value::as_str),
-        Some("gpt-5.5")
+        Some("gpt-5.6-terra")
     );
 
     let codex_agent = fs::read_to_string(dir.path().join(".codex/agents/executor.toml")).unwrap();
     let codex_agent: toml::Value = toml::from_str(&codex_agent).unwrap();
     assert_eq!(
         codex_agent.get("model").and_then(toml::Value::as_str),
-        Some("gpt-5.5")
+        Some("gpt-5.6-terra")
     );
     assert_eq!(
         codex_agent
             .get("model_reasoning_effort")
             .and_then(toml::Value::as_str),
-        Some("medium")
+        Some("high")
     );
     assert!(codex_agent
         .get("developer_instructions")

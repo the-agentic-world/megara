@@ -29,6 +29,7 @@ mod update;
 #[path = "../../src/writer.rs"]
 mod writer;
 
+pub(crate) use hook::codex_version::{is_outdated, parse_numeric_version};
 pub(crate) use hook::fsutil::append_jsonl;
 pub(crate) use hook::mutation::mutating_command;
 pub(crate) use hook::parser::{
@@ -42,6 +43,8 @@ pub(crate) use hook::state_paths::workflow_paths;
 pub(crate) use installer::{PlannedFile, MANAGED_MARKER};
 pub(crate) use serde_json::{json, Value};
 pub(crate) use std::{fs, path::Path};
+pub(crate) use targets::codex::role_profile;
+pub(crate) use team::split::codex_exec_args;
 pub(crate) use ultragoal::*;
 pub(crate) use writer::*;
 

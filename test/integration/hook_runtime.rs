@@ -121,3 +121,127 @@ fn projected_hook_runner_records_effective_prompt_and_surface() {
     assert!(conversation.contains("\"transcript_source\":\"vscode\""));
     assert!(conversation.contains("\"raw_content\":\"<codex_delegation>"));
 }
+
+#[test]
+fn outdated_cli_version_is_reported_once_without_polluting_context() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let transcript = dir.path().join("cli-session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"session_meta","payload":{"source":"exec"}}"#,
+    )
+    .unwrap();
+    let payload = serde_json::json!({
+        "session_id": "old-cli-session",
+        "transcript_path": transcript,
+        "cli_version": "codex-cli 0.143.0",
+        "prompt": "hello",
+    })
+    .to_string();
+
+    let first = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload.as_bytes(),
+    );
+    assert_hook_success(&first);
+    let output: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert!(output["systemMessage"]
+        .as_str()
+        .unwrap()
+        .contains("0.144.0"));
+    assert!(output.get("hookSpecificOutput").is_none());
+
+    let second = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload.as_bytes(),
+    );
+    assert_hook_success(&second);
+    assert!(second.stdout.is_empty());
+}
+
+#[test]
+fn outdated_app_version_merges_warning_with_workflow_context() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let transcript = dir.path().join("app-session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"session_meta","payload":{"source":"vscode"}}"#,
+    )
+    .unwrap();
+    let payload = serde_json::json!({
+        "session_id": "old-app-session",
+        "transcript_path": transcript,
+        "app_version": "26.707.30750",
+        "prompt": "$deep-interview improve the menu",
+    })
+    .to_string();
+
+    let result = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload.as_bytes(),
+    );
+    assert_hook_success(&result);
+    let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(output["systemMessage"]
+        .as_str()
+        .unwrap()
+        .contains("26.707.30751"));
+    assert_eq!(
+        output["hookSpecificOutput"]["hookEventName"],
+        "UserPromptSubmit"
+    );
+    assert!(output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("deep-interview"));
+}
+
+#[test]
+fn supported_codex_versions_do_not_emit_a_warning() {
+    let dir = tempdir().unwrap();
+    let transcript = dir.path().join("cli-session.jsonl");
+    fs::write(
+        &transcript,
+        r#"{"type":"session_meta","payload":{"source":"exec"}}"#,
+    )
+    .unwrap();
+    let payload = serde_json::json!({
+        "session_id": "current-cli-session",
+        "transcript_path": transcript,
+        "cli_version": "codex-cli 0.144.0",
+        "prompt": "hello",
+    })
+    .to_string();
+
+    let result = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        payload.as_bytes(),
+    );
+    assert_hook_success(&result);
+    assert!(result.stdout.is_empty());
+}
+
+fn assert_hook_success(output: &Output) {
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
