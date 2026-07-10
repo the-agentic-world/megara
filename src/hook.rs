@@ -16,6 +16,8 @@ mod artifacts;
 mod conversation;
 #[path = "hook/deep_interview_milestone.rs"]
 mod deep_interview_milestone;
+#[path = "hook/deep_interview_reassessment.rs"]
+mod deep_interview_reassessment;
 #[path = "hook/dispatch.rs"]
 mod dispatch;
 #[path = "hook/fsutil.rs"]
@@ -63,7 +65,10 @@ mod terminal;
 #[path = "hook/user_prompt.rs"]
 mod user_prompt;
 
-use artifacts::{persist_crystallized_spec, persist_pending_plan, persist_ralplan_review};
+use artifacts::{
+    has_visible_crystallized_spec, persist_crystallized_spec, persist_pending_plan,
+    persist_ralplan_review,
+};
 use fsutil::{append_jsonl, load_json, write_json_atomic};
 use mutation::{mutation_signal, protected_workflow_state_mutation};
 use parser::{

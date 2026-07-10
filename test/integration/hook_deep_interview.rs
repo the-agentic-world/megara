@@ -62,6 +62,12 @@ fn projected_hook_runner_tracks_question_gate_and_blocks_mutation() {
 
     submit_final_spec(dir.path());
     let state = read_json(&state_path);
+    assert_eq!(state["phase"], "subagent_review_required");
+    for role in ["researcher", "contrarian", "simplifier"] {
+        submit_deep_interview_review(dir.path(), role);
+    }
+    submit_final_spec(dir.path());
+    let state = read_json(&state_path);
     assert_eq!(state["active"], false);
     assert_eq!(state["phase"], "crystallized");
     assert_eq!(state["ambiguity"], "12%");
@@ -157,6 +163,60 @@ fn deep_interview_question_ledger_preserves_repeated_gate_ids() {
     assert_ne!(questions[0]["id"], questions[1]["id"]);
     assert_eq!(questions[0]["answer"]["content"], "Unit tests.");
     assert_eq!(questions[1]["answer"]["content"], "Keyboard flow.");
+}
+
+#[test]
+fn deep_interview_reassesses_the_entire_spec_after_each_answer() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    submit_question(dir.path());
+    let answer = br#"{"session_id":"sess-di","prompt":"Add account sync, paid plans, and a team dashboard; the original offline-only assumption no longer applies."}"#;
+    let output = run_hook(dir.path(), dir.path(), "UserPromptSubmit", None, answer);
+    assert_success(&output);
+    let context = String::from_utf8_lossy(&output.stdout);
+    assert!(context.contains("reassess the entire specification from scratch"));
+    assert!(context.contains("must not assume ambiguity decreases"));
+
+    let pending = read_json(&state_path(dir.path()));
+    assert_eq!(pending["ambiguity_reassessment"]["status"], "pending");
+    assert_eq!(pending["ambiguity_reassessment"]["previous_score"], "42%");
+    assert_eq!(
+        pending["ambiguity_reassessment"]["answer"],
+        "Add account sync, paid plans, and a team dashboard; the original offline-only assumption no longer applies."
+    );
+
+    let next = serde_json::json!({
+        "session_id": "sess-di",
+        "last_assistant_message": "Ambiguity: 68%\n\nWhich new product boundary should be fixed first?\n\nRecommendation: Account ownership - it constrains synchronization, billing, and team access.\n\n1. Define account ownership (Recommended)\n2. Define paid-plan limits\n3. Define team roles\n4. Direct input / not listed\n"
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        next.as_bytes(),
+    ));
+
+    let completed = read_json(&state_path(dir.path()));
+    assert_eq!(completed["ambiguity_reassessment"]["status"], "completed");
+    assert_eq!(
+        completed["ambiguity_reassessment"]["resulting_score"],
+        "68%"
+    );
+    assert_eq!(
+        completed["ambiguity_reassessment"]["score_direction"],
+        "increased"
+    );
+    assert_eq!(
+        completed["ambiguity_reassessments"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -256,7 +316,7 @@ fn subagent_events_are_logged_and_attached_to_workflow_state() {
 }
 
 #[test]
-fn deep_interview_start_injects_subagent_context_and_requires_receipt() {
+fn deep_interview_start_defers_lateral_review_until_a_trigger() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
@@ -284,15 +344,10 @@ fn deep_interview_start_injects_subagent_context_and_requires_receipt() {
     assert!(stdout.contains("minimal brownfield fact pass"));
     assert!(stdout.contains("only when the next decision depends on repository facts"));
     assert!(stdout.contains("at most five focused source/test files"));
-    assert!(stdout.contains("architect subagent"));
-    assert!(stdout.contains("forbid tool calls"));
-    assert!(stdout.contains("decide only from the prompt context"));
-    assert!(stdout.contains("forbid Megara workflow/skill invocation"));
-    assert!(stdout.contains("final-answer-only short direct verdict"));
+    assert!(stdout.contains("Lateral reviewers are requested only"));
 
     let state = read_json(&state_path(dir.path()));
-    assert_eq!(state["subagent_orchestration"]["status"], "required");
-    assert_eq!(state["subagent_orchestration"]["roles"][0], "architect");
+    assert_eq!(state["subagent_orchestration"]["status"], "idle");
 
     let blocked = run_hook(
         dir.path(),
@@ -311,29 +366,39 @@ fn deep_interview_start_injects_subagent_context_and_requires_receipt() {
     assert_eq!(state["phase"], "subagent_review_required");
     assert!(state.get("spec_path").is_none());
 
-    let subagent_payload = br#"{
-  "session_id": "sess-di",
-  "cwd": "/tmp/project",
-  "agent_id": "agent-architect-1",
-  "agent_type": "architect"
-}"#;
-    assert_success(&run_hook(
-        dir.path(),
-        dir.path(),
-        "SubagentStop",
-        Some("architect"),
-        subagent_payload,
-    ));
+    for role in ["researcher", "contrarian", "simplifier"] {
+        let subagent_payload = serde_json::json!({
+            "session_id": "sess-di",
+            "cwd": "/tmp/project",
+            "agent_id": format!("agent-{role}-1"),
+            "agent_type": role,
+        })
+        .to_string();
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStart",
+            Some(role),
+            subagent_payload.as_bytes(),
+        ));
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStop",
+            Some(role),
+            subagent_payload.as_bytes(),
+        ));
+    }
 
     submit_final_spec(dir.path());
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "crystallized");
     assert_eq!(state["subagent_orchestration"]["status"], "satisfied");
-    assert_eq!(state["subagent_receipts"][0]["role"], "architect");
+    assert_eq!(state["subagent_receipts"].as_array().unwrap().len(), 3);
 }
 
 #[test]
-fn deep_interview_answer_reinforces_pending_subagent_context() {
+fn deep_interview_ordinary_answer_prepares_but_does_not_require_lateral_review() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
@@ -364,17 +429,503 @@ fn deep_interview_answer_reinforces_pending_subagent_context() {
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""additionalContext""#));
-    assert!(stdout.contains("Before final crystallization"));
-    assert!(stdout.contains("Missing receipt roles: architect"));
-    assert!(stdout.contains("Do not delay an ordinary interview question turn"));
-    assert!(!stdout.contains("Spawn only these missing roles now"));
-    assert!(
-        stdout.contains("Ask exactly one compact next question if more user input is still needed")
-    );
+    assert!(stdout.contains("reassess the entire specification from scratch"));
+    assert!(stdout.contains("researcher, contrarian, simplifier, and architect"));
+    assert!(!stdout.contains("Missing receipt roles"));
 
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["phase"], "interviewing");
-    assert_eq!(state["subagent_orchestration"]["status"], "required");
+    assert_eq!(state["subagent_orchestration"]["status"], "conditional");
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 31%\n\nWhich keyboard behavior matters most?\n\nRecommendation: Input latency - it is directly measurable.\n\n1. Input latency (Recommended)\n2. Key repeat\n3. Focus handling\n4. Direct input / not listed\n"}"#,
+    ));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["subagent_orchestration"]["status"], "idle");
+    assert_eq!(state["phase"], "question_pending");
+}
+
+#[test]
+fn deep_interview_semantic_change_requires_four_lateral_reviews_before_next_question() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let start = br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"$deep-interview improve the game"}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        start,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 42%\n\nShould the game remain offline?\n\nRecommendation: Keep it offline - it preserves the current product boundary.\n\n1. Keep offline (Recommended)\n2. Add cloud sync\n3. Defer the decision\n4. Direct input / not listed\n"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"Keep it offline."}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 38%\n\nWhat should be improved next?\n\nRecommendation: Layout - it is the narrowest change.\n\n1. Layout (Recommended)\n2. Controls\n3. Theme\n4. Direct input / not listed\n"}"#,
+    ));
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        r#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"방향을 바꿔 계정과 동기화, 유료 구독, 팀 권한이 있는 서비스로 만들자."}"#.as_bytes(),
+    );
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("researcher, contrarian, simplifier, and architect"));
+    assert!(!stdout.contains("Missing receipt roles"));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(
+        state["subagent_orchestration"]["trigger"],
+        "reassessment_pending"
+    );
+    assert_eq!(
+        state["subagent_orchestration"]["roles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 71%\n\nWhich account boundary should be decided first?\n\nRecommendation: Ownership - it controls sync and billing.\n\n1. Account ownership (Recommended)\n2. Subscription limits\n3. Team permissions\n4. Direct input / not listed\n"}"#,
+    ));
+    let blocked = read_json(&state_path(dir.path()));
+    assert_eq!(blocked["phase"], "subagent_review_required");
+    assert_eq!(
+        blocked["subagent_orchestration"]["trigger"],
+        "reassessment_change"
+    );
+    assert!(blocked["pending_question"].is_null());
+
+    let continuation = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        r#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"계속 진행"}"#.as_bytes(),
+    );
+    assert_success(&continuation);
+    let continuation = String::from_utf8_lossy(&continuation.stdout);
+    assert!(continuation
+        .contains("Missing receipt roles: researcher, contrarian, simplifier, architect"));
+    assert!(continuation.contains("next deep-interview question"));
+
+    for role in ["researcher", "contrarian", "simplifier", "architect"] {
+        let payload = serde_json::json!({
+            "session_id": "sess-di",
+            "cwd": "/tmp/project",
+            "agent_id": format!("agent-{role}"),
+            "agent_type": role,
+            "last_assistant_message": "risk: confirm the changed boundary",
+        })
+        .to_string();
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStart",
+            Some(role),
+            payload.as_bytes(),
+        ));
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStop",
+            Some(role),
+            payload.as_bytes(),
+        ));
+    }
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["subagent_orchestration"]["status"], "satisfied");
+    assert_eq!(state["subagent_receipts"].as_array().unwrap().len(), 4);
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 71%\n\nWhich account boundary should be decided first?\n\nRecommendation: Ownership - it controls sync and billing.\n\n1. Account ownership (Recommended)\n2. Subscription limits\n3. Team permissions\n4. Direct input / not listed\n"}"#,
+    ));
+    let continued = read_json(&state_path(dir.path()));
+    assert_eq!(continued["phase"], "question_pending");
+    assert_eq!(continued["subagent_orchestration"]["status"], "idle");
+}
+
+#[test]
+fn deep_interview_recovers_custom_roles_from_codex_subagent_transcripts() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"$deep-interview improve the game"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 42%\n\nShould the game remain offline?\n\nRecommendation: Keep it offline - it preserves the current product boundary.\n\n1. Keep offline (Recommended)\n2. Add cloud sync\n3. Defer the decision\n4. Direct input / not listed\n"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"Replace the offline game with a cloud service and paid team accounts."}"#,
+    ));
+    let state = read_json(&state_path(dir.path()));
+    let request_id = state["subagent_orchestration"]["request_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let unrelated_transcript = dir.path().join("subagent-unrelated.jsonl");
+    let unrelated = serde_json::json!({
+        "type": "event_msg",
+        "payload": {
+            "type": "user_message",
+            "message": "Review the researcher and architect outcomes without taking either role.",
+        },
+    });
+    fs::write(&unrelated_transcript, format!("{unrelated}\n")).unwrap();
+    let unrelated_payload = serde_json::json!({
+        "session_id": "sess-di",
+        "cwd": "/tmp/project",
+        "agent_id": "019f0000-0000-0000-0000-999999999999",
+        "agent_type": "default",
+        "transcript_path": unrelated_transcript,
+        "agent_transcript_path": unrelated_transcript,
+        "last_assistant_message": "Review completed.",
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStart",
+        None,
+        unrelated_payload.as_bytes(),
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        None,
+        unrelated_payload.as_bytes(),
+    ));
+    let state = read_json(&state_path(dir.path()));
+    assert!(state["subagent_receipts"].as_array().unwrap().is_empty());
+    assert!(state["subagent_in_flight"].as_array().unwrap().is_empty());
+
+    for (index, role) in ["researcher", "contrarian", "simplifier", "architect"]
+        .into_iter()
+        .enumerate()
+    {
+        let transcript_path = dir.path().join(format!("subagent-{role}.jsonl"));
+        let transcript = if index % 2 == 0 {
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{
+                        "type": "input_text",
+                        "text": format!("MEGARA_ROLE={role}\nMEGARA_REQUEST={request_id}\nReview only this changed product boundary."),
+                    }],
+                },
+            })
+        } else {
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {
+                    "type": "user_message",
+                    "message": format!("MEGARA_ROLE={role}\nMEGARA_REQUEST={request_id}\nReview only this changed product boundary."),
+                },
+            })
+        };
+        fs::write(
+            &transcript_path,
+            format!(
+                "{}\n",
+                serde_json::json!({"type": "session_meta", "payload": {}})
+            ),
+        )
+        .unwrap();
+        let start = serde_json::json!({
+            "session_id": "sess-di",
+            "cwd": "/tmp/project",
+            "agent_id": format!("019f0000-0000-0000-0000-{index:012}"),
+            "agent_type": "default",
+            "transcript_path": transcript_path,
+        })
+        .to_string();
+        if index != 0 {
+            assert_success(&run_hook(
+                dir.path(),
+                dir.path(),
+                "SubagentStart",
+                None,
+                start.as_bytes(),
+            ));
+        }
+        fs::write(&transcript_path, format!("{transcript}\n")).unwrap();
+        let finding = if role == "contrarian" {
+            "Review cancellation and interrupt handling before launch."
+        } else {
+            "Review completed."
+        };
+        let stop = serde_json::json!({
+            "session_id": "sess-di",
+            "cwd": "/tmp/project",
+            "agent_id": format!("019f0000-0000-0000-0000-{index:012}"),
+            "agent_type": "default",
+            "agent_transcript_path": transcript_path,
+            "last_assistant_message": finding,
+        })
+        .to_string();
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStop",
+            None,
+            stop.as_bytes(),
+        ));
+    }
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["subagent_orchestration"]["status"], "conditional");
+    assert_eq!(state["subagent_receipts"].as_array().unwrap().len(), 4);
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 71%\n\nWhich account boundary should be decided first?\n\nRecommendation: Ownership - it controls sync and billing.\n\n1. Account ownership (Recommended)\n2. Subscription limits\n3. Team permissions\n4. Direct input / not listed\n"}"#,
+    ));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "question_pending");
+    assert_eq!(state["subagent_orchestration"]["status"], "idle");
+    assert_eq!(state["subagent_receipts"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        state["pending_question"]["question"],
+        "Which account boundary should be decided first?"
+    );
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"Start with individual players."}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 54%\n\nWhich synchronization behavior matters first?\n\nRecommendation: Recovery - it protects player progress.\n\n1. Reconnect recovery (Recommended)\n2. Cross-device merge\n3. Conflict reporting\n4. Direct input / not listed\n"}"#,
+    ));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "question_pending");
+    assert_eq!(state["subagent_orchestration"]["status"], "idle");
+    assert_eq!(
+        state["ambiguity_reassessment"]["score_direction"],
+        "decreased"
+    );
+}
+
+#[test]
+fn deep_interview_review_failure_retries_and_cancellation_ignores_late_receipts() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"$deep-interview improve the game"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 42%\n\nShould the game remain offline?\n\nRecommendation: Keep offline - it preserves the current boundary.\n\n1. Keep offline (Recommended)\n2. Add cloud sync\n3. Defer it\n4. Direct input / not listed\n"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"Keep it offline."}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 38%\n\nWhat should change next?\n\nRecommendation: Layout - it is narrow.\n\n1. Layout (Recommended)\n2. Controls\n3. Theme\n4. Direct input / not listed\n"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"Add cloud sync and subscriptions."}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 71%\n\nWhich account boundary matters first?\n\nRecommendation: Ownership - it constrains the new service.\n\n1. Ownership (Recommended)\n2. Billing\n3. Team roles\n4. Direct input / not listed\n"}"#,
+    ));
+
+    let failed = serde_json::json!({
+        "session_id": "sess-di",
+        "cwd": "/tmp/project",
+        "agent_id": "researcher-first",
+        "agent_type": "researcher",
+        "status": "failed",
+        "error": "transient failure",
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStart",
+        Some("researcher"),
+        failed.as_bytes(),
+    ));
+    let retry = run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        Some("researcher"),
+        failed.as_bytes(),
+    );
+    assert_success(&retry);
+    assert!(String::from_utf8_lossy(&retry.stdout).trim().is_empty());
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["subagent_retry_intents"][0]["role"], "researcher");
+    assert!(state["subagent_in_flight"].as_array().unwrap().is_empty());
+    let retry_prompt = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"Continue."}"#,
+    );
+    assert_success(&retry_prompt);
+    assert!(String::from_utf8_lossy(&retry_prompt.stdout).contains("Spawn only"));
+
+    let cancelled = serde_json::json!({
+        "session_id": "sess-di",
+        "cwd": "/tmp/project",
+        "agent_id": "contrarian-cancelled",
+        "agent_type": "contrarian",
+        "status": "cancelled",
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStart",
+        Some("contrarian"),
+        cancelled.as_bytes(),
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        Some("contrarian"),
+        cancelled.as_bytes(),
+    ));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "cancelled");
+    assert!(state["subagent_retry_intents"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    let late = serde_json::json!({
+        "session_id": "sess-di",
+        "cwd": "/tmp/project",
+        "agent_id": "researcher-first",
+        "agent_type": "researcher",
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        Some("researcher"),
+        late.as_bytes(),
+    ));
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["phase"], "cancelled");
+    assert!(state["subagent_audit"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["event"] == "late_receipt"));
+}
+
+fn submit_deep_interview_review(project: &Path, role: &str) {
+    let payload = serde_json::json!({
+        "session_id": "sess-di",
+        "cwd": "/tmp/project",
+        "agent_id": format!("agent-{role}"),
+        "agent_type": role,
+        "last_assistant_message": "Review complete.",
+    })
+    .to_string();
+    assert_success(&run_hook(
+        project,
+        project,
+        "SubagentStart",
+        Some(role),
+        payload.as_bytes(),
+    ));
+    assert_success(&run_hook(
+        project,
+        project,
+        "SubagentStop",
+        Some(role),
+        payload.as_bytes(),
+    ));
 }
 
 #[test]

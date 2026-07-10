@@ -116,7 +116,7 @@ Use these weighted dimensions:
 Calculate weighted clarity as `sum(dimension_clarity_percent * weight) / 100`.
 Calculate ambiguity as `100 - weighted_clarity`.
 
-After each user answer, update the scores and carry them into the final crystallized specification. Every active question turn must show exactly one compact ambiguity score line before the question:
+After each user answer, reassess the entire current specification from scratch before choosing the next question. Rebuild the score from the latest answer plus every established fact, disputed fact, deferral, and open gap; do not use the prior percentage as a baseline or automatically reduce it. Rescore all six dimensions, explicitly look for newly introduced scope, changed assumptions, contradictions, dependencies, and unanswered requirements, then carry the resulting scores into the final crystallized specification. If an answer changes a scope boundary or invalidates an established assumption, increase the current ambiguity score so the runtime can enforce review without locale-specific keyword matching. Every active question turn must show exactly one compact ambiguity score line before the question:
 
 ```text
 <configured-locale ambiguity label>: NN%
@@ -128,7 +128,7 @@ already-loaded project context. Do not read project files just to prepare Round
 
 Do not show dimension-level score details in active question turns. If you need a private score note, keep it out of the user-facing answer.
 
-Ambiguity is bidirectional and non-monotonic. Later answers can increase ambiguity when they contradict established facts, add scope, expose internal inconsistency, or fail to answer the targeted gap. Reflect the change in internal scoring and target the next question at the affected component/dimension.
+Ambiguity is bidirectional and non-monotonic. Later answers can increase ambiguity when they contradict established facts, add scope, expose internal inconsistency, introduce new dependencies, or fail to answer the targeted gap. Never treat an answer as proof that ambiguity fell. Reflect the change in internal scoring and target the next question at the affected or newly exposed component/dimension.
 
 Do not stop ordinary interview questions until:
 
@@ -146,10 +146,10 @@ Megara hooks back this workflow with append-only local state. Treat active quest
 
 - Codex App delegation wrappers such as `<codex_delegation><input>...</input>` are runtime transport details. The hook records the effective user prompt from inside `<input>`; do not mirror wrappers in user-facing prose.
 - Each user answer should respond only to the current visible question. The runtime records the answer, pending question, and conversation event locally.
-- Use subagents for lateral review at milestone transitions and before final crystallization when the runtime exposes subagent tools. Provide the compact interview context they need in the prompt and tell them to make a short judgment from that context only.
+- On every answer turn, privately determine from the full reassessment whether ambiguity increased, a scope boundary changed, or an established assumption became invalid. For any of those conditions, use `researcher`, `contrarian`, `simplifier`, and `architect` before emitting the next question. Provide the compact interview context they need and ask for a short judgment from that context only.
 - Deep-interview lateral-review subagents must not call tools, read files, write files, invoke Megara workflows or skills, spawn nested subagents, implement, or perform long exploration.
 - Do not move the active question/answer loop into a subagent. The user-facing question stays in the main session.
-- In the Codex runtime adapter, the hook may inject a hidden subagent instruction at workflow start and continue the turn if final crystallization is attempted before the required subagent receipt is observed. Follow that continuation instruction silently.
+- In the Codex runtime adapter, `UserPromptSubmit` injects the conditional review instruction and `Stop` confirms the requirement from the completed reassessment. Complete every selected review and close completed subagents before the next question or final crystallization. If the runtime asks for missing roles on a later turn, resume the same interview work from the latest answer rather than starting a new question.
 - Deep-interview does not require Codex Plan mode. Do not ask the user to toggle `/plan`, resend the same request in Plan mode, or choose a fallback path because of Plan mode.
 - Once the final spec crystallizes, stop. The next workflow must be `ralplan`, and implementation mutation is blocked by the runtime until `ralplan` owns or approves the handoff.
 
@@ -251,8 +251,8 @@ For each round:
 3. State why that component/dimension is the bottleneck.
 4. Ask one targeted question.
 5. Refine any substantial free-text answer into a compact interpretation and confirm that nothing was lost.
-6. Score all dimensions and active components.
-7. Update established facts, disputed facts, deferrals, and open gaps.
+6. Rebuild the six dimension scores and active-component scores from the entire current specification, including the latest answer.
+7. Detect and record changed facts, contradictions, scope expansion, invalidated assumptions, new dependencies, deferrals, and open gaps before selecting the next weakest dimension. Any scope or assumption change must raise the visible ambiguity score and complete the required lateral review before the next question.
 8. Record the round locally.
 
 Every user-facing question must show a short numbered visible option list, so the user can answer by number. The list must contain exactly three concrete choices followed by one configured-locale free-text catch-all.
@@ -336,14 +336,14 @@ At milestone transitions, run a lateral review before the next question. Use the
 - `simplifier`: the smallest valuable version.
 - `architect`: system shape, ownership, integration, and migration risks.
 
-When the runtime supports subagent tools, request exactly one subagent reviewer for each milestone transition. The prompt must include the current compact context, must forbid tool calls and file reads, and must ask for a short final-answer-only verdict from prompt context only. Choose the persona that matches the weakest remaining ambiguity dimension:
+When the runtime supports subagent tools, it schedules `researcher`, `contrarian`, and `simplifier` for each milestone transition. A reassessment with increased ambiguity, a changed scope boundary, or an invalidated assumption schedules those roles plus `architect`. The prompt must include the current compact context, must forbid tool calls and file reads, and must ask for a short final-answer-only verdict from prompt context only. Wait for all required roles and close each completed subagent before emitting the next question. Use the personas as follows:
 
 - `researcher` for missing external facts, versions, compatibility, or prior art.
 - `contrarian` for contradictions, hidden assumptions, or risky defaults.
 - `simplifier` for oversized scope or unclear minimum viable value.
 - `architect` for ownership, integration, migration, or system-boundary risk.
 
-Before final crystallization, request one final subagent review unless a subagent was already used in the immediately preceding milestone step. In Codex, the default required receipt is an `architect` subagent. Use subagents as advisory reviewers only; their output should be distilled into at most one main-session question or one final-spec adjustment.
+Before final crystallization, complete the selected review set. A failed reviewer is retried immediately until the user cancels or Codex interrupts; a cancelled run does not reuse older receipts. Use subagents as advisory reviewers only; their output should be distilled into at most one main-session question or one final-spec adjustment.
 
 Fold only the highest-value finding into the next single question. The panel does not add extra questions, does not decide requirements, and does not permit implementation.
 

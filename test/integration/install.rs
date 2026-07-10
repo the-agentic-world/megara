@@ -129,13 +129,16 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("do not crystallize at `1%`"));
     assert!(skill.contains("Runtime-Backed Multi-Turn Contract"));
     assert!(skill.contains("Codex App delegation wrappers"));
-    assert!(skill.contains("Use subagents for lateral review"));
+    assert!(skill.contains("use `researcher`, `contrarian`, `simplifier`, and `architect`"));
     assert!(skill.contains("must not call tools, read files, write files"));
     assert!(skill.contains("Use a minimal fact pass"));
     assert!(skill.contains("do not block the immediate next question"));
     assert!(skill.contains("Ask one compact follow-up from the confirmed topology"));
     assert!(skill.contains("read at most"));
-    assert!(skill.contains("request exactly one subagent reviewer"));
+    assert!(skill.contains("it schedules `researcher`, `contrarian`, and `simplifier`"));
+    assert!(skill.contains(
+        "A reassessment with increased ambiguity, a changed scope boundary, or an invalidated assumption"
+    ));
     assert!(skill.contains("must forbid tool calls and file reads"));
     assert!(skill.contains("implementation mutation is blocked by the runtime until `ralplan`"));
     assert!(skill.contains("does not require Codex Plan mode"));
@@ -150,6 +153,9 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
     assert!(skill.contains("Calculate ambiguity as `100 - weighted_clarity`"));
     assert!(skill.contains("Ambiguity is bidirectional and non-monotonic"));
+    assert!(skill.contains("reassess the entire current specification from scratch"));
+    assert!(skill.contains("do not use the prior percentage as a baseline"));
+    assert!(skill.contains("Never treat an answer as proof that ambiguity fell"));
     assert!(skill.contains("Compact Visible Output"));
     assert!(skill.contains("Keep active interview output compact for humans"));
     assert!(skill.contains("Show the current ambiguity score on every active interview question"));
@@ -391,6 +397,9 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("## Codex Runtime Adapter"));
     assert!(agents_md.contains("This projected harness is running inside Codex"));
     assert!(agents_md.contains("Deep-interview does not require Codex Plan mode"));
+    assert!(agents_md.contains("completed ambiguity reassessments"));
+    assert!(agents_md.contains("invalidated assumption requires"));
+    assert!(agents_md.contains("every selected review must finish and its subagent must be closed"));
     assert!(agents_md.contains("Do not ask the user to toggle `/plan`"));
     assert!(!agents_md.contains("Megara hooks try to activate Codex Plan mode before Round 0"));
     assert!(!agents_md.contains("activate Plan mode, then resend"));
@@ -398,7 +407,6 @@ fn installs_project_scope_codex_harness() {
     assert!(agents_md.contains("delegated prompts may arrive wrapped"));
     assert!(agents_md.contains("implementation mutation is blocked until `ralplan`"));
     assert!(agents_md.contains("SubagentStart"));
-    assert!(agents_md.contains("required receipts exist"));
     assert!(agents_md.contains("## Skills"));
     assert!(agents_md.contains("## On-Demand Tools"));
     assert!(agents_md.contains("insane-search"));

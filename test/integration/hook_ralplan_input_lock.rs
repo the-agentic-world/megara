@@ -15,7 +15,7 @@ fn deep_interview_start_that_mentions_ralplan_does_not_trigger_handoff_lock() {
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("additionalContext"));
-    assert!(stdout.contains("architect subagent"));
+    assert!(stdout.contains("Lateral reviewers are requested only"));
     assert!(!stdout.contains("planner, architect, and critic"));
 
     let deep_state = read_state(dir.path(), DEEP_INTERVIEW, "sess-di-mentions-rp");
@@ -24,10 +24,7 @@ fn deep_interview_start_that_mentions_ralplan_does_not_trigger_handoff_lock() {
         deep_state["subagent_orchestration"]["workflow"],
         DEEP_INTERVIEW
     );
-    assert_eq!(
-        deep_state["subagent_orchestration"]["roles"][0],
-        "architect"
-    );
+    assert_eq!(deep_state["subagent_orchestration"]["status"], "idle");
     assert!(!workflow_state_path(dir.path(), RALPLAN, "sess-di-mentions-rp").exists());
 }
 

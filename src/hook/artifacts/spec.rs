@@ -71,6 +71,10 @@ pub(crate) fn persist_crystallized_spec(
     }))
 }
 
+pub(crate) fn has_visible_crystallized_spec(terminal: &TerminalState, text: &str) -> bool {
+    terminal.status == "crystallized" && !visible_spec_text(text).is_empty()
+}
+
 fn visible_spec_text(text: &str) -> String {
     strip_html_comments(&text_before_block(text, "Megara Workflow State:"))
         .trim()

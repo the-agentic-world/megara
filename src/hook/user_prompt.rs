@@ -104,6 +104,18 @@ pub(super) fn handle_user_prompt(
             if let Some(question_id) =
                 answer_pending_question(timestamp, &mut state, &prompt, payload_file)
             {
+                deep_interview_reassessment::begin(
+                    timestamp,
+                    &mut state,
+                    pending_before.as_ref(),
+                    &prompt,
+                    payload_file,
+                );
+                subagent_gate::prepare_deep_interview_reassessment_review(
+                    timestamp,
+                    &mut state,
+                    payload_file,
+                );
                 if let Some(event) = deep_interview_milestone::apply_answer(
                     timestamp,
                     &mut state,
@@ -138,6 +150,9 @@ pub(super) fn handle_user_prompt(
                     }),
                 )?;
                 let mut contexts = Vec::new();
+                if let Some(context) = deep_interview_reassessment::continuation_context(&state) {
+                    contexts.push(context);
+                }
                 if let Some(context) = deep_interview_milestone::answer_continuation_context(
                     &state,
                     pending_before.as_ref(),
@@ -152,6 +167,12 @@ pub(super) fn handle_user_prompt(
                 if !contexts.is_empty() {
                     print_additional_context(&contexts.join("\n\n"))?;
                 }
+                return Ok(0);
+            }
+            if let Some(context) =
+                subagent_gate::answer_continuation_context(DEEP_INTERVIEW, &state)
+            {
+                print_additional_context(&context)?;
                 return Ok(0);
             }
         }

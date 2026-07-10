@@ -37,6 +37,20 @@ pub(super) fn handle_stop(
         reconcile_session_aliases(timestamp, payload_file, &paths, &terminal.skill, payload)?;
         let mut state = load_json(&paths.session_file)
             .unwrap_or_else(|| new_state(&terminal.skill, timestamp, &paths.session_id, payload));
+        if terminal.skill == DEEP_INTERVIEW {
+            let _ = deep_interview_reassessment::complete_terminal(
+                timestamp,
+                &mut state,
+                &terminal.ambiguity,
+            );
+            if has_visible_crystallized_spec(&terminal, text) {
+                subagent_gate::ensure_deep_interview_final_review(
+                    timestamp,
+                    &mut state,
+                    payload_file,
+                );
+            }
+        }
         if terminal.skill == TEAM {
             team::sync_split_receipts(timestamp, &mut state);
         }
@@ -100,8 +114,64 @@ pub(super) fn handle_stop(
     if let Some(ambiguity) = question.get("ambiguity").cloned() {
         state["ambiguity"] = ambiguity;
     }
+    let reassessment = deep_interview_reassessment::complete(timestamp, &mut state, &question);
+    if let Some(reassessment) = reassessment.as_ref() {
+        append_jsonl(
+            &paths.events_file,
+            &json!({
+                "timestamp": timestamp,
+                "event": "ambiguity_reassessed",
+                "session_id": paths.session_id,
+                "previous_score": reassessment.get("previous_score").cloned().unwrap_or(Value::Null),
+                "resulting_score": reassessment.get("resulting_score").cloned().unwrap_or(Value::Null),
+                "score_direction": reassessment.get("score_direction").cloned().unwrap_or(Value::Null),
+                "payload": payload_file,
+            }),
+        )?;
+        let review_required = deep_interview_reassessment::requires_lateral_review(reassessment);
+        if subagent_gate::resolve_deep_interview_reassessment_review(
+            timestamp,
+            &mut state,
+            review_required,
+        ) {
+            append_jsonl(
+                &paths.events_file,
+                &json!({
+                    "timestamp": timestamp,
+                    "event": "lateral_review_scheduled",
+                    "session_id": paths.session_id,
+                    "trigger": "reassessment_change",
+                    "payload": payload_file,
+                }),
+            )?;
+        }
+    }
     match question_decision {
-        deep_interview_milestone::QuestionDecision::Allow => {}
+        deep_interview_milestone::QuestionDecision::Allow => {
+            if question.get("kind").and_then(Value::as_str) == Some("milestone_decision")
+                && !reassessment
+                    .as_ref()
+                    .is_some_and(deep_interview_reassessment::requires_lateral_review)
+                && subagent_gate::schedule_deep_interview_review(
+                    timestamp,
+                    &mut state,
+                    payload_file,
+                    "ambiguity_milestone",
+                    false,
+                )
+            {
+                append_jsonl(
+                    &paths.events_file,
+                    &json!({
+                        "timestamp": timestamp,
+                        "event": "lateral_review_scheduled",
+                        "session_id": paths.session_id,
+                        "trigger": "ambiguity_milestone",
+                        "payload": payload_file,
+                    }),
+                )?;
+            }
+        }
         deep_interview_milestone::QuestionDecision::Block { kind } => {
             state["active"] = json!(true);
             let event = match kind {
@@ -139,6 +209,16 @@ pub(super) fn handle_stop(
         }
     }
 
+    if subagent_gate::block_deep_interview_question_if_missing_receipts(
+        timestamp,
+        payload_file,
+        &paths,
+        &mut state,
+    )? {
+        write_json_atomic(&paths.session_file, &state)?;
+        return Ok(0);
+    }
+
     let question_id = question
         .get("id")
         .and_then(Value::as_str)
@@ -153,6 +233,7 @@ pub(super) fn handle_stop(
         .cloned()
         .unwrap_or(Value::Null);
     deep_interview_milestone::mark_pending_state(timestamp, &mut state, &pending_question);
+    subagent_gate::consume_satisfied_deep_interview_review(timestamp, &mut state);
     append_jsonl(
         &paths.events_file,
         &json!({
