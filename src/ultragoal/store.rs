@@ -128,6 +128,59 @@ pub(super) fn write_runtime_state(
     write_json_atomic(&paths.runtime_state_file, &state)
 }
 
+pub(super) fn mark_source_transition_started(
+    paths: &UltragoalPaths,
+    plan: &UltragoalPlan,
+    timestamp: &str,
+) -> Result<()> {
+    let Some(source_revision) = plan.source.as_ref().and_then(|source| {
+        (source.kind == "ralplan")
+            .then_some(source.ralplan_plan_sha256.as_deref())
+            .flatten()
+    }) else {
+        return Ok(());
+    };
+    let Some(mut ralplan_state) = fs::read_to_string(&paths.ralplan_state_file)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+    else {
+        return Ok(());
+    };
+    let Some(transition) = ralplan_state.get("transition") else {
+        return Ok(());
+    };
+    if transition.get("target").and_then(Value::as_str) != Some(WORKFLOW)
+        || transition.get("status").and_then(Value::as_str) != Some("starting")
+        || transition.get("artifact_revision").and_then(Value::as_str) != Some(source_revision)
+    {
+        return Ok(());
+    }
+    let transition_id = transition
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if transition_id.is_empty() {
+        return Ok(());
+    }
+
+    ralplan_state["transition"]["status"] = json!("started");
+    ralplan_state["transition"]["target_started_at"] = json!(timestamp);
+    ralplan_state["updated_at"] = json!(timestamp);
+    write_json_atomic(&paths.ralplan_state_file, &ralplan_state)?;
+
+    if let Some(mut runtime_state) = fs::read_to_string(&paths.runtime_state_file)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+    {
+        runtime_state["source_transition_id"] = json!(transition_id);
+        runtime_state["source_workflow"] = json!(RALPLAN);
+        runtime_state["source_plan_sha256"] = json!(source_revision);
+        write_json_atomic(&paths.runtime_state_file, &runtime_state)?;
+    }
+    Ok(())
+}
+
 fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
     let mut content = serde_json::to_string_pretty(value)?;
     content.push('\n');

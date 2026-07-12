@@ -151,7 +151,7 @@ Megara hooks back this workflow with append-only local state. Treat active quest
 - Do not move the active question/answer loop into a subagent. The user-facing question stays in the main session.
 - In the Codex runtime adapter, `UserPromptSubmit` injects the conditional review instruction and `Stop` confirms the requirement from the completed reassessment. Complete every selected review and close completed subagents before the next question or final crystallization. If the runtime asks for missing roles on a later turn, resume the same interview work from the latest answer rather than starting a new question.
 - Deep-interview does not require Codex Plan mode. Do not ask the user to toggle `/plan`, resend the same request in Plan mode, or choose a fallback path because of Plan mode.
-- Once the final spec crystallizes, stop. The next workflow must be `ralplan`, and implementation mutation is blocked by the runtime until `ralplan` owns or approves the handoff.
+- Once the user chooses the `ralplan` transition, crystallize the final spec. The runtime then starts `ralplan` in the same session without another skill invocation or approval. Resume from the locked spec, produce the reviewed plan, and keep implementation mutation blocked until the plan reaches an execution choice.
 
 ## Round 0: Topology Confirmation
 

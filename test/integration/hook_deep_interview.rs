@@ -1198,6 +1198,74 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
     assert_eq!(state["phase"], "crystallizing");
     assert_eq!(state["status"], "crystallizing");
     assert!(state["pending_question"].is_null());
+
+    let final_spec = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "**Requirements Summary**\n\nGoal: build the verified game.\n\nAcceptance criteria:\n- Unit tests pass\n- E2E tests pass\n\nNext: continue with `ralplan` from this summary. Implementation is still not allowed.\n\n<!--\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n-->\n"
+}"#;
+    let review_gate = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
+    assert_success(&review_gate);
+    assert!(review_gate.stdout.is_empty());
+    for role in ["researcher", "contrarian", "simplifier"] {
+        submit_deep_interview_review(dir.path(), role);
+    }
+
+    let mut stop_active_spec: serde_json::Value = serde_json::from_slice(final_spec).unwrap();
+    stop_active_spec["stop_hook_active"] = serde_json::json!(true);
+    let suppressed = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        stop_active_spec.to_string().as_bytes(),
+    );
+    assert_success(&suppressed);
+    assert!(suppressed.stdout.is_empty());
+    assert_eq!(
+        read_json(&state_path(dir.path()))["transition"]["continuation_status"],
+        "pending"
+    );
+
+    let transitioned = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
+    assert_success(&transitioned);
+    let output: serde_json::Value =
+        serde_json::from_slice(&transitioned.stdout).expect("automatic transition response");
+    assert_eq!(output["decision"], "block");
+    assert!(output["reason"]
+        .as_str()
+        .unwrap()
+        .contains("Start ralplan now"));
+
+    let deep_state = read_json(&state_path(dir.path()));
+    assert_eq!(deep_state["transition"]["target"], "ralplan");
+    assert_eq!(deep_state["transition"]["status"], "started");
+    assert_eq!(deep_state["transition"]["continuation_status"], "delivered");
+    let ralplan_state = read_json(
+        &dir.path()
+            .join(".megara/state/workflows/ralplan/sess-di.json"),
+    );
+    assert_eq!(ralplan_state["phase"], "planning");
+    assert_eq!(ralplan_state["input_lock_status"], "ready");
+    assert_eq!(
+        ralplan_state["source_transition_id"],
+        deep_state["transition"]["id"]
+    );
+
+    let repeated = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
+    assert_success(&repeated);
+    assert!(
+        repeated.stdout.is_empty(),
+        "stdout={}",
+        String::from_utf8_lossy(&repeated.stdout)
+    );
+    let repeated_ralplan = read_json(
+        &dir.path()
+            .join(".megara/state/workflows/ralplan/sess-di.json"),
+    );
+    assert_eq!(
+        repeated_ralplan["source_transition_id"],
+        ralplan_state["source_transition_id"]
+    );
 }
 
 #[test]

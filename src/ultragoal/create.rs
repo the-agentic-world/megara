@@ -57,6 +57,7 @@ pub(super) fn run(
     };
     write_plan(paths, &plan)?;
     write_runtime_state(paths, &plan, "goal_planning", true, &timestamp)?;
+    mark_source_transition_started(paths, &plan, &timestamp)?;
     append_ledger(
         paths,
         &json!({

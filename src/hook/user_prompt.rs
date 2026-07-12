@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn handle_user_prompt(
     timestamp: &str,
     state_dir: &Path,
-    _options: &HookOptions,
+    options: &HookOptions,
     payload: &Value,
     payload_file: &Path,
 ) -> Result<i32> {
@@ -27,6 +27,15 @@ pub(super) fn handle_user_prompt(
     let ralplan_paths = workflow_paths(state_dir, payload, RALPLAN);
     reconcile_session_aliases(timestamp, payload_file, &ralplan_paths, RALPLAN, payload)?;
     if let Some(mut state) = load_json(&ralplan_paths.session_file) {
+        if transition::ultragoal_start_pending(&state) {
+            let session_id = state
+                .get("session_id")
+                .map(value_to_string)
+                .unwrap_or_else(|| ralplan_paths.session_id.clone());
+            let context = transition::ultragoal_start_context(options.scope, &session_id);
+            print_user_prompt_output(Some(&context), system_message.as_deref())?;
+            return Ok(0);
+        }
         if let Some(decision) = ralplan_prompt::apply_ralplan_prompt_decision(
             timestamp,
             &mut state,
@@ -34,6 +43,9 @@ pub(super) fn handle_user_prompt(
             payload_file,
         ) {
             let handoff_target = decision.handoff_target.clone();
+            if handoff_target.as_str() == Some(ULTRAGOAL) {
+                transition::prepare_ultragoal(timestamp, &mut state);
+            }
             let session_id = state
                 .get("session_id")
                 .map(value_to_string)
@@ -61,6 +73,14 @@ pub(super) fn handle_user_prompt(
                     &prompt,
                 )?;
                 print_user_prompt_output(Some(&context), system_message.as_deref())?;
+            } else if handoff_target.as_str() == Some(ULTRAGOAL) {
+                print_user_prompt_output(
+                    Some(&transition::ultragoal_start_context(
+                        options.scope,
+                        &session_id,
+                    )),
+                    system_message.as_deref(),
+                )?;
             } else {
                 print_user_prompt_output(None, system_message.as_deref())?;
             }

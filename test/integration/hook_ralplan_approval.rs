@@ -105,10 +105,31 @@ fn projected_hook_runner_tracks_visible_only_plan_and_numeric_approval() {
     assert!(!plan.contains("Megara Workflow State"));
     assert!(!plan.contains("<!--"));
 
-    assert_success(&user_prompt(dir.path(), "sess-visible-rp", "2"));
+    let approval = user_prompt(dir.path(), "sess-visible-rp", "2");
+    assert_success(&approval);
+    let approval_output: serde_json::Value =
+        serde_json::from_slice(&approval.stdout).expect("automatic ultragoal handoff context");
+    let context = approval_output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("create-goals"));
+    assert!(context.contains("start-goal"));
+    assert!(context.contains("Start ultragoal now"));
+    assert!(context.contains("--session-id 'sess-visible-rp'"));
+    assert!(!context.contains("<current-session-id>"));
     let approved = read_json(&state_path);
     assert_eq!(approved["phase"], "approved");
     assert_eq!(approved["approved_handoff_target"], "ultragoal");
+    assert_eq!(approved["transition"]["target"], "ultragoal");
+    assert_eq!(approved["transition"]["status"], "starting");
+
+    let repeated = user_prompt(dir.path(), "sess-visible-rp", "2");
+    assert_success(&repeated);
+    let repeated_output: serde_json::Value = serde_json::from_slice(&repeated.stdout).unwrap();
+    assert!(repeated_output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("--session-id 'sess-visible-rp'"));
 
     let output = run_mutation(dir.path(), "sess-visible-rp");
     assert!(!output.status.success());

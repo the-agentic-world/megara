@@ -116,3 +116,5 @@ Offer these terminal choices:
 - Stop with the plan pending approval.
 
 Normal user approval should be a number or natural-language choice. Do not output `Megara Approval Gate` or any parseable approval metadata. Runtime hooks bind the user decision to the current locked plan in state.
+
+Selecting `ultragoal` or `team` is the transition authorization. Start the selected workflow immediately in the same turn after the runtime validates the locked plan and required review coverage. Do not ask for a separate skill invocation or approval. If validation fails, repair runtime-owned state once, request only genuinely missing product information, and retry the same selected transition.

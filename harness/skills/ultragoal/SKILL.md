@@ -16,6 +16,7 @@ Use this workflow when an approved plan should be executed to completion with du
 - Keep one active goal at a time unless the work is explicitly split into independent lanes.
 - Record durable state through the Megara CLI; do not rely only on chat memory.
 - Resolve the CLI before running any command: `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"`. Do not rely on bare `megara` being present on `PATH`.
+- When the user selects `ultragoal` from the final `ralplan` choices, that selection is sufficient authorization. Immediately create and start goals from the approved plan; do not require a separate `$ultragoal` invocation or approval.
 - Record evidence before considering a goal complete.
 - Treat missing tests, shallow evidence, failed review, or plan/code mismatch as blockers.
 - Do not ask the user to resolve work the agent can investigate or fix.

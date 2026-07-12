@@ -8,7 +8,7 @@ use std::{
 use anyhow::Result;
 use serde_json::{json, Map, Value};
 
-use crate::cli::HookArgs;
+use crate::cli::{HookArgs, ScopeArg};
 
 #[path = "hook/artifacts.rs"]
 mod artifacts;
@@ -64,6 +64,8 @@ mod subagent_gate;
 mod team;
 #[path = "hook/terminal.rs"]
 mod terminal;
+#[path = "hook/transition.rs"]
+mod transition;
 #[path = "hook/user_prompt.rs"]
 mod user_prompt;
 
@@ -98,6 +100,7 @@ const MUTATION_GUARD_WORKFLOWS: &[&str] = &[DEEP_INTERVIEW, RALPLAN, ULTRAGOAL];
 
 #[derive(Debug)]
 pub struct HookOptions {
+    pub scope: ScopeArg,
     pub runtime: String,
     pub event: String,
     pub matcher: String,
@@ -107,6 +110,7 @@ pub fn run(args: HookArgs) -> Result<i32> {
     let _managed_marker = args.managed_marker;
     let state_dir = scoped_state_dir(args.scope, args.project_root.as_deref())?;
     let options = HookOptions {
+        scope: args.scope,
         runtime: args.runtime,
         event: args.event,
         matcher: args.matcher.unwrap_or_default(),

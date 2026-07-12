@@ -146,7 +146,8 @@ fn installs_project_scope_codex_harness() {
         "A reassessment with increased ambiguity, a changed scope boundary, or an invalidated assumption"
     ));
     assert!(skill.contains("must forbid tool calls and file reads"));
-    assert!(skill.contains("implementation mutation is blocked by the runtime until `ralplan`"));
+    assert!(skill.contains("starts `ralplan` in the same session"));
+    assert!(skill.contains("without another skill invocation or approval"));
     assert!(skill.contains("does not require Codex Plan mode"));
     assert!(skill.contains("Do not ask the user to toggle `/plan`"));
     assert!(!skill.contains("Codex Plan-Mode Activation"));
@@ -292,6 +293,8 @@ fn installs_project_scope_codex_harness() {
     assert!(ralplan.contains("final numbered approval choices"));
     assert!(ralplan.contains("prefer natural terms in the configured locale"));
     assert!(ralplan.contains("short explanation in the configured locale"));
+    assert!(ralplan.contains("Selecting `ultragoal` or `team` is the transition authorization"));
+    assert!(ralplan.contains("Do not ask for a separate skill invocation or approval"));
     let ultragoal =
         fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
     assert!(ultragoal.contains(r#"MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}""#));
@@ -304,6 +307,7 @@ fn installs_project_scope_codex_harness() {
     assert!(ultragoal.contains("runtime files are owned by Megara hooks and CLI commands"));
     assert!(ultragoal.contains("checkpoint attempts"));
     assert!(ultragoal.contains("start-goal"));
+    assert!(ultragoal.contains("that selection is sufficient authorization"));
     assert!(ultragoal
         .contains("User-visible progress should mention only externally meaningful product work"));
     assert!(ultragoal.contains("Runtime state is managed by the `megara ultragoal` CLI commands"));

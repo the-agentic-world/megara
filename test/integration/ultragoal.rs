@@ -39,7 +39,14 @@ fn ultragoal_cli_creates_goals_and_records_completion_receipt() {
     let runtime_state_path = dir
         .path()
         .join(".megara/state/workflows/ultragoal/sess-ug.json");
-    assert_eq!(read_json(&runtime_state_path)["phase"], "goal_planning");
+    let runtime_state = read_json(&runtime_state_path);
+    assert_eq!(runtime_state["phase"], "goal_planning");
+    let ralplan_state = read_state(dir.path(), RALPLAN, ULTRAGOAL_TEST_SESSION);
+    assert_eq!(ralplan_state["transition"]["status"], "started");
+    assert_eq!(
+        runtime_state["source_transition_id"],
+        ralplan_state["transition"]["id"]
+    );
 
     let next = start_goal(dir.path());
     assert!(
