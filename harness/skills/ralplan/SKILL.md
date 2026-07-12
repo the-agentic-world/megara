@@ -71,13 +71,18 @@ boundaries, affected surfaces, sequencing, and reversibility. The critic returns
 Subagent prompts must be short and must forbid tools, file reads, file writes,
 Megara workflow/skill invocation, nested subagents, implementation, and progress
 output. The main session owns the final user-facing plan and approval question.
+After each wait returns, close every completed planner, architect, or critic
+subagent before revising the plan or spawning another reviewer. Completed
+reviewers must never remain open because they continue to consume Codex's
+subagent concurrency slots.
 
-If the critic returns `ITERATE`, revise once and run the critic pass again. Turn
-critic requests about verification detail into explicit plan criteria instead of
-asking the user to re-decide them. If the critic still blocks, stop only when the
-missing fact cannot be safely planned around. If the blocker is user-resolvable,
-ask one compact clarification question with numbered choices; do not end with a
-generic list of unresolved review notes.
+If the critic returns `ITERATE`, revise once and run exactly one additional
+critic pass. Never spawn a third critic pass in the same plan revision. Turn
+critic requests about verification detail into explicit plan criteria instead
+of asking the user to re-decide them. If the second critic still blocks, stop
+only when the missing fact cannot be safely planned around. If the blocker is
+user-resolvable, ask one compact clarification question with numbered choices;
+do not end with a generic list of unresolved review notes.
 
 If any subagent says no plan was provided, that pass is invalid. Rerun only that
 role with the draft plan included instead of stopping with a no-plan blocker.

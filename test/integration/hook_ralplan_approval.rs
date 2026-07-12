@@ -236,12 +236,14 @@ fn ralplan_start_injects_subagent_context_and_gates_pending_approval() {
     assert!(stdout.contains("classify them as pre-existing"));
     assert!(stdout.contains("Do not block on verification details"));
     assert!(stdout.contains("pick the stricter product-facing criterion"));
-    assert!(stdout.contains("convert verification-detail feedback into concrete plan criteria"));
+    assert!(stdout.contains("Convert verification-detail feedback into concrete plan criteria"));
     assert!(stdout.contains("Do not put workflow or handoff names"));
     assert!(stdout.contains("Include the same draft plan"));
     assert!(stdout.contains("forbid tools"));
     assert!(stdout.contains("Megara workflows"));
     assert!(stdout.contains("short final verdict"));
+    assert!(stdout.contains("close every completed reviewer"));
+    assert!(stdout.contains("never spawn a third critic pass"));
     assert!(!stdout.contains("reviewers must never receive only the raw task or spec"));
 
     let message = "**Pending Execution Plan**\n\nSummary: improve the 2048 UI without changing game rules.\n\nScope:\n- Adjust layout and controls only.\n\nSteps:\n- Inspect current UI.\n- Improve responsive layout.\n- Verify keyboard interaction.\n\nAcceptance criteria:\n- Existing tests pass.\n- The board does not overflow.\n\nApprove this plan?\n\n1. Refine\n2. Approve via ultragoal\n3. Approve via team\n4. Stop with the plan pending\n\n<!--\nMegara Plan Gate:\n- id: rp-subagents\n- status: pending_approval\n- question: Approve this plan?\n- options:\n  - refine\n  - approve_ultragoal\n  - approve_team\n  - stop_pending\n- free_text: false\n\nMegara Workflow State:\n- skill: ralplan\n- status: pending_approval\n- plan_id: rp-subagents\n- next: approval\n-->\n";

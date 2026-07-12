@@ -289,6 +289,8 @@ fn installs_project_scope_codex_harness() {
     assert!(ralplan.contains("Do not block on details"));
     assert!(ralplan.contains("Pick the stricter product-facing"));
     assert!(ralplan.contains("generic list of unresolved review notes"));
+    assert!(ralplan.contains("close every completed planner, architect, or critic"));
+    assert!(ralplan.contains("Never spawn a third critic pass"));
     assert!(ralplan.contains("Do not put workflow or handoff names"));
     assert!(ralplan.contains("final numbered approval choices"));
     assert!(ralplan.contains("prefer natural terms in the configured locale"));
