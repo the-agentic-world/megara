@@ -135,18 +135,23 @@ pub(super) fn handle_user_prompt(
             if let Some(question_id) =
                 answer_pending_question(timestamp, &mut state, &prompt, payload_file)
             {
-                deep_interview_reassessment::begin(
-                    timestamp,
-                    &mut state,
-                    pending_before.as_ref(),
-                    &prompt,
-                    payload_file,
-                );
-                subagent_gate::prepare_deep_interview_reassessment_review(
-                    timestamp,
-                    &mut state,
-                    payload_file,
-                );
+                let milestone_answer = pending_before.as_ref().is_some_and(|question| {
+                    question.get("kind").and_then(Value::as_str) == Some("milestone_decision")
+                });
+                if !milestone_answer {
+                    deep_interview_reassessment::begin(
+                        timestamp,
+                        &mut state,
+                        pending_before.as_ref(),
+                        &prompt,
+                        payload_file,
+                    );
+                    subagent_gate::prepare_deep_interview_reassessment_review(
+                        timestamp,
+                        &mut state,
+                        payload_file,
+                    );
+                }
                 if let Some(event) = deep_interview_milestone::apply_answer(
                     timestamp,
                     &mut state,

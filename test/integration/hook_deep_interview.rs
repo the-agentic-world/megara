@@ -1165,6 +1165,13 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","prompt":"$deep-interview improve restart UX"}"#,
+    ));
 
     let milestone = br#"{
   "session_id": "sess-di",
@@ -1198,6 +1205,14 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
     assert_eq!(state["phase"], "crystallizing");
     assert_eq!(state["status"], "crystallizing");
     assert!(state["pending_question"].is_null());
+    assert_eq!(state["subagent_orchestration"]["status"], "required");
+    assert_eq!(
+        state["subagent_orchestration"]["roles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
 
     let final_spec = br#"{
   "session_id": "sess-di",
@@ -1205,7 +1220,11 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
 }"#;
     let review_gate = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
     assert_success(&review_gate);
-    assert!(review_gate.stdout.is_empty());
+    assert!(
+        review_gate.stdout.is_empty(),
+        "stdout={}",
+        String::from_utf8_lossy(&review_gate.stdout)
+    );
     for role in ["researcher", "contrarian", "simplifier"] {
         submit_deep_interview_review(dir.path(), role);
     }
@@ -1265,6 +1284,61 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
     assert_eq!(
         repeated_ralplan["source_transition_id"],
         ralplan_state["source_transition_id"]
+    );
+}
+
+#[test]
+fn korean_milestone_question_keeps_user_choice_while_reviews_are_required() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let start = r#"{"session_id":"sess-di","prompt":"$deep-interview 2048 재시작 UX 개선"}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        start.as_bytes(),
+    ));
+    let milestone = r#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "모호성: 14%\n\n현재 정리된 내용으로 다음 계획 단계로 넘어가도 될까요?\n\n추천: 1번 - 구현 범위와 완료 기준이 충분히 닫혔습니다.\n\n1. 현재 정리된 내용으로 `ralplan` 진행 (Recommended)\n2. `deep-interview`를 5%까지 더 진행\n3. 특정 구성요소나 위험만 더 파고들기\n4. 직접 입력 / 목록에 없음\n"
+}"#;
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        milestone.as_bytes(),
+    ));
+
+    let pending = read_json(&state_path(dir.path()));
+    assert_eq!(pending["pending_question"]["kind"], "milestone_decision");
+    assert_eq!(pending["milestone_decision"]["status"], "pending");
+    assert_eq!(pending["subagent_orchestration"]["status"], "required");
+
+    let selected = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","prompt":"1"}"#,
+    );
+    assert_success(&selected);
+    let context = String::from_utf8_lossy(&selected.stdout);
+    assert!(context.contains("Missing receipt roles: researcher, contrarian, simplifier"));
+    assert!(context.contains("MEGARA_ROLE=<role>"));
+    let selected = read_json(&state_path(dir.path()));
+    assert_eq!(
+        selected["milestone_decision"]["status"],
+        "proceed_to_ralplan"
+    );
+    assert_eq!(selected["phase"], "crystallizing");
+    assert_eq!(selected["subagent_orchestration"]["status"], "required");
+    assert_eq!(
+        selected["subagent_orchestration"]["trigger"],
+        "ambiguity_milestone"
     );
 }
 

@@ -242,12 +242,16 @@ pub(super) fn handle_stop(
         }
     }
 
-    if subagent_gate::block_deep_interview_question_if_missing_receipts(
-        timestamp,
-        payload_file,
-        &paths,
-        &mut state,
-    )? {
+    let milestone_question =
+        question.get("kind").and_then(Value::as_str) == Some("milestone_decision");
+    if !milestone_question
+        && subagent_gate::block_deep_interview_question_if_missing_receipts(
+            timestamp,
+            payload_file,
+            &paths,
+            &mut state,
+        )?
+    {
         write_json_atomic(&paths.session_file, &state)?;
         return Ok(0);
     }
