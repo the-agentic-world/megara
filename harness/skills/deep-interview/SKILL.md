@@ -30,10 +30,10 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Score remaining ambiguity after each answer as a percentage, not a 0-10 rating.
 - Keep active interview output compact for humans; do not include technical hook blocks in active user-facing answers.
 - Show the current ambiguity score on every active interview question.
-- Use exactly four visible options on every active interview question: three concrete choices plus one configured-locale free-text catch-all option for answers outside the listed choices.
-- Show one recommendation line before the options. Explain what you recommend and why in the configured locale, then mark exactly one concrete option with the literal suffix `(Recommended)`.
+- Use exactly four visible options on every ordinary interview question: three concrete choices plus one configured-locale free-text catch-all option for answers outside the listed choices. Milestone crystallization questions use the five-option contract below.
+- Show one recommendation line after the options. Explain what you recommend and why in the configured locale, then mark exactly one concrete option with the literal suffix `(Recommended)`.
 - Target the weakest active component and dimension each round.
-- Continue until ambiguity reaches the active ambiguity target, then ask whether to crystallize for `ralplan` or continue to the next stricter target.
+- Continue until ambiguity reaches the active ambiguity target, then automatically crystallize the current requirements and ask whether that result should proceed to `ralplan` or receive one of the discovered corrections.
 - End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
 - Recording interview state is allowed and required; it is not implementation work.
 - Runtime hooks own `.megara/state/workflows/deep-interview/**` and `.megara/state/workflows/ralplan/**`. Do not inspect, edit, repair, or synthesize those files to force a handoff.
@@ -73,21 +73,24 @@ Use the default ambiguity target ladder unless the user or project configuration
 
 Each target means the interview has enough clarity for that precision level only after the closure gates also pass.
 
-- At `15%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `5%`.
-- At `5%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `2%`.
-- At `2%`, stop asking ordinary interview questions and ask whether to crystallize for `ralplan` now or continue deep-interview to `0%`.
+- At `15%`, stop asking ordinary interview questions, automatically crystallize, and ask whether to proceed to `ralplan` or apply a discovered correction before continuing toward `5%`.
+- At `5%`, stop asking ordinary interview questions, automatically crystallize, and ask whether to proceed to `ralplan` or apply a discovered correction before continuing toward `2%`.
+- At `2%`, stop asking ordinary interview questions, automatically crystallize, and ask whether to proceed to `ralplan` or apply a discovered correction before continuing toward `0%`.
 - At `0%`, do not ask another milestone decision. Crystallize immediately for `ralplan` after closure gates pass, and show `0%` as the final visible ambiguity score in the crystallized spec.
 
-Milestone decision questions are still active interview questions. They must show the current ambiguity score and exactly four visible numbered options:
+Milestone decisions are crystallization review questions. When a non-zero target is reached, first synthesize the entire interview into one quoted, one-sentence crystallized requirement. Then ask whether that sentence is the correct basis for implementation planning and show exactly five visible numbered options. Option 2 continues to the next ambiguity target. Options 3-4 must be two distinct, concrete corrections discovered while crystallizing.
 
 Default recommendation: proceed to `ralplan` because the active ambiguity target has been reached and the current spec is clear enough for planning.
 
-1. Proceed to `ralplan` with the current crystallized spec. (Recommended)
+1. Proceed to `ralplan` with the crystallized requirement. (Recommended)
 2. Continue deep-interview to the next ambiguity target.
-3. Continue deep-interview only on a named component or risk.
-4. Direct input / not in the listed options.
+3. First discovered crystallization correction.
+4. Second discovered crystallization correction.
+5. Direct input / not in the listed options.
 
-If the user chooses option 2, lower the active target to the next ladder step and continue interviewing the weakest active gap. If the user chooses option 3, keep the next stricter target unless the user explicitly names a different target. If the user chooses option 1, write the final pending-approval spec as the final response of that assistant turn.
+Place the configured-locale recommendation after all five options. Recommend option 1 because the active ambiguity target has passed and the crystallized requirement is clear enough for planning.
+
+If the user chooses option 2, lower the active target to the next ladder step and continue with the weakest remaining gap. If the user chooses option 3 or 4, lower the active target and continue by resolving that selected correction. If the user provides direct input, incorporate it and reassess the full specification. If the user chooses option 1, write the final pending-approval spec as the final response of that assistant turn.
 
 ## Ambiguity Scoring
 
@@ -136,7 +139,7 @@ Do not stop ordinary interview questions until:
 - no dimension has more than `25%` remaining ambiguity,
 - acceptance criteria and verification are concrete enough for `ralplan`.
 
-At `15%`, `5%`, and `2%`, reaching the active target opens the milestone decision step; it does not automatically crystallize. At `0%`, reaching the active target crystallizes immediately after closure gates pass.
+At `15%`, `5%`, and `2%`, reaching the active target automatically creates the one-sentence crystallized requirement and opens its review decision. This preview is not the final locked artifact until option 1 is selected. At `0%`, reaching the active target crystallizes the final locked artifact immediately after closure gates pass.
 
 When the active target is `0%`, do not crystallize at `1%` or any other non-zero score. If final restatement confirmation removes the last meaningful planning assumption, explicitly set the final score to `0%` and include that score in the final spec. If it does not remove the last assumption, ask one more compact targeted question instead of finalizing.
 
@@ -176,12 +179,12 @@ Ask exactly one first-round topology confirmation question. Use configured-local
 
 <configured-locale single confirmation question about adding, removing, merging, splitting, or deferring components>
 
-<configured-locale recommendation label>: <configured-locale recommended option> - <configured-locale one-sentence reason>
-
 1. <configured-locale accept as-is option> (Recommended)
 2. <configured-locale adjust components option>
 3. <configured-locale defer or prioritize components option>
 4. <configured-locale direct input / not in listed options>
+
+<configured-locale recommendation label>: <configured-locale recommended option> - <configured-locale one-sentence reason>
 ```
 
 After the answer, carry this topology forward for internal scoring and the final spec.
@@ -193,8 +196,8 @@ Active interview turns must be compact. Show only the information needed for the
 1. Exactly one compact ambiguity score line.
 2. One short context sentence only when it materially helps the user answer.
 3. One targeted question.
-4. One short recommendation line explaining what you recommend and why.
-5. A short numbered option list with exactly four options.
+4. A short numbered option list with exactly four options for an ordinary question or five options for a milestone crystallization review.
+5. One short recommendation line explaining what you recommend and why.
 
 Do not send progress or commentary messages while reading files, checking runtime state, spawning subagents, waiting for subagents, updating ledgers, or preparing the next gate. Wait silently and then send only the compact next question or the final crystallized spec.
 
@@ -264,20 +267,20 @@ Do not include technical gate blocks in active question answers. Runtime hooks i
 
 <single question text?>
 
-<configured-locale recommendation label>: <recommended option> - <one-sentence reason this is recommended>
-
 1. <option 1> (Recommended)
 2. <option 2>
 3. <option 3>
 4. <configured-locale direct input / not in listed options>
+
+<configured-locale recommendation label>: <recommended option> - <one-sentence reason this is recommended>
 ```
 
 Rules:
 
 - The visible question should be one line ending with a question mark.
-- Do not omit `options`; provide exactly four visible options.
+- Do not omit `options`; provide exactly four visible options for ordinary questions and exactly five for milestone crystallization reviews.
 - Number each option from 1 in order.
-- Include exactly one recommendation line before the numbered options. It must say which option you recommend and why.
+- Include exactly one recommendation line after the numbered options. It must say which option you recommend and why.
 - Append the literal suffix `(Recommended)` to exactly one of options 1-3. Do not mark option 4 as recommended.
 - If none of options 1-3 is safe to recommend, rewrite options 1-3 so one conservative, reversible, or information-preserving option is recommendable.
 - The user may answer with the option number or with free text.
@@ -354,9 +357,9 @@ Passing the numeric threshold is not enough.
 Before writing the final spec:
 
 1. Closure audit: confirm every active component has outcome, scope, constraints, verification, and risk/context coverage. If a material gap remains, explain the gap and ask one more targeted question.
-2. Final restatement confirmation: collapse the intended outcome into one sentence and ask the user to confirm whether that sentence alone would lead to the desired result. Use configured-locale wording for this label.
+2. Automatic crystallization: collapse the intended outcome into one quoted sentence, derive two concrete correction options from gaps exposed by that synthesis, and ask whether the sentence alone is the right basis for implementation planning. This is the milestone's five-option review question, not a separate approval step.
 
-Only crystallize the spec after both gates pass and either:
+Only persist the final locked crystallized spec after both gates pass and either:
 
 - the user chooses the milestone option to proceed to `ralplan` at `15%`, `5%`, or `2%`,
 - the interview reaches `0%`, or

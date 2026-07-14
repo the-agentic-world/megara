@@ -1101,24 +1101,36 @@ fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_cho
 
     let milestone = br#"{
   "session_id": "sess-di",
-  "last_assistant_message": "Ambiguity: 14%\n\nCrystallize this for ralplan now, or continue deep-interview to 5%?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to 5%\n3. Continue deep-interview only on a named component or risk\n4. Direct input / not listed\n\n"
+  "last_assistant_message": "Ambiguity: 14%\n\n\"The responsive game board preserves state and remains keyboard accessible.\"\nIs this one-sentence crystallized requirement the right basis for implementation planning?\n\n1. Run ralplan (Recommended)\n2. Continue deep-interview to 5%\n3. Refine state recovery behavior\n4. Refine keyboard focus rules\n5. Direct input / not listed\n\nRecommendation: Option 1 - the requirement is specific enough for planning.\n"
 }"#;
     assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, milestone));
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["pending_question"]["kind"], "milestone_decision");
     assert_eq!(state["pending_question"]["milestone_target"], 15);
     assert_eq!(state["pending_question"]["next_ambiguity_target"], 5);
+    assert_eq!(
+        state["pending_question"]["crystallized_summary"],
+        "The responsive game board preserves state and remains keyboard accessible."
+    );
+    assert_eq!(
+        state["pending_question"]["options"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
 
     let answer = br#"{"session_id":"sess-di","prompt":"2"}"#;
     let output = run_hook(dir.path(), dir.path(), "UserPromptSubmit", None, answer);
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""additionalContext""#));
-    assert!(stdout.contains("stricter 5% ambiguity target"));
+    assert!(stdout.contains("stricter 5% ambiguity level"));
     assert!(stdout.contains("Do not repeat the previous milestone decision"));
     assert!(!stdout.contains("Megara deep-interview reached"));
     let state = read_json(&state_path(dir.path()));
     assert_eq!(state["active_ambiguity_target"], 5);
+    assert!(state["milestone_decision"]["correction_focus"].is_null());
     assert_eq!(
         state["milestone_decision"]["status"],
         "continue_deep_interview"
@@ -1147,6 +1159,33 @@ fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_cho
 }
 
 #[test]
+fn deep_interview_milestone_correction_choice_preserves_focus() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let milestone = br#"{
+  "session_id": "sess-di",
+  "last_assistant_message": "Ambiguity: 14%\n\n\"The responsive game board preserves state and remains keyboard accessible.\"\nIs this one-sentence crystallized requirement the right basis for implementation planning?\n\n1. Run ralplan (Recommended)\n2. Continue deep-interview to 5%\n3. Refine state recovery behavior\n4. Refine keyboard focus rules\n5. Direct input / not listed\n\nRecommendation: Option 1 - the requirement is specific enough for planning.\n"
+}"#;
+    assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, milestone));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","prompt":"3"}"#,
+    ));
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["active_ambiguity_target"], 5);
+    assert_eq!(
+        state["milestone_decision"]["correction_focus"],
+        "Refine state recovery behavior"
+    );
+}
+
+#[test]
 fn deep_interview_answer_injects_milestone_preflight_context() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
@@ -1168,8 +1207,10 @@ fn deep_interview_answer_injects_milestone_preflight_context() {
     assert!(stdout.contains("active ambiguity target is 15%"));
     assert!(stdout.contains("if the next visible ambiguity score is <= 15%"));
     assert!(stdout.contains("do not ask an ordinary interview question"));
-    assert!(stdout.contains("one recommendation line before the options"));
-    assert!(stdout.contains("because the active ambiguity target has been reached"));
+    assert!(stdout.contains("one recommendation line after the options"));
+    assert!(stdout.contains("one-sentence crystallized requirement"));
+    assert!(stdout.contains("exactly five numbered options"));
+    assert!(stdout.contains("why option 1 is recommended"));
     assert!(stdout.contains("(Recommended)"));
 }
 
@@ -1287,7 +1328,7 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
 
     let milestone = br#"{
   "session_id": "sess-di",
-  "last_assistant_message": "Ambiguity: 15%\n\nCrystallize this for ralplan now, or continue deep-interview to 5%?\n\n1. Proceed to ralplan with the current crystallized spec\n2. Continue deep-interview to 5%\n3. Continue deep-interview only on a named component or risk\n4. Direct input / not listed\n\n"
+  "last_assistant_message": "Ambiguity: 15%\n\n\"Restart always restores a playable board without losing the best score.\"\nIs this one-sentence crystallized requirement the right basis for implementation planning?\n\n1. Run ralplan (Recommended)\n2. Continue deep-interview to 5%\n3. Refine best-score recovery\n4. Refine restart animation timing\n5. Direct input / not listed\n\nRecommendation: Option 1 - the requirement is ready for planning.\n"
 }"#;
     assert_success(&run_hook(dir.path(), dir.path(), "Stop", None, milestone));
 
@@ -1428,7 +1469,7 @@ fn korean_milestone_question_keeps_user_choice_while_reviews_are_required() {
     ));
     let milestone = r#"{
   "session_id": "sess-di",
-  "last_assistant_message": "모호성: 14%\n\n현재 정리된 내용으로 다음 계획 단계로 넘어가도 될까요?\n\n추천: 1번 - 구현 범위와 완료 기준이 충분히 닫혔습니다.\n\n1. 현재 정리된 내용으로 `ralplan` 진행 (Recommended)\n2. `deep-interview`를 5%까지 더 진행\n3. 특정 구성요소나 위험만 더 파고들기\n4. 직접 입력 / 목록에 없음\n"
+  "last_assistant_message": "모호성: 14%\n\n\"재시작은 최고 점수를 보존하며 즉시 플레이 가능한 보드를 복원한다.\"\n이 한 문장대로 구현 계획을 세우면 원하는 결과가 맞을까요?\n\n1. `ralplan` 수행 (Recommended)\n2. 5%까지 `deep-interview` 진행\n3. 최고 점수 복원 규칙 보정\n4. 재시작 애니메이션 보정\n5. 직접 입력 / 목록에 없음\n\n추천: 1번 - 구현 범위와 완료 기준이 충분히 닫혔습니다.\n"
 }"#;
     assert_success(&run_hook(
         dir.path(),

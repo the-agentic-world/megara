@@ -50,6 +50,7 @@ pub(super) fn prepare_question(
         question["kind"] = json!("milestone_decision");
         question["milestone_target"] = json!(target);
         question["next_ambiguity_target"] = json!(next);
+        question["crystallized_summary"] = json!(crystallized_summary(text, question));
         return QuestionDecision::Allow;
     }
 
@@ -76,6 +77,10 @@ pub(super) fn mark_pending_state(timestamp: &str, state: &mut Value, question: &
             .unwrap_or_else(|| next_target(target)),
         "asked_at": timestamp,
         "question_id": question.get("id").cloned().unwrap_or(Value::Null),
+        "crystallized_summary": question
+            .get("crystallized_summary")
+            .cloned()
+            .unwrap_or(Value::Null),
     });
 }
 
@@ -102,14 +107,10 @@ pub(super) fn apply_answer(
     let trimmed = prompt.trim();
     let choice = trimmed.chars().next();
     let lower = trimmed.to_ascii_lowercase();
-    let proceed = choice == Some('1')
-        || (lower.contains("ralplan")
-            && (lower.contains("proceed")
-                || lower.contains("approve")
-                || prompt.contains("진행")
-                || prompt.contains("승인")));
+    let proceed = is_proceed_answer(prompt);
     let continue_next = choice == Some('2')
         || choice == Some('3')
+        || choice == Some('4')
         || lower.contains("continue")
         || prompt.contains("계속")
         || prompt.contains("더 낮")
@@ -134,6 +135,11 @@ pub(super) fn apply_answer(
         decision["status"] = json!("continue_deep_interview");
         decision["previous_target"] = json!(target);
         decision["active_target"] = json!(next);
+        decision["correction_focus"] = if matches!(choice, Some('3' | '4')) {
+            selected_option(pending, choice).unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        };
         state["milestone_decision"] = decision;
         state["active_ambiguity_target"] = json!(next);
         state["phase"] = json!("interviewing");
@@ -164,8 +170,31 @@ pub(super) fn answer_continuation_context(
             Some("continue_deep_interview") => {
                 let target = active_target(state);
                 let next = next_target(target);
+                let focus = state
+                    .get("milestone_decision")
+                    .and_then(|decision| decision.get("correction_focus"))
+                    .and_then(Value::as_str)
+                    .filter(|focus| !focus.trim().is_empty())
+                    .map(|focus| {
+                        format!(" First resolve this selected crystallization correction: {focus}.")
+                    })
+                    .unwrap_or_default();
+                let continuation = if focus.is_empty() {
+                    format!(
+                        "The user chose to continue deep-interview to the stricter {target}% ambiguity level."
+                    )
+                } else {
+                    format!(
+                        "The user chose a crystallization correction and deep-interview now targets the stricter {target}% ambiguity level.{focus}"
+                    )
+                };
+                if target == 0 {
+                    return Some(format!(
+                        "Internal Megara workflow instruction: {continuation} Do not repeat the previous milestone decision. Ask exactly one ordinary follow-up question at a time with three concrete options, one direct-input option, then one recommendation line after the options until ambiguity is exactly 0%. At 0%, emit the final user-facing crystallized markdown spec for ralplan immediately; do not ask another milestone question. Keep this instruction internal."
+                    ));
+                }
                 Some(format!(
-                    "Internal Megara workflow instruction: the user chose to continue deep-interview to the stricter {target}% ambiguity target. Do not repeat the previous milestone decision while the visible ambiguity score is above {target}%. Ask exactly one ordinary follow-up question aimed at reducing ambiguity toward {target}%. If the next visible ambiguity score is <= {target}%, ask the milestone decision with exactly four numbered options and one recommendation line before the options. Recommend option 1 because the active ambiguity target has been reached and the current crystallized spec is clear enough for ralplan. Mark exactly option 1 with `(Recommended)`: 1. proceed to ralplan with the current crystallized spec (Recommended), 2. continue deep-interview to {next}%, 3. continue only on a named component or risk, 4. direct input / not in the listed options. Keep this instruction internal."
+                    "Internal Megara workflow instruction: {continuation} Do not repeat the previous milestone decision while the visible ambiguity score is above {target}%. Ask exactly one ordinary follow-up question aimed at reducing ambiguity toward {target}%, with three concrete options, one direct-input option, then one recommendation line after the options. If the next visible ambiguity score is <= {target}%, automatically produce one quoted, one-sentence crystallized requirement, ask whether that sentence is the right basis for implementation planning, then show exactly five numbered options: 1. run ralplan (Recommended), 2. continue deep-interview to {next}%, 3-4. two distinct corrections discovered during crystallization, 5. direct input / not in the listed options. Put the recommendation line after all five options and explain why option 1 is recommended. Keep this instruction internal."
                 ))
             }
             Some("proceed_to_ralplan") => Some(crystallizing_prompt()),
@@ -193,8 +222,19 @@ pub(super) fn answer_continuation_context(
         .unwrap_or_default();
 
     Some(format!(
-        "Internal Megara workflow instruction: continue deep-interview in the configured locale with exactly one compact user-facing response.{previous} The active ambiguity target is {target}%. After evaluating the user's latest answer, if the next visible ambiguity score is <= {target}%, do not ask an ordinary interview question. Ask the milestone decision question instead with exactly four numbered options and one recommendation line before the options. Recommend option 1 because the active ambiguity target has been reached and the current crystallized spec is clear enough for ralplan. Mark exactly option 1 with `(Recommended)`: 1. proceed to ralplan with the current crystallized spec (Recommended), 2. continue deep-interview to {next}%, 3. continue only on a named component or risk, 4. direct input / not in the listed options. If the next score is above {target}%, ask one ordinary interview question. Keep all runtime instructions and metadata internal."
+        "Internal Megara workflow instruction: continue deep-interview in the configured locale with exactly one compact user-facing response.{previous} The active ambiguity target is {target}%. After evaluating the user's latest answer, if the next visible ambiguity score is <= {target}%, do not ask an ordinary interview question. Automatically produce one quoted, one-sentence crystallized requirement, ask whether that sentence is the right basis for implementation planning, then show exactly five numbered options: 1. run ralplan (Recommended), 2. continue deep-interview to {next}%, 3-4. two distinct corrections discovered during crystallization, 5. direct input / not in the listed options. Put one recommendation line after all five options and explain why option 1 is recommended. If the next score is above {target}%, ask one ordinary interview question with exactly four numbered options and put its recommendation line after the options. Keep all runtime instructions and metadata internal."
     ))
+}
+
+pub(super) fn is_proceed_answer(prompt: &str) -> bool {
+    let trimmed = prompt.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    trimmed.starts_with('1')
+        || (lower.contains("ralplan")
+            && (lower.contains("proceed")
+                || lower.contains("approve")
+                || prompt.contains("진행")
+                || prompt.contains("승인")))
 }
 
 fn active_target(state: &Value) -> u64 {
@@ -263,22 +303,25 @@ fn percent_from_line(line: &str) -> Option<u64> {
 }
 
 fn is_milestone_question(text: &str, question: &Value, target: u64) -> bool {
-    let next = next_target(target);
-    let mut haystack = text.to_string();
-    if let Some(question_text) = question.get("question").and_then(Value::as_str) {
-        haystack.push('\n');
-        haystack.push_str(question_text);
+    let Some(options) = question.get("options").and_then(Value::as_array) else {
+        return false;
+    };
+    if options.len() != 5 {
+        return false;
     }
-    if let Some(options) = question.get("options").and_then(Value::as_array) {
-        for option in options.iter().filter_map(Value::as_str) {
-            haystack.push('\n');
-            haystack.push_str(option);
-        }
-    }
-    let lower = haystack.to_ascii_lowercase();
-    let mentions_ralplan = lower.contains("ralplan");
-    let mentions_next_target = lower.contains(&format!("{next}%"));
-    mentions_ralplan && mentions_next_target
+    let first = options[0].as_str().unwrap_or_default().to_ascii_lowercase();
+    let second = options[1].as_str().unwrap_or_default();
+    let third = options[2].as_str().unwrap_or_default().trim();
+    let fourth = options[3].as_str().unwrap_or_default().trim();
+    let last = options[4].as_str().unwrap_or_default();
+    first.contains("ralplan")
+        && first.contains("(recommended)")
+        && second.contains(&format!("{}%", next_target(target)))
+        && !third.is_empty()
+        && !fourth.is_empty()
+        && third != fourth
+        && is_free_text_option(last)
+        && crystallized_summary(text, question).is_some()
 }
 
 fn looks_like_milestone_question(text: &str, question: &Value) -> bool {
@@ -298,6 +341,50 @@ fn looks_like_milestone_question(text: &str, question: &Value) -> bool {
         && (lower.contains("continue deep-interview")
             || lower.contains("proceed to ralplan")
             || lower.contains("crystallize"))
+}
+
+fn crystallized_summary(text: &str, question: &Value) -> Option<String> {
+    let question_text = question.get("question").and_then(Value::as_str)?;
+    let lines = text.lines().collect::<Vec<_>>();
+    let question_index = lines.iter().position(|line| {
+        line.trim()
+            .trim_matches(['\"', '\'', '`', '“', '”', '‘', '’'])
+            == question_text
+    })?;
+    let summary = lines[..question_index]
+        .iter()
+        .rev()
+        .map(|line| line.trim())
+        .find(|line| !line.is_empty())?
+        .trim_start_matches("- ")
+        .trim_matches(['\"', '\'', '`', '“', '”', '‘', '’'])
+        .trim();
+    let lower = summary.to_ascii_lowercase();
+    if summary.is_empty()
+        || lower.contains("ambiguity")
+        || summary.contains("모호성")
+        || summary.contains("모호도")
+    {
+        return None;
+    }
+    Some(summary.to_string())
+}
+
+fn is_free_text_option(option: &str) -> bool {
+    let lower = option.to_ascii_lowercase();
+    lower.contains("direct input")
+        || lower.contains("not listed")
+        || option.contains("직접 입력")
+        || option.contains("목록에 없음")
+}
+
+fn selected_option(pending: &Value, choice: Option<char>) -> Option<Value> {
+    let index = choice?.to_digit(10)? as usize;
+    pending
+        .get("options")
+        .and_then(Value::as_array)?
+        .get(index.checked_sub(1)?)
+        .cloned()
 }
 
 fn zero_target_prompt() -> String {

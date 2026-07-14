@@ -130,8 +130,8 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("At `2%`, stop asking ordinary interview questions"));
     assert!(skill.contains("At `0%`, do not ask another milestone decision"));
     assert!(skill.contains("show `0%` as the final visible ambiguity score"));
-    assert!(skill.contains("Continue deep-interview to the next ambiguity target"));
-    assert!(skill.contains("reaching the active target opens the milestone decision step"));
+    assert!(skill.contains("two distinct, concrete corrections"));
+    assert!(skill.contains("reaching the active target automatically creates"));
     assert!(skill.contains("do not crystallize at `1%`"));
     assert!(skill.contains("Runtime-Backed Multi-Turn Contract"));
     assert!(skill.contains("Codex App delegation wrappers"));
@@ -167,7 +167,9 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Keep active interview output compact for humans"));
     assert!(skill.contains("Show the current ambiguity score on every active interview question"));
     assert!(skill.contains("exactly four visible options"));
-    assert!(skill.contains("Show one recommendation line before the options"));
+    assert!(skill.contains("Show one recommendation line after the options"));
+    assert!(skill.contains("five visible numbered options"));
+    assert!(skill.contains("one-sentence crystallized requirement"));
     assert!(skill.contains("what you recommend and why"));
     assert!(skill.contains("(Recommended)"));
     assert!(skill
