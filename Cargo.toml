@@ -1,6 +1,6 @@
 [package]
 name = "megara"
-version = "1.1.16"
+version = "1.1.17"
 edition = "2021"
 description = "Project and global agent harness installer"
 license = "MIT"
