@@ -204,6 +204,9 @@ pub(super) fn ensure_deep_interview_final_review(
     if orchestration.get("workflow").and_then(Value::as_str) != Some(DEEP_INTERVIEW) {
         return false;
     }
+    if orchestration.get("trigger").and_then(Value::as_str) == Some("final_crystallization") {
+        return false;
+    }
     if orchestration.get("status").and_then(Value::as_str) == Some("satisfied") {
         return false;
     }
@@ -610,7 +613,54 @@ pub(super) fn role_from_payload(payload: &Value) -> Option<&'static str> {
     .into_iter()
     .filter_map(|key| payload.get(key).and_then(Value::as_str))
     .find_map(role_from_text)
+    .or_else(|| role_from_parent_spawn(payload))
     .or_else(|| role_from_subagent_transcript(payload))
+}
+
+fn role_from_parent_spawn(payload: &Value) -> Option<&'static str> {
+    let agent_id = payload
+        .get("agent_id")
+        .or_else(|| payload.get("subagent_id"))
+        .and_then(Value::as_str)?;
+    let transcript_path = payload.get("transcript_path").and_then(Value::as_str)?;
+    let file = File::open(transcript_path).ok()?;
+    let records = BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+        .collect::<Vec<_>>();
+    let event_ids = records
+        .iter()
+        .filter_map(|record| {
+            let record_payload = record.get("payload")?;
+            (record.get("type").and_then(Value::as_str) == Some("event_msg")
+                && record_payload.get("type").and_then(Value::as_str) == Some("sub_agent_activity")
+                && record_payload
+                    .get("agent_thread_id")
+                    .and_then(Value::as_str)
+                    == Some(agent_id))
+            .then(|| record_payload.get("event_id").and_then(Value::as_str))
+            .flatten()
+        })
+        .collect::<Vec<_>>();
+
+    records.iter().rev().find_map(|record| {
+        let record_payload = record.get("payload")?;
+        let call_id = record_payload.get("call_id").and_then(Value::as_str)?;
+        if record.get("type").and_then(Value::as_str) != Some("response_item")
+            || record_payload.get("type").and_then(Value::as_str) != Some("function_call")
+            || record_payload.get("name").and_then(Value::as_str) != Some("spawn_agent")
+            || !event_ids.contains(&call_id)
+        {
+            return None;
+        }
+        let arguments = record_payload.get("arguments").and_then(Value::as_str)?;
+        let arguments = serde_json::from_str::<Value>(arguments).ok()?;
+        arguments
+            .get("task_name")
+            .and_then(Value::as_str)
+            .and_then(role_from_text)
+    })
 }
 
 fn role_from_subagent_transcript(payload: &Value) -> Option<&'static str> {
@@ -639,7 +689,7 @@ fn subagent_request_id_from_transcript(payload: &Value) -> Option<String> {
                 .lines()
                 .map_while(Result::ok)
                 .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
-                .filter_map(|record| subagent_user_message(&record))
+                .filter_map(|record| subagent_request_context(&record))
                 .flat_map(|message| {
                     message
                         .lines()
@@ -652,6 +702,28 @@ fn subagent_request_id_from_transcript(payload: &Value) -> Option<String> {
                 })
                 .last()
         })
+}
+
+fn subagent_request_context(record: &Value) -> Option<String> {
+    if let Some(message) = subagent_user_message(record) {
+        return Some(message);
+    }
+    let payload = record.get("payload")?;
+    if record.get("type").and_then(Value::as_str) != Some("response_item")
+        || payload.get("type").and_then(Value::as_str) != Some("message")
+        || payload.get("role").and_then(Value::as_str) != Some("developer")
+    {
+        return None;
+    }
+    let message = payload
+        .get("content")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("input_text"))
+        .filter_map(|item| item.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!message.trim().is_empty()).then_some(message)
 }
 
 fn subagent_user_message(record: &Value) -> Option<String> {

@@ -43,7 +43,7 @@ pub(super) fn handle_stop(
             {
                 transition::mark_ralplan_continuation_delivered(timestamp, &mut state);
                 write_json_atomic(&paths.session_file, &state)?;
-                print_stop_continuation(transition::ralplan_start_reason())?;
+                print_stop_signal(transition::ralplan_start_reason())?;
             }
             return Ok(0);
         }
@@ -131,7 +131,7 @@ pub(super) fn handle_stop(
         if let Some(reason) = continuation
             .filter(|_| payload.get("stop_hook_active").and_then(Value::as_bool) != Some(true))
         {
-            print_stop_continuation(reason)?;
+            print_stop_signal(reason)?;
         }
         return Ok(0);
     }
@@ -289,10 +289,10 @@ pub(super) fn handle_stop(
     Ok(0)
 }
 
-fn print_stop_continuation(reason: &str) -> Result<()> {
+fn print_stop_signal(reason: &str) -> Result<()> {
     println!(
         "{}",
-        serde_json::to_string(&json!({"decision": "block", "reason": reason}))?
+        serde_json::to_string(&json!({"continue": false, "stopReason": reason}))?
     );
     Ok(())
 }

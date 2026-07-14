@@ -765,6 +765,118 @@ fn deep_interview_recovers_custom_roles_from_codex_subagent_transcripts() {
 }
 
 #[test]
+fn deep_interview_recovers_roles_and_requests_from_app_collaboration_transcripts() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"$deep-interview improve the game"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","last_assistant_message":"Ambiguity: 42%\n\nShould the game remain offline?\n\nRecommendation: Keep it offline.\n\n1. Keep offline (Recommended)\n2. Add cloud sync\n3. Defer the decision\n4. Direct input / not listed\n"}"#,
+    ));
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di","cwd":"/tmp/project","prompt":"Replace it with a cloud service and paid team accounts."}"#,
+    ));
+    let state = read_json(&state_path(dir.path()));
+    let request_id = state["subagent_orchestration"]["request_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    for (index, role) in ["researcher", "contrarian", "simplifier", "architect"]
+        .into_iter()
+        .enumerate()
+    {
+        let agent_id = format!("agent-{index}");
+        let call_id = format!("call-{index}");
+        let parent_path = dir.path().join(format!("parent-{role}.jsonl"));
+        let child_path = dir.path().join(format!("child-{role}.jsonl"));
+        let spawn = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "spawn_agent",
+                "call_id": call_id,
+                "arguments": serde_json::json!({"task_name": format!("review_{role}")}).to_string(),
+            },
+        });
+        let activity = serde_json::json!({
+            "type": "event_msg",
+            "payload": {
+                "type": "sub_agent_activity",
+                "event_id": call_id,
+                "agent_thread_id": agent_id,
+            },
+        });
+        fs::write(&parent_path, format!("{spawn}\n{activity}\n")).unwrap();
+        let context = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "developer",
+                "content": [{
+                    "type": "input_text",
+                    "text": format!("MEGARA_REQUEST={request_id}\nReview the changed boundary."),
+                }],
+            },
+        });
+        fs::write(&child_path, format!("{context}\n")).unwrap();
+        let payload = serde_json::json!({
+            "session_id": "sess-di",
+            "cwd": "/tmp/project",
+            "agent_id": agent_id,
+            "agent_type": "default",
+            "transcript_path": parent_path,
+            "agent_transcript_path": child_path,
+            "last_assistant_message": "Review completed.",
+        })
+        .to_string();
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStart",
+            None,
+            payload.as_bytes(),
+        ));
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStop",
+            None,
+            payload.as_bytes(),
+        ));
+    }
+
+    let state = read_json(&state_path(dir.path()));
+    assert_eq!(state["subagent_orchestration"]["status"], "conditional");
+    let mut roles = state["subagent_receipts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|receipt| receipt["role"].as_str())
+        .collect::<Vec<_>>();
+    roles.sort_unstable();
+    assert_eq!(
+        roles,
+        ["architect", "contrarian", "researcher", "simplifier"]
+    );
+}
+
+#[test]
 fn deep_interview_review_failure_retries_and_cancellation_ignores_late_receipts() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
@@ -1225,6 +1337,18 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
         "stdout={}",
         String::from_utf8_lossy(&review_gate.stdout)
     );
+    let first_review_request = read_json(&state_path(dir.path()))["subagent_orchestration"]
+        ["request_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let repeated_review_gate = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
+    assert_success(&repeated_review_gate);
+    assert!(repeated_review_gate.stdout.is_empty());
+    assert_eq!(
+        read_json(&state_path(dir.path()))["subagent_orchestration"]["request_id"],
+        first_review_request
+    );
     for role in ["researcher", "contrarian", "simplifier"] {
         submit_deep_interview_review(dir.path(), role);
     }
@@ -1249,8 +1373,9 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
     assert_success(&transitioned);
     let output: serde_json::Value =
         serde_json::from_slice(&transitioned.stdout).expect("automatic transition response");
-    assert_eq!(output["decision"], "block");
-    assert!(output["reason"]
+    assert_eq!(output["continue"], false);
+    assert!(output.get("decision").is_none());
+    assert!(output["stopReason"]
         .as_str()
         .unwrap()
         .contains("Start ralplan now"));
