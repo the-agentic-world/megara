@@ -188,14 +188,16 @@ fn installs_project_scope_codex_harness() {
     assert!(skill.contains("Runtime hooks infer the pending question"));
     assert!(skill.contains("Do not emit a visible ledger update"));
     assert!(skill.contains("output only the user-facing markdown spec"));
-    assert!(skill.contains("Produce a user-friendly pending-approval summary"));
+    assert!(skill.contains("do not produce a duplicate final-spec response"));
+    assert!(skill.contains("produce the `ralplan` result in the same user-selected turn"));
     assert!(skill.contains("For a `0%` target completion, this must be exactly `0%`"));
     assert!(skill.contains("Do not show raw labels such as `Metadata`"));
     assert!(!skill.contains("Interview ledger update:"));
     assert!(!skill.contains("Megara Question Gate:"));
     assert!(!skill.contains("Megara Workflow State:"));
     assert!(skill.contains("Do not emit `Megara Workflow State`"));
-    assert!(skill.contains("locked markdown artifact"));
+    assert!(skill.contains("candidate markdown artifact"));
+    assert!(skill.contains("promote it after the user selects `ralplan`"));
     assert!(skill.contains("spec_path"));
     assert!(skill.contains("pipeline_lock"));
     assert!(skill.contains("Write every user-facing sentence in the configured locale"));

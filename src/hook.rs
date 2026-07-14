@@ -70,8 +70,8 @@ mod transition;
 mod user_prompt;
 
 use artifacts::{
-    has_visible_crystallized_spec, persist_crystallized_spec, persist_pending_plan,
-    persist_ralplan_review,
+    has_visible_crystallized_spec, persist_crystallization_candidate, persist_crystallized_spec,
+    persist_pending_plan, persist_ralplan_review, CrystallizationCandidate,
 };
 use fsutil::{append_jsonl, load_json, write_json_atomic};
 use mutation::{mutation_signal, protected_workflow_state_mutation};

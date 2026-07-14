@@ -71,6 +71,83 @@ pub(crate) fn persist_crystallized_spec(
     }))
 }
 
+pub(crate) struct CrystallizationCandidate<'a> {
+    pub(crate) ambiguity: &'a str,
+    pub(crate) summary: &'a str,
+    pub(crate) decisions: &'a [String],
+    pub(crate) corrections: &'a [String],
+}
+
+pub(crate) fn persist_crystallization_candidate(
+    timestamp: &str,
+    artifact_dir: &Path,
+    session_id: &str,
+    candidate: &CrystallizationCandidate<'_>,
+    payload_file: &Path,
+) -> Result<PersistedSpec> {
+    let decisions = candidate
+        .decisions
+        .iter()
+        .map(|decision| format!("- {decision}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let corrections = candidate
+        .corrections
+        .iter()
+        .map(|correction| format!("- {correction}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut content = [
+        "---".to_string(),
+        "skill: \"deep-interview\"".to_string(),
+        format!("session_id: {}", yaml_string(session_id)),
+        "status: \"crystallization_candidate\"".to_string(),
+        format!("ambiguity: {}", yaml_string(candidate.ambiguity)),
+        "next: \"ralplan\"".to_string(),
+        format!("persisted_at: {}", yaml_string(timestamp)),
+        format!("payload: {}", yaml_string(payload_file.display())),
+        "---".to_string(),
+        String::new(),
+        "# Crystallized Requirement".to_string(),
+        String::new(),
+        candidate.summary.trim().to_string(),
+        String::new(),
+        "## Confirmed Interview Decisions".to_string(),
+        String::new(),
+        decisions,
+        String::new(),
+        "## Candidate Corrections".to_string(),
+        String::new(),
+        corrections,
+    ]
+    .join("\n");
+    content.push('\n');
+
+    let spec_path = unique_spec_path(artifact_dir, session_id, timestamp);
+    write_text_atomic(&spec_path, &content)?;
+    let sha256 = sha256_hex(content.as_bytes());
+    append_jsonl(
+        &artifact_dir.join("specs").join("index.jsonl"),
+        &json!({
+            "timestamp": timestamp,
+            "event": "crystallization_candidate_persisted",
+            "session_id": session_id,
+            "skill": DEEP_INTERVIEW,
+            "status": "crystallization_candidate",
+            "path": spec_path,
+            "sha256": sha256,
+            "payload": payload_file,
+        }),
+    )?;
+
+    Ok(PersistedSpec {
+        path: spec_path.display().to_string(),
+        sha256,
+        persisted_at: timestamp.to_string(),
+        payload: payload_file.display().to_string(),
+    })
+}
+
 pub(crate) fn has_visible_crystallized_spec(terminal: &TerminalState, text: &str) -> bool {
     terminal.status == "crystallized" && !visible_spec_text(text).is_empty()
 }

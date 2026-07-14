@@ -130,6 +130,17 @@ pub(super) fn handle_user_prompt(
         payload,
     )?;
     if let Some(mut state) = load_json(&deep_paths.session_file) {
+        if transition::pending_ralplan_continuation(&state) {
+            transition::mark_ralplan_continuation_delivered(timestamp, &mut state);
+            write_json_atomic(&deep_paths.session_file, &state)?;
+            let context = format!(
+                "{}\n\n{}",
+                transition::ralplan_start_reason(),
+                subagent_gate::additional_context(RALPLAN).unwrap_or_default()
+            );
+            print_user_prompt_output(Some(&context), system_message.as_deref())?;
+            return Ok(0);
+        }
         if is_current_active_state(&state, payload) {
             let pending_before = state.get("pending_question").cloned();
             if let Some(question_id) =

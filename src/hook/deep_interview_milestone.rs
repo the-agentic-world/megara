@@ -84,6 +84,170 @@ pub(super) fn mark_pending_state(timestamp: &str, state: &mut Value, question: &
     });
 }
 
+pub(super) fn ensure_candidate(
+    timestamp: &str,
+    paths: &WorkflowPaths,
+    payload_file: &Path,
+    state: &mut Value,
+    question: &Value,
+) -> Result<()> {
+    if question.get("kind").and_then(Value::as_str) != Some("milestone_decision") {
+        return Ok(());
+    }
+    let Some(summary) = question
+        .get("crystallized_summary")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+    else {
+        return Ok(());
+    };
+    if state
+        .get("crystallization_candidate")
+        .and_then(|candidate| candidate.get("summary"))
+        .and_then(Value::as_str)
+        == Some(summary)
+        && state
+            .get("crystallization_candidate")
+            .and_then(|candidate| candidate.get("path"))
+            .and_then(Value::as_str)
+            .is_some_and(|path| Path::new(path).is_file())
+    {
+        return Ok(());
+    }
+
+    let corrections = question
+        .get("options")
+        .and_then(Value::as_array)
+        .map(|options| {
+            options
+                .iter()
+                .skip(2)
+                .take(2)
+                .filter_map(Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let ambiguity = question
+        .get("ambiguity")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let decisions = confirmed_decisions(state);
+    let candidate_input = CrystallizationCandidate {
+        ambiguity,
+        summary,
+        decisions: &decisions,
+        corrections: &corrections,
+    };
+    let candidate = persist_crystallization_candidate(
+        timestamp,
+        &paths.artifact_dir,
+        &paths.session_id,
+        &candidate_input,
+        payload_file,
+    )?;
+    state["crystallization_candidate"] = json!({
+        "status": "pending_confirmation",
+        "summary": summary,
+        "corrections": corrections,
+        "path": candidate.path,
+        "sha256": candidate.sha256,
+        "persisted_at": candidate.persisted_at,
+        "payload": candidate.payload,
+    });
+    Ok(())
+}
+
+fn confirmed_decisions(state: &Value) -> Vec<String> {
+    state
+        .get("questions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|question| {
+            let prompt = question.get("question").and_then(Value::as_str)?;
+            let answer = question
+                .get("answer")
+                .and_then(|answer| answer.get("content"))
+                .and_then(Value::as_str)?;
+            Some(format!(
+                "{}: {}",
+                compact_line(prompt),
+                resolved_answer(question, answer)
+            ))
+        })
+        .collect()
+}
+
+fn resolved_answer(question: &Value, answer: &str) -> String {
+    let compact = compact_line(answer);
+    let Some(index) = compact
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| index.checked_sub(1))
+    else {
+        return compact;
+    };
+    question
+        .get("options")
+        .and_then(Value::as_array)
+        .and_then(|options| options.get(index))
+        .and_then(Value::as_str)
+        .map(|option| format!("{compact} ({})", compact_line(option)))
+        .unwrap_or(compact)
+}
+
+fn compact_line(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+pub(super) fn promote_candidate(timestamp: &str, state: &mut Value) -> bool {
+    let Some(candidate) = state.get("crystallization_candidate").cloned() else {
+        return false;
+    };
+    let Some(path) = candidate.get("path").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(sha256) = candidate.get("sha256").and_then(Value::as_str) else {
+        return false;
+    };
+    if !Path::new(path).is_file() || sha256.len() != 64 {
+        return false;
+    }
+
+    state["active"] = json!(false);
+    state["phase"] = json!("crystallized");
+    state["status"] = json!("crystallized");
+    state["next"] = json!(RALPLAN);
+    state["spec_path"] = json!(path);
+    state["spec_sha256"] = json!(sha256);
+    state["spec_persisted_at"] = candidate
+        .get("persisted_at")
+        .cloned()
+        .unwrap_or(Value::Null);
+    state["spec_payload"] = candidate.get("payload").cloned().unwrap_or(Value::Null);
+    state["crystallization_candidate"]["status"] = json!("confirmed");
+    state["crystallization_candidate"]["confirmed_at"] = json!(timestamp);
+    state["pending_question"] = Value::Null;
+    state["closed_at"] = json!(timestamp);
+    state["next_workflow_suggestion"] = json!({
+        "workflow": RALPLAN,
+        "status": "suggested",
+        "suggested_at": timestamp,
+        "implementation_allowed_now": false,
+    });
+    state["pipeline_lock"] = json!({
+        "workflow": RALPLAN,
+        "status": "pending_ralplan",
+        "created_at": timestamp,
+        "implementation_allowed_now": false,
+        "unlock_condition": "ralplan_pending_or_approved",
+    });
+    state["updated_at"] = json!(timestamp);
+    true
+}
+
 pub(super) fn apply_answer(
     timestamp: &str,
     state: &mut Value,
@@ -127,8 +291,8 @@ pub(super) fn apply_answer(
     if proceed {
         decision["status"] = json!("proceed_to_ralplan");
         state["milestone_decision"] = decision;
-        state["phase"] = json!("crystallizing");
-        state["status"] = json!("crystallizing");
+        state["phase"] = json!("transition_review_required");
+        state["status"] = json!("transition_review_required");
         state["updated_at"] = json!(timestamp);
         Some("milestone_ralplan_selected")
     } else if continue_next {
@@ -197,7 +361,7 @@ pub(super) fn answer_continuation_context(
                     "Internal Megara workflow instruction: {continuation} Do not repeat the previous milestone decision while the visible ambiguity score is above {target}%. Ask exactly one ordinary follow-up question aimed at reducing ambiguity toward {target}%, with three concrete options, one direct-input option, then one recommendation line after the options. If the next visible ambiguity score is <= {target}%, automatically produce one quoted, one-sentence crystallized requirement, ask whether that sentence is the right basis for implementation planning, then show exactly five numbered options: 1. run ralplan (Recommended), 2. continue deep-interview to {next}%, 3-4. two distinct corrections discovered during crystallization, 5. direct input / not in the listed options. Put the recommendation line after all five options and explain why option 1 is recommended. Keep this instruction internal."
                 ))
             }
-            Some("proceed_to_ralplan") => Some(crystallizing_prompt()),
+            Some("proceed_to_ralplan") => None,
             Some("custom_answer_recorded") => {
                 let target = active_target(state);
                 Some(format!(
@@ -389,10 +553,5 @@ fn selected_option(pending: &Value, choice: Option<char>) -> Option<Value> {
 
 fn zero_target_prompt() -> String {
     "Megara deep-interview reached the 0% target. Do not ask another question or show runtime metadata. Emit the final user-facing crystallized markdown spec for ralplan as the final answer of this turn."
-        .to_string()
-}
-
-fn crystallizing_prompt() -> String {
-    "Megara deep-interview milestone approval already selected ralplan. Do not ask another question or milestone decision. Emit the final user-facing crystallized markdown spec for ralplan as the final answer of this turn. Keep runtime metadata internal."
         .to_string()
 }

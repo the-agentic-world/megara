@@ -1,7 +1,13 @@
 use super::*;
 
 pub(super) fn state_path(project: &Path) -> PathBuf {
-    project.join(".megara/state/workflows/deep-interview/sess-di.json")
+    state_path_for(project, "sess-di")
+}
+
+pub(super) fn state_path_for(project: &Path, session_id: &str) -> PathBuf {
+    project.join(format!(
+        ".megara/state/workflows/deep-interview/{session_id}.json"
+    ))
 }
 
 pub(super) fn submit_question(project: &Path) {

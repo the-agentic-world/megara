@@ -11,5 +11,8 @@ mod types;
 
 pub(crate) use plan::persist_pending_plan;
 pub(crate) use review::persist_ralplan_review;
-pub(crate) use spec::{has_visible_crystallized_spec, persist_crystallized_spec};
+pub(crate) use spec::{
+    has_visible_crystallized_spec, persist_crystallization_candidate, persist_crystallized_spec,
+    CrystallizationCandidate,
+};
 pub(crate) use types::{PersistedPlan, PersistedSpec};

@@ -38,13 +38,6 @@ pub(super) fn handle_stop(
         let mut state = load_json(&paths.session_file)
             .unwrap_or_else(|| new_state(&terminal.skill, timestamp, &paths.session_id, payload));
         if terminal.skill == DEEP_INTERVIEW && transition::already_started(&state, RALPLAN) {
-            if transition::pending_ralplan_continuation(&state)
-                && payload.get("stop_hook_active").and_then(Value::as_bool) != Some(true)
-            {
-                transition::mark_ralplan_continuation_delivered(timestamp, &mut state);
-                write_json_atomic(&paths.session_file, &state)?;
-                print_stop_signal(transition::ralplan_start_reason())?;
-            }
             return Ok(0);
         }
         if terminal.skill == DEEP_INTERVIEW {
@@ -104,7 +97,7 @@ pub(super) fn handle_stop(
             )?,
             _ => return Ok(0),
         }
-        let continuation = if terminal.skill == DEEP_INTERVIEW {
+        if terminal.skill == DEEP_INTERVIEW {
             transition::start_ralplan_from_crystallized(
                 timestamp,
                 state_dir,
@@ -112,26 +105,13 @@ pub(super) fn handle_stop(
                 payload_file,
                 &paths,
                 &mut state,
-            )?
-        } else {
-            None
-        };
-        if continuation.is_some()
-            && transition::pending_ralplan_continuation(&state)
-            && payload.get("stop_hook_active").and_then(Value::as_bool) != Some(true)
-        {
-            transition::mark_ralplan_continuation_delivered(timestamp, &mut state);
+            )?;
         }
         write_json_atomic(&paths.session_file, &state)?;
         if terminal.skill == DEEP_INTERVIEW
             && !state.get("active").and_then(Value::as_bool).unwrap_or(true)
         {
             mark_stale_deep_interview_peers(timestamp, payload_file, &paths, &state)?;
-        }
-        if let Some(reason) = continuation
-            .filter(|_| payload.get("stop_hook_active").and_then(Value::as_bool) != Some(true))
-        {
-            print_stop_signal(reason)?;
         }
         return Ok(0);
     }
@@ -269,6 +249,13 @@ pub(super) fn handle_stop(
         .get("pending_question")
         .cloned()
         .unwrap_or(Value::Null);
+    deep_interview_milestone::ensure_candidate(
+        timestamp,
+        &paths,
+        payload_file,
+        &mut state,
+        &pending_question,
+    )?;
     deep_interview_milestone::mark_pending_state(timestamp, &mut state, &pending_question);
     subagent_gate::consume_satisfied_deep_interview_review(timestamp, &mut state);
     append_jsonl(
@@ -287,14 +274,6 @@ pub(super) fn handle_stop(
 
     write_json_atomic(&paths.session_file, &state)?;
     Ok(0)
-}
-
-fn print_stop_signal(reason: &str) -> Result<()> {
-    println!(
-        "{}",
-        serde_json::to_string(&json!({"continue": false, "stopReason": reason}))?
-    );
-    Ok(())
 }
 
 fn mark_stale_deep_interview_peers(

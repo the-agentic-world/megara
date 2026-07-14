@@ -9,7 +9,19 @@ pub(super) fn handle_subagent_event(
 ) -> Result<i32> {
     let entry = subagent_event_entry(timestamp, options, payload, payload_file);
     append_jsonl(&state_dir.join("subagents.jsonl"), &entry)?;
-    attach_to_workflow_state(timestamp, state_dir, options, payload, payload_file, &entry)?;
+    if let Some(context) =
+        attach_to_workflow_state(timestamp, state_dir, options, payload, payload_file, &entry)?
+    {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "SubagentStop",
+                    "additionalContext": context,
+                }
+            }))?
+        );
+    }
     Ok(0)
 }
 
@@ -53,7 +65,8 @@ fn attach_to_workflow_state(
     payload: &Value,
     payload_file: &Path,
     event: &Value,
-) -> Result<()> {
+) -> Result<Option<String>> {
+    let mut continuation = None;
     for &skill in WORKFLOWS {
         let paths = workflow_paths(state_dir, payload, skill);
         reconcile_session_aliases(timestamp, payload_file, &paths, skill, payload)?;
@@ -81,6 +94,22 @@ fn attach_to_workflow_state(
                         )?;
                     }
                 }
+                if skill == DEEP_INTERVIEW
+                    && deep_interview_transition_ready(&state)
+                    && deep_interview_milestone::promote_candidate(timestamp, &mut state)
+                {
+                    continuation = transition::start_ralplan_from_crystallized(
+                        timestamp,
+                        state_dir,
+                        payload,
+                        payload_file,
+                        &paths,
+                        &mut state,
+                    )?;
+                    if continuation.is_some() {
+                        transition::mark_ralplan_continuation_delivered(timestamp, &mut state);
+                    }
+                }
             }
             _ => {}
         }
@@ -97,8 +126,27 @@ fn attach_to_workflow_state(
                 "subagent_payload": payload_file,
             }),
         )?;
+        if continuation.is_some() {
+            break;
+        }
     }
-    Ok(())
+    Ok(continuation.map(|reason| {
+        let review = subagent_gate::additional_context(RALPLAN).unwrap_or_default();
+        format!("{reason}\n\n{review}")
+    }))
+}
+
+fn deep_interview_transition_ready(state: &Value) -> bool {
+    state
+        .get("milestone_decision")
+        .and_then(|decision| decision.get("status"))
+        .and_then(Value::as_str)
+        == Some("proceed_to_ralplan")
+        && state
+            .get("subagent_orchestration")
+            .and_then(|orchestration| orchestration.get("status"))
+            .and_then(Value::as_str)
+            == Some("satisfied")
 }
 
 fn review_passes_from_subagent_payload(payload: &Value) -> Vec<parser::ReviewPass> {

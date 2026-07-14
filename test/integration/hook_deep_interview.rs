@@ -1159,6 +1159,165 @@ fn deep_interview_milestone_blocks_ordinary_question_and_lowers_target_after_cho
 }
 
 #[test]
+fn milestone_ralplan_choice_starts_planning_on_the_user_turn_without_stop_feedback() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di-app","prompt":"$deep-interview improve restart UX","transcript_path":"/tmp/rollout-019f-app.jsonl"}"#,
+    ));
+
+    let milestone = serde_json::json!({
+        "session_id": "sess-di-app",
+        "transcript_path": "/tmp/rollout-019f-app.jsonl",
+        "last_assistant_message": "모호성: 15%\n\n\"재시작은 최고 점수를 보존하며 항상 플레이 가능한 보드를 복원한다.\"\n이 요구사항을 기준으로 구현 계획을 세우면 될까요?\n\n1. ralplan 수행 (Recommended)\n2. 모호성 5%까지 deep-interview 진행\n3. 저장소 실패 시 복구 동작 보정\n4. 재시작 애니메이션 범위 보정\n5. 직접 입력\n\n추천: 1번 - 계획 수립에 필요한 결정이 충분합니다.\n"
+    })
+    .to_string();
+    assert_success(&run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        milestone.as_bytes(),
+    ));
+
+    let pending = read_json(&state_path_for(dir.path(), "sess-di-app"));
+    assert_eq!(pending["pending_question"]["kind"], "milestone_decision");
+    let candidate_path = pending["crystallization_candidate"]["path"]
+        .as_str()
+        .expect("milestone must persist a candidate spec");
+    let candidate = fs::read_to_string(candidate_path).unwrap();
+    assert!(candidate.contains("재시작은 최고 점수를 보존"));
+    assert!(candidate.contains("저장소 실패 시 복구 동작 보정"));
+
+    let selected = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di-app","prompt":"1","transcript_path":"/tmp/rollout-019f-app.jsonl"}"#,
+    );
+    assert_success(&selected);
+    let output: serde_json::Value = serde_json::from_slice(&selected.stdout).unwrap();
+    assert!(output.get("continue").is_none());
+    let context = output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("researcher"));
+    assert!(context.contains("contrarian"));
+    assert!(context.contains("simplifier"));
+    assert!(!context.contains("Start ralplan now"));
+
+    let waiting = read_json(&state_path_for(dir.path(), "sess-di-app"));
+    assert_eq!(waiting["status"], "transition_review_required");
+    assert!(waiting.get("transition").is_none());
+    let request_id = waiting["subagent_orchestration"]["request_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut transition_output = None;
+    for role in ["researcher", "contrarian", "simplifier"] {
+        let payload = serde_json::json!({
+            "session_id": "sess-di-app",
+            "agent_id": format!("agent-{role}"),
+            "agent_type": role,
+            "last_assistant_message": format!(
+                "MEGARA_ROLE={role}\nMEGARA_REQUEST={request_id}\nReview complete."
+            ),
+        })
+        .to_string();
+        assert_success(&run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStart",
+            Some(role),
+            payload.as_bytes(),
+        ));
+        let stopped = run_hook(
+            dir.path(),
+            dir.path(),
+            "SubagentStop",
+            Some(role),
+            payload.as_bytes(),
+        );
+        assert_success(&stopped);
+        if !stopped.stdout.is_empty() {
+            transition_output = Some(stopped.stdout);
+        }
+    }
+    let output: serde_json::Value = serde_json::from_slice(
+        transition_output
+            .as_deref()
+            .expect("last required review must continue into ralplan"),
+    )
+    .unwrap();
+    let context = output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("Start ralplan now"));
+    assert!(context.contains("planner"));
+    assert!(context.contains("architect"));
+    assert!(context.contains("critic"));
+
+    let deep_state = read_json(&state_path_for(dir.path(), "sess-di-app"));
+    assert_eq!(deep_state["status"], "crystallized");
+    assert_eq!(deep_state["transition"]["target"], "ralplan");
+    assert_eq!(deep_state["transition"]["status"], "started");
+    assert_eq!(deep_state["transition"]["continuation_status"], "delivered");
+
+    let ralplan_state = read_json(
+        &dir.path()
+            .join(".megara/state/workflows/ralplan/sess-di-app.json"),
+    );
+    assert_eq!(ralplan_state["phase"], "planning");
+    assert_eq!(ralplan_state["input_lock_status"], "ready");
+    assert_eq!(
+        ralplan_state["input_spec_sha256"],
+        deep_state["spec_sha256"]
+    );
+
+    let duplicate_receipt = serde_json::json!({
+        "session_id": "sess-di-app",
+        "agent_id": "agent-simplifier",
+        "agent_type": "simplifier",
+        "last_assistant_message": format!(
+            "MEGARA_ROLE=simplifier\nMEGARA_REQUEST={request_id}\nReview complete."
+        ),
+    })
+    .to_string();
+    let duplicate = run_hook(
+        dir.path(),
+        dir.path(),
+        "SubagentStop",
+        Some("simplifier"),
+        duplicate_receipt.as_bytes(),
+    );
+    assert_success(&duplicate);
+    assert!(duplicate.stdout.is_empty());
+
+    let resumed = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"sess-di-app","prompt":"continue","transcript_path":"/tmp/rollout-019f-app.jsonl"}"#,
+    );
+    assert_success(&resumed);
+    assert!(!String::from_utf8_lossy(&resumed.stdout).contains("Start ralplan now"));
+
+    let events = fs::read_to_string(
+        dir.path()
+            .join(".megara/state/workflows/deep-interview/events.jsonl"),
+    )
+    .unwrap();
+    assert_eq!(events.matches("workflow_transition_started").count(), 1);
+}
+
+#[test]
 fn deep_interview_milestone_correction_choice_preserves_focus() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
@@ -1341,85 +1500,12 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
         answer,
     ));
     let state = read_json(&state_path(dir.path()));
-    assert_eq!(state["phase"], "crystallizing");
+    assert_eq!(state["phase"], "transition_review_required");
     assert_eq!(state["milestone_decision"]["status"], "proceed_to_ralplan");
     assert!(state["pending_question"].is_null());
-
-    let followup_question = br#"{
-  "session_id": "sess-di",
-  "last_assistant_message": "Ambiguity: 15%\n\nFinal sentence check: if localStorage throws, should the game keep rendering?\n\n1. Yes, lock this sentence.\n2. Mention best score fallback.\n3. Mention uncaught page errors.\n4. Direct input / not listed.\n\n"
-}"#;
-    let blocked = run_hook(dir.path(), dir.path(), "Stop", None, followup_question);
-    assert_success(&blocked);
-    let stdout = String::from_utf8_lossy(&blocked.stdout);
-    assert!(stdout.trim().is_empty());
-
-    let state = read_json(&state_path(dir.path()));
-    assert_eq!(state["phase"], "crystallizing");
-    assert_eq!(state["status"], "crystallizing");
-    assert!(state["pending_question"].is_null());
-    assert_eq!(state["subagent_orchestration"]["status"], "required");
-    assert_eq!(
-        state["subagent_orchestration"]["roles"]
-            .as_array()
-            .unwrap()
-            .len(),
-        3
-    );
-
-    let final_spec = br#"{
-  "session_id": "sess-di",
-  "last_assistant_message": "**Requirements Summary**\n\nGoal: build the verified game.\n\nAcceptance criteria:\n- Unit tests pass\n- E2E tests pass\n\nNext: continue with `ralplan` from this summary. Implementation is still not allowed.\n\n<!--\nMegara Workflow State:\n- skill: deep-interview\n- status: crystallized\n- ambiguity: 12%\n- next: ralplan\n-->\n"
-}"#;
-    let review_gate = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
-    assert_success(&review_gate);
-    assert!(
-        review_gate.stdout.is_empty(),
-        "stdout={}",
-        String::from_utf8_lossy(&review_gate.stdout)
-    );
-    let first_review_request = read_json(&state_path(dir.path()))["subagent_orchestration"]
-        ["request_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let repeated_review_gate = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
-    assert_success(&repeated_review_gate);
-    assert!(repeated_review_gate.stdout.is_empty());
-    assert_eq!(
-        read_json(&state_path(dir.path()))["subagent_orchestration"]["request_id"],
-        first_review_request
-    );
     for role in ["researcher", "contrarian", "simplifier"] {
         submit_deep_interview_review(dir.path(), role);
     }
-
-    let mut stop_active_spec: serde_json::Value = serde_json::from_slice(final_spec).unwrap();
-    stop_active_spec["stop_hook_active"] = serde_json::json!(true);
-    let suppressed = run_hook(
-        dir.path(),
-        dir.path(),
-        "Stop",
-        None,
-        stop_active_spec.to_string().as_bytes(),
-    );
-    assert_success(&suppressed);
-    assert!(suppressed.stdout.is_empty());
-    assert_eq!(
-        read_json(&state_path(dir.path()))["transition"]["continuation_status"],
-        "pending"
-    );
-
-    let transitioned = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
-    assert_success(&transitioned);
-    let output: serde_json::Value =
-        serde_json::from_slice(&transitioned.stdout).expect("automatic transition response");
-    assert_eq!(output["continue"], false);
-    assert!(output.get("decision").is_none());
-    assert!(output["stopReason"]
-        .as_str()
-        .unwrap()
-        .contains("Start ralplan now"));
 
     let deep_state = read_json(&state_path(dir.path()));
     assert_eq!(deep_state["transition"]["target"], "ralplan");
@@ -1434,22 +1520,6 @@ fn deep_interview_milestone_proceed_blocks_followup_questions_until_spec() {
     assert_eq!(
         ralplan_state["source_transition_id"],
         deep_state["transition"]["id"]
-    );
-
-    let repeated = run_hook(dir.path(), dir.path(), "Stop", None, final_spec);
-    assert_success(&repeated);
-    assert!(
-        repeated.stdout.is_empty(),
-        "stdout={}",
-        String::from_utf8_lossy(&repeated.stdout)
-    );
-    let repeated_ralplan = read_json(
-        &dir.path()
-            .join(".megara/state/workflows/ralplan/sess-di.json"),
-    );
-    assert_eq!(
-        repeated_ralplan["source_transition_id"],
-        ralplan_state["source_transition_id"]
     );
 }
 
@@ -1500,7 +1570,7 @@ fn korean_milestone_question_keeps_user_choice_while_reviews_are_required() {
         selected["milestone_decision"]["status"],
         "proceed_to_ralplan"
     );
-    assert_eq!(selected["phase"], "crystallizing");
+    assert_eq!(selected["phase"], "transition_review_required");
     assert_eq!(selected["subagent_orchestration"]["status"], "required");
     assert_eq!(
         selected["subagent_orchestration"]["trigger"],

@@ -9,3 +9,4 @@ tags: [okf, log, megara]
 # Megara Knowledge Log
 
 - 2026-07-06: Added OKF v0.1 notes for Megara user-facing knowledge docs.
+- 2026-07-14: Audited Gajae-Code workflow UX and defined the Codex App verification checklist.

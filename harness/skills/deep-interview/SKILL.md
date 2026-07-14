@@ -34,10 +34,10 @@ Deep Interview is a Socratic requirements workflow. It turns a vague request int
 - Show one recommendation line after the options. Explain what you recommend and why in the configured locale, then mark exactly one concrete option with the literal suffix `(Recommended)`.
 - Target the weakest active component and dimension each round.
 - Continue until ambiguity reaches the active ambiguity target, then automatically crystallize the current requirements and ask whether that result should proceed to `ralplan` or receive one of the discovered corrections.
-- End with a pending-approval specification and a configured-locale next-step suggestion to continue through `ralplan`.
+- At a non-zero milestone, treat the visible crystallized sentence and its two correction choices as the candidate specification. Do not repeat that specification in a separate approval response.
 - Recording interview state is allowed and required; it is not implementation work.
 - Runtime hooks own `.megara/state/workflows/deep-interview/**` and `.megara/state/workflows/ralplan/**`. Do not inspect, edit, repair, or synthesize those files to force a handoff.
-- When the final crystallized spec is emitted, make it the final response of that assistant turn. Do not start `ralplan`, run tools, inspect state, or continue the workflow in the same turn.
+- After the user selects `ralplan`, complete the required read-only lateral reviews and continue directly into planning in that same user-selected turn. Do not ask for another invocation or transition approval.
 
 ## Use When
 
@@ -90,7 +90,7 @@ Default recommendation: proceed to `ralplan` because the active ambiguity target
 
 Place the configured-locale recommendation after all five options. Recommend option 1 because the active ambiguity target has passed and the crystallized requirement is clear enough for planning.
 
-If the user chooses option 2, lower the active target to the next ladder step and continue with the weakest remaining gap. If the user chooses option 3 or 4, lower the active target and continue by resolving that selected correction. If the user provides direct input, incorporate it and reassess the full specification. If the user chooses option 1, write the final pending-approval spec as the final response of that assistant turn.
+If the user chooses option 2, lower the active target to the next ladder step and continue with the weakest remaining gap. If the user chooses option 3 or 4, lower the active target and continue by resolving that selected correction. If the user provides direct input, incorporate it and reassess the full specification. If the user chooses option 1, treat the visible crystallized sentence as confirmed, complete the required lateral reviews, and continue into `ralplan` without emitting another deep-interview approval response.
 
 ## Ambiguity Scoring
 
@@ -154,7 +154,7 @@ Megara hooks back this workflow with append-only local state. Treat active quest
 - Do not move the active question/answer loop into a subagent. The user-facing question stays in the main session.
 - In the Codex runtime adapter, `UserPromptSubmit` injects the conditional review instruction and `Stop` confirms the requirement from the completed reassessment. Complete every selected review and close completed subagents before the next question or final crystallization. If the runtime asks for missing roles on a later turn, resume the same interview work from the latest answer rather than starting a new question.
 - Deep-interview does not require Codex Plan mode. Do not ask the user to toggle `/plan`, resend the same request in Plan mode, or choose a fallback path because of Plan mode.
-- Once the user chooses the `ralplan` transition, crystallize the final spec. The runtime then starts `ralplan` in the same session without another skill invocation or approval. Resume from the locked spec, produce the reviewed plan, and keep implementation mutation blocked until the plan reaches an execution choice.
+- Once the user chooses the `ralplan` transition, the runtime confirms the already-visible crystallization candidate after the required lateral reviews and starts `ralplan` in the same session without another skill invocation or approval. Resume from the locked spec, produce the reviewed plan in that user-selected turn, and keep implementation mutation blocked until the plan reaches an execution choice.
 
 ## Round 0: Topology Confirmation
 
@@ -359,19 +359,19 @@ Before writing the final spec:
 1. Closure audit: confirm every active component has outcome, scope, constraints, verification, and risk/context coverage. If a material gap remains, explain the gap and ask one more targeted question.
 2. Automatic crystallization: collapse the intended outcome into one quoted sentence, derive two concrete correction options from gaps exposed by that synthesis, and ask whether the sentence alone is the right basis for implementation planning. This is the milestone's five-option review question, not a separate approval step.
 
-Only persist the final locked crystallized spec after both gates pass and either:
+The milestone response is the visible crystallization candidate. Runtime hooks may persist that candidate internally before the user decides so interruption recovery does not require repeating the question. Promote it to the final locked specification only after both gates pass and either:
 
 - the user chooses the milestone option to proceed to `ralplan` at `15%`, `5%`, or `2%`,
 - the interview reaches `0%`, or
 - the user explicitly exits early with known ambiguity.
 
-If the original user request already asked for the full `deep-interview -> ralplan` pipeline, the crystallized spec should make the next step unmistakable: say that the next assistant turn should start `ralplan` from this locked summary. Do not ask the user for another deep-interview approval once the requested `0%` target is reached.
+If the original user request already asked for the full `deep-interview -> ralplan` pipeline, the crystallized sentence and choices should make the next step unmistakable. The user's option-1 selection is the transition authorization. Do not ask for another deep-interview approval or a separate skill invocation.
 
-When the final pending-approval spec is crystallized, output only the user-facing markdown spec. Do not emit `Megara Workflow State`, HTML comments, YAML-like control blocks, JSON, code fences, or any parseable runtime metadata. Runtime hooks infer the crystallized state from the visible final spec and persist runtime state internally.
+When the interview reaches `0%` without a non-zero milestone transition, output only the user-facing markdown spec. Do not emit `Megara Workflow State`, HTML comments, YAML-like control blocks, JSON, code fences, or any parseable runtime metadata. Runtime hooks infer the crystallized state from the visible final spec and persist runtime state internally.
 
-The final pending-approval spec must be the same assistant response that ends deep-interview. Runtime hooks persist the visible final response as the locked markdown artifact for the interview. A standalone state report is never valid.
+For a non-zero milestone transition, the quoted requirement in the milestone response is the source of the locked specification; do not produce a duplicate final-spec response. For a direct `0%` completion, the final visible specification is the source. A standalone state report is never valid.
 
-End the visible spec with one short configured-locale next-step suggestion. It should tell the user they can continue with `ralplan` from this summary and that implementation is still not allowed. Do not start `ralplan` or implementation in the same response. After the final visible spec, stop; the next assistant turn may begin `ralplan` after the Stop hook persists the lock.
+After option 1 is selected at a non-zero milestone, do not send another deep-interview summary. Run the required context-only reviews, then produce the `ralplan` result in the same user-selected turn. A direct `0%` final specification may end with one short configured-locale next-step sentence because Codex hooks cannot silently create another model turn. Implementation remains blocked until the plan reaches an execution choice.
 
 If the user explicitly cancels the interview, say so in normal user-facing prose only. If the interview is still active and asking more questions, keep asking compact visible questions.
 
@@ -386,7 +386,7 @@ Runtime hooks should persist raw prompts and assistant messages locally under `.
 - `conversation.jsonl`: extracted user prompt and assistant message text when the hook runtime can parse JSON.
 - `subagents.jsonl`: observed `SubagentStart` and `SubagentStop` events when the runtime emits them.
 
-When a crystallized final response is visible-only and points to `ralplan` as the next step, runtime hooks persist the visible final response as a markdown lock artifact:
+At a non-zero milestone, runtime hooks persist the visible crystallized sentence and correction choices as a candidate markdown artifact, then promote it after the user selects `ralplan` and required reviews finish. At direct `0%` completion, hooks persist the visible final response:
 
 - `.megara/artifacts/deep-interview/specs/deep-interview-<session-id>-<timestamp>.md`
 - `.megara/artifacts/deep-interview/specs/index.jsonl`
@@ -400,7 +400,7 @@ Do not emit a visible ledger update during active interview turns. Runtime hooks
 
 ## Output
 
-Produce a user-friendly pending-approval summary, not a raw metadata report.
+For direct `0%` completion, produce a user-friendly crystallized summary, not a raw metadata report. For a non-zero option-1 transition, continue into the reviewed plan instead of repeating the summary.
 
 Visible output should use concise configured-locale headings only:
 
@@ -414,4 +414,4 @@ Visible output should use concise configured-locale headings only:
 
 Do not show raw labels such as `Metadata`, `Clarity breakdown`, `Topology`, `Trigger history`, `Ontology`, `Interview transcript summary`, `spec_path`, `spec_sha256`, `payload`, `persisted_at`, hook event names, or any `Megara ... Gate`/`Megara Workflow State` labels in the visible final response. Internal details belong only in runtime state files managed by hooks.
 
-End in pending approval with visible prose only so the runtime can persist the markdown spec artifact. Do not start implementation from this workflow.
+End with visible prose only. Never start implementation from this workflow; a confirmed transition may start planning only.
