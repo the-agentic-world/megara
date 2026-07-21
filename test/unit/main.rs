@@ -52,6 +52,8 @@ pub(crate) use writer::*;
 mod docs_tests;
 #[path = "hook.rs"]
 mod hook_tests;
+#[path = "pi.rs"]
+mod pi_tests;
 #[path = "team.rs"]
 mod team_tests;
 #[path = "tui.rs"]

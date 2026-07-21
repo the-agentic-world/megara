@@ -7,6 +7,7 @@ fn lists_targets_and_templates() {
     let target_stdout = String::from_utf8_lossy(&targets.stdout);
     assert!(target_stdout.contains("Megara / Targets"));
     assert!(target_stdout.contains("codex"));
+    assert!(target_stdout.contains("pi"));
 
     let templates = megara().arg("templates").arg("list").output().unwrap();
     assert!(templates.status.success());

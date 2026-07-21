@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     cli::{Commands, UpdateArgs, UpdateScopeArg},
     paths::{home_dir, InstallPaths, InstallScope, TargetRuntime},
+    targets::pi,
     ui::{self, Section},
 };
 
@@ -189,6 +190,12 @@ fn refresh_harnesses(args: UpdateArgs, megara_bin: &Path) -> Result<Vec<String>>
             .env(NO_UPDATE_CHECK_ENV, "1");
         if args.force {
             command.arg("--force");
+        }
+        if target == TargetRuntime::Pi
+            && scope == InstallScope::Project
+            && pi::has_project_trust(&InstallPaths::resolve(scope, target)?.runtime_root)
+        {
+            command.arg("--trust-project");
         }
         let status = command
             .status()

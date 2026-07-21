@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::{
     installer::{runtime_support_files, DoctorOptions, MANAGED_MARKER},
     paths::{InstallPaths, TargetRuntime},
-    targets::codex,
+    targets::{codex, pi},
     templates::TemplateRegistry,
     ui::{self, Section},
 };
@@ -62,7 +62,10 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
         let ssot_registry = TemplateRegistry::from_ssot_root(&paths.ssot_root)?;
         let projection_files = match options.target {
             TargetRuntime::Codex => {
-                codex::projection_files(paths.target_root, options.scope, &ssot_registry)?
+                codex::projection_files(paths.target_root.clone(), options.scope, &ssot_registry)?
+            }
+            TargetRuntime::Pi => {
+                pi::projection_files(paths.target_root.clone(), options.scope, &ssot_registry)?
             }
         };
 
@@ -75,8 +78,23 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
                 &mut stale,
             )?;
         }
-        inspect_hook_events(&paths.runtime_root, &mut observations);
-        inspect_stale_workflows(&paths.runtime_root, &mut warnings)?;
+        if options.target == TargetRuntime::Codex {
+            inspect_hook_events(&paths.runtime_root, &mut observations);
+            inspect_stale_workflows(&paths.runtime_root, &mut warnings)?;
+        }
+        if options.target == TargetRuntime::Pi
+            && options.scope == crate::paths::InstallScope::Project
+        {
+            pi::inspect_trust(
+                &paths.runtime_root,
+                paths
+                    .target_root
+                    .parent()
+                    .expect("project Pi target root has a parent"),
+                &ssot_registry,
+                &mut warnings,
+            )?;
+        }
         inspect_legacy_agents_state(&paths.ssot_root, &mut warnings);
     }
 
@@ -127,6 +145,7 @@ impl DoctorReport {
 fn runtime_dependency_issues(target: TargetRuntime) -> Vec<String> {
     match target {
         TargetRuntime::Codex => codex::runtime_dependency_issues(),
+        TargetRuntime::Pi => pi::runtime_dependency_issues(),
     }
 }
 

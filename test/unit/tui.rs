@@ -13,6 +13,7 @@ fn install_args(scope: Option<ScopeArg>, target: Option<TargetArg>) -> InstallAr
         locale: None,
         dry_run: false,
         force: false,
+        trust_project: false,
         json: false,
         no_interactive: false,
     }
@@ -141,4 +142,15 @@ fn scripted_install_wizard_preserves_existing_flags() {
     assert_eq!(result.target, Some(TargetArg::Codex));
     assert!(result.dry_run);
     assert!(result.force);
+}
+
+#[test]
+fn scripted_install_wizard_records_pi_project_trust() {
+    let mut args = install_args(Some(ScopeArg::Project), Some(TargetArg::Pi));
+    args.locale = Some("ko-KR".to_string());
+    let result = scripted_install_wizard(args, &[TuiInput::Select(0), TuiInput::Select(0)])
+        .expect("wizard should succeed")
+        .expect("wizard should confirm");
+
+    assert!(result.trust_project);
 }

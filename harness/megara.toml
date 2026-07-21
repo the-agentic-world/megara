@@ -1,11 +1,14 @@
 schema_version = 1
 name = "megara-default"
 locale = "ko-KR"
-targets = ["codex"]
+targets = ["codex", "pi"]
 enabled_workflows = ["deep-interview", "ralplan", "ultragoal", "team"]
 default_active_skills = ["caveman"]
 enabled_tools = ["insane-search"]
 enabled_agents = ["executor", "planner", "architect", "critic", "researcher", "contrarian", "simplifier"]
 
 [target.codex]
+enabled = true
+
+[target.pi]
 enabled = true

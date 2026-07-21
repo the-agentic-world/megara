@@ -16,6 +16,8 @@ pub struct InstallArgs {
     pub dry_run: bool,
     #[arg(long)]
     pub force: bool,
+    #[arg(long, help = "Trust project-local Pi role agents after installation")]
+    pub trust_project: bool,
     #[arg(long)]
     pub json: bool,
     #[arg(long)]
@@ -46,6 +48,7 @@ impl From<SyncArgs> for InstallArgs {
             locale: None,
             dry_run: args.dry_run,
             force: args.force,
+            trust_project: false,
             json: args.json,
             no_interactive: args.no_interactive,
         }

@@ -49,6 +49,22 @@ fn run_hook(
     child.wait_with_output().unwrap()
 }
 
+fn run_pi_event(project_root: &Path, payload: &[u8]) -> Output {
+    let mut command = megara();
+    command
+        .arg("pi")
+        .arg("event")
+        .arg("--scope")
+        .arg("project")
+        .current_dir(project_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    child.stdin.as_mut().unwrap().write_all(payload).unwrap();
+    child.wait_with_output().unwrap()
+}
+
 fn install_project_harness(project: &Path, codex_home: &Path) {
     let install = megara_with_codex_home(codex_home)
         .arg("install")
@@ -92,6 +108,7 @@ mod install_global;
 mod install_listing;
 mod install_sync;
 mod install_trust;
+mod pi;
 mod ultragoal;
 mod ultragoal_support;
 mod update;

@@ -27,6 +27,7 @@ pub struct InstallOptions {
     pub locale: Option<String>,
     pub dry_run: bool,
     pub force: bool,
+    pub trust_project: bool,
     pub json: bool,
 }
 
@@ -39,6 +40,7 @@ impl InstallOptions {
             locale: normalize_locale(args.locale)?,
             dry_run: args.dry_run,
             force: args.force,
+            trust_project: args.trust_project,
             json: args.json,
         })
     }

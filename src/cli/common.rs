@@ -14,6 +14,7 @@ pub enum ScopeArg {
 #[serde(rename_all = "kebab-case")]
 pub enum TargetArg {
     Codex,
+    Pi,
 }
 
 impl From<ScopeArg> for InstallScope {
@@ -29,6 +30,7 @@ impl From<TargetArg> for TargetRuntime {
     fn from(value: TargetArg) -> Self {
         match value {
             TargetArg::Codex => TargetRuntime::Codex,
+            TargetArg::Pi => TargetRuntime::Pi,
         }
     }
 }

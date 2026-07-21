@@ -1,5 +1,7 @@
 #[path = "targets/codex.rs"]
 pub mod codex;
+#[path = "targets/pi.rs"]
+pub mod pi;
 
 use serde::Serialize;
 
@@ -10,8 +12,14 @@ pub struct TargetInfo {
 }
 
 pub fn supported_targets() -> Vec<TargetInfo> {
-    vec![TargetInfo {
-        name: "codex",
-        status: "supported",
-    }]
+    vec![
+        TargetInfo {
+            name: "codex",
+            status: "supported",
+        },
+        TargetInfo {
+            name: "pi",
+            status: "supported",
+        },
+    ]
 }

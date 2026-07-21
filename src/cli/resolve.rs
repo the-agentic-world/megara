@@ -38,13 +38,14 @@ fn prompt_scope() -> Result<InstallScope> {
 
 fn prompt_target() -> Result<TargetRuntime> {
     loop {
-        print!("Target runtime [codex]: ");
+        print!("Target runtime [codex/pi]: ");
         io::stdout().flush()?;
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         match input.trim().to_ascii_lowercase().as_str() {
             "" | "codex" | "c" => return Ok(TargetRuntime::Codex),
-            _ => eprintln!("V1 supports codex only."),
+            "pi" | "p" => return Ok(TargetRuntime::Pi),
+            _ => eprintln!("Choose codex or pi."),
         }
     }
 }

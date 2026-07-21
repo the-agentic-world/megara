@@ -210,13 +210,35 @@ where
         let selected = choose(
             "Megara Install",
             "Choose the agent runtime projection.",
-            &[MenuOption::new("Codex", "Generate Codex harness files.")],
+            &[
+                MenuOption::new("Codex", "Generate Codex harness files."),
+                MenuOption::new("Pi", "Generate Pi Coding Agent harness files."),
+            ],
         )?;
         args.target = match selected {
             Some(0) => Some(TargetArg::Codex),
+            Some(1) => Some(TargetArg::Pi),
             Some(_) => unreachable!("menu returned an out-of-range option"),
             None => return Ok(None),
         };
+    }
+
+    if args.target == Some(TargetArg::Pi) && !args.trust_project {
+        let selected = choose(
+            "Megara Install",
+            "Allow the generated Pi extension to run this project's role agents?",
+            &[
+                MenuOption::new(
+                    "Trust project agents",
+                    "Required before Pi can run project-local role agents.",
+                ),
+                MenuOption::new(
+                    "Install without trust",
+                    "Install files now and enable role agents later with --trust-project.",
+                ),
+            ],
+        )?;
+        args.trust_project = matches!(selected, Some(0));
     }
 
     let selected = choose(
@@ -424,6 +446,7 @@ fn scope_label(scope: ScopeArg) -> &'static str {
 fn target_label(target: TargetArg) -> &'static str {
     match target {
         TargetArg::Codex => "codex",
+        TargetArg::Pi => "pi",
     }
 }
 

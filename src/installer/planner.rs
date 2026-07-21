@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use toml::Value;
 
 use crate::{
-    paths::{InstallPaths, TargetRuntime},
-    targets::codex,
+    paths::{InstallPaths, InstallScope, TargetRuntime},
+    targets::{codex, pi},
     templates::TemplateRegistry,
     writer::{remove_managed_files, write_files},
 };
@@ -45,9 +45,19 @@ impl<'a> Planner<'a> {
                 self.options.scope,
                 &projection_registry,
             )?),
+            TargetRuntime::Pi => files.extend(pi::projection_files(
+                paths.target_root.clone(),
+                self.options.scope,
+                &projection_registry,
+            )?),
         };
         let obsolete_files = match self.options.target {
             TargetRuntime::Codex => codex::obsolete_projection_files(
+                paths.target_root.clone(),
+                self.options.scope,
+                &projection_registry,
+            ),
+            TargetRuntime::Pi => pi::obsolete_projection_files(
                 paths.target_root.clone(),
                 self.options.scope,
                 &projection_registry,
@@ -84,8 +94,32 @@ impl<'a> Planner<'a> {
                 &plan.target_root.join("hooks.json"),
                 self.options.dry_run,
             )?),
+            TargetRuntime::Pi => None,
         };
         let mut warnings = runtime_dependency_issues(self.options.target);
+        if self.options.target == TargetRuntime::Pi && self.options.scope == InstallScope::Project {
+            if self.options.trust_project {
+                let projection_registry = match self.options.action {
+                    InstallAction::Install => {
+                        registry_with_locale(self.registry, self.options.locale.as_deref())?
+                    }
+                    InstallAction::Sync => TemplateRegistry::from_ssot_root(&plan.ssot_root)?,
+                };
+                pi::ensure_project_trust(
+                    &plan.runtime_root,
+                    plan.target_root
+                        .parent()
+                        .context("Pi project root has no parent")?,
+                    &projection_registry,
+                    self.options.dry_run,
+                )?;
+            } else {
+                warnings.push(
+                    "Pi project role agents remain disabled until you rerun install with --trust-project."
+                        .to_string(),
+                );
+            }
+        }
         for migration in &migrations {
             if !migration.conflicts.is_empty() {
                 warnings.push(format!(
@@ -117,6 +151,7 @@ impl<'a> Planner<'a> {
 fn runtime_dependency_issues(target: TargetRuntime) -> Vec<String> {
     match target {
         TargetRuntime::Codex => codex::runtime_dependency_issues(),
+        TargetRuntime::Pi => pi::runtime_dependency_issues(),
     }
 }
 

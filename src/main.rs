@@ -4,6 +4,7 @@ mod doctor;
 mod hook;
 mod installer;
 mod paths;
+mod pi;
 mod targets;
 mod team;
 mod templates;
@@ -15,7 +16,9 @@ mod writer;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Commands, DocsCommands, TargetCommands, TeamCommands, TemplateCommands};
+use cli::{
+    Cli, Commands, DocsCommands, PiCommands, TargetCommands, TeamCommands, TemplateCommands,
+};
 use installer::{InstallAction, InstallOptions, Planner};
 use templates::TemplateRegistry;
 
@@ -82,6 +85,9 @@ fn main() -> Result<()> {
             }
             update::run(args)?
         }
+        Commands::Pi(args) => match args.command {
+            PiCommands::Event(args) => pi::run_event(args, &registry)?,
+        },
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {
                 let list = registry.template_names();

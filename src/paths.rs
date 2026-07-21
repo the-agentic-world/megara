@@ -14,6 +14,7 @@ pub enum InstallScope {
 #[serde(rename_all = "kebab-case")]
 pub enum TargetRuntime {
     Codex,
+    Pi,
 }
 
 impl fmt::Display for InstallScope {
@@ -29,6 +30,7 @@ impl fmt::Display for TargetRuntime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TargetRuntime::Codex => write!(f, "codex"),
+            TargetRuntime::Pi => write!(f, "pi"),
         }
     }
 }
@@ -66,12 +68,14 @@ impl TargetRuntime {
     fn project_root(self, cwd: PathBuf) -> PathBuf {
         match self {
             TargetRuntime::Codex => cwd.join(".codex"),
+            TargetRuntime::Pi => cwd.join(".pi"),
         }
     }
 
     fn global_root(self, home: PathBuf) -> PathBuf {
         match self {
             TargetRuntime::Codex => home.join(".codex"),
+            TargetRuntime::Pi => home.join(".pi").join("agent"),
         }
     }
 }

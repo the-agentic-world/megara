@@ -389,4 +389,11 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         description: "Scope simplification agent",
         content: include_str!("../../harness/agents/simplifier.toml"),
     },
+    TemplateSpec {
+        name: "pi-extension",
+        kind: TemplateKind::ToolSupport,
+        relative_path: "pi/extensions/megara.ts",
+        description: "Pi Coding Agent runtime extension",
+        content: include_str!("../../harness/pi/extensions/megara.ts"),
+    },
 ];
