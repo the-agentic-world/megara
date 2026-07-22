@@ -19,7 +19,10 @@ use ratatui::{
 };
 
 use crate::{
-    cli::{DoctorArgs, InstallArgs, ScopeArg, TargetArg, UpdateArgs, UpdateScopeArg},
+    cli::{
+        ConfigureAgentsArgs, DoctorArgs, InstallArgs, ScopeArg, TargetArg, UpdateArgs,
+        UpdateScopeArg,
+    },
     doctor::DoctorReport,
     installer::DoctorOptions,
     paths::{InstallScope, TargetRuntime},
@@ -65,6 +68,114 @@ pub(crate) fn confirm_update(args: &UpdateArgs) -> Result<bool> {
         ],
     )?;
     Ok(matches!(choice, Some(0)))
+}
+
+pub(crate) fn configure_agents_wizard(
+    mut args: ConfigureAgentsArgs,
+    _roles: &[String],
+) -> Result<Option<ConfigureAgentsArgs>> {
+    if args.scope.is_none() {
+        args.scope = match run_menu(
+            "Agent Policies",
+            "Choose the policy scope.",
+            &[
+                MenuOption::new("Project", "Override policies for this project."),
+                MenuOption::new("Global", "Set defaults for every project."),
+            ],
+        )? {
+            Some(0) => Some(ScopeArg::Project),
+            Some(1) => Some(ScopeArg::Global),
+            _ => return Ok(None),
+        };
+    }
+    if args.target.is_none() {
+        args.target = match run_menu(
+            "Agent Policies",
+            "Choose the target runtime.",
+            &[
+                MenuOption::new("Codex", "Configure Codex model and reasoning effort."),
+                MenuOption::new("Pi", "Configure Pi model and thinking level."),
+            ],
+        )? {
+            Some(0) => Some(TargetArg::Codex),
+            Some(1) => Some(TargetArg::Pi),
+            _ => return Ok(None),
+        };
+    }
+    if args.role.is_empty() && !args.all {
+        let selected = run_menu(
+            "Agent Policies",
+            "Choose which roles to change.",
+            &[
+                MenuOption::new("All roles", "Apply one policy to every Megara role."),
+                MenuOption::new("One role", "Configure one selected role."),
+            ],
+        )?;
+        match selected {
+            Some(0) => args.all = true,
+            Some(1) => {
+                let roles = [
+                    "executor",
+                    "planner",
+                    "architect",
+                    "critic",
+                    "researcher",
+                    "contrarian",
+                    "simplifier",
+                ];
+                let options = roles
+                    .iter()
+                    .map(|role| MenuOption::new(role, "Configure this role."))
+                    .collect::<Vec<_>>();
+                let Some(index) = run_menu("Agent Policies", "Choose a role.", &options)? else {
+                    return Ok(None);
+                };
+                args.role.push(roles[index].to_string());
+            }
+            _ => return Ok(None),
+        }
+    }
+    let target = args.target.expect("target selected");
+    if args.model.is_none() {
+        let options = match target {
+            TargetArg::Codex => vec![
+                MenuOption::new("gpt-5.6-terra", "Balanced implementation model."),
+                MenuOption::new("gpt-5.6-sol", "Higher reasoning for design and critique."),
+                MenuOption::new("gpt-5.6-luna", "Lower-cost simplification model."),
+            ],
+            TargetArg::Pi => vec![
+                MenuOption::new("openai/gpt-5.5", "Use the configured OpenAI Codex model."),
+                MenuOption::new("openai/gpt-5.4", "Use a lower-capability compatible model."),
+                MenuOption::new("anthropic/claude-sonnet-4", "Use a Claude Sonnet model."),
+            ],
+        };
+        let Some(index) = run_menu("Agent Policies", "Choose the role model.", &options)? else {
+            return Ok(None);
+        };
+        args.model = Some(options[index].label.to_string());
+    }
+    let levels = ["minimal", "low", "medium", "high", "xhigh"];
+    let selected = run_menu(
+        "Agent Policies",
+        "Choose the reasoning level.",
+        &levels
+            .iter()
+            .map(|level| MenuOption::new(level, "Apply this level."))
+            .collect::<Vec<_>>(),
+    )?;
+    let Some(index) = selected else {
+        return Ok(None);
+    };
+    match target {
+        TargetArg::Codex if args.reasoning_effort.is_none() => {
+            args.reasoning_effort = Some(levels[index].to_string())
+        }
+        TargetArg::Pi if args.thinking_level.is_none() => {
+            args.thinking_level = Some(levels[index].to_string())
+        }
+        _ => {}
+    }
+    Ok(Some(args))
 }
 
 pub(crate) fn doctor_tui_options(args: DoctorArgs) -> Result<DoctorOptions> {
@@ -428,7 +539,7 @@ fn push_report_group(lines: &mut Vec<Line<'static>>, label: &'static str, values
     lines.push(Line::from(""));
 }
 
-fn interactive_terminal() -> bool {
+pub(crate) fn interactive_terminal() -> bool {
     io::stdin().is_terminal() && io::stdout().is_terminal()
 }
 

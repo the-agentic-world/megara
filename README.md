@@ -95,6 +95,26 @@ megara install --scope project --target pi --trust-project
 
 Pi는 `@earendil-works/pi-coding-agent >=0.80.10, <0.81.0`을 요구합니다. `--trust-project` 없이 설치하면 파일은 생성되지만 역할 에이전트 실행은 차단됩니다. 대화형 설치에서는 같은 신뢰 결정을 묻습니다.
 
+역할별 모델 정책을 대화형으로 설정합니다.
+
+```bash
+megara agents configure
+```
+
+비대화형 환경에서는 scope, target, role, model, 추론 수준을 명시합니다. project 설정은 global 기본값을 덮어씁니다.
+
+```bash
+megara agents configure \
+  --scope project --target codex --role executor \
+  --model gpt-5.6-sol --reasoning-effort xhigh
+
+megara agents show --scope project --target codex
+megara agents reset --scope project --target codex --role executor
+```
+
+에이전트에게는 `$agent-models` 스킬을 요청할 수 있습니다. 스킬은 현재 정책과 변경안을 제시하지만, 사용자의 명시적 승인 전에는 설정을 변경하지 않습니다.
+Megara가 관리하지 않는 `megara.toml`은 보호하며, 명시적으로 교체하려면 `megara agents configure --force` 또는 `megara agents reset --force`를 사용합니다.
+
 locale을 명시해 비대화형 설치도 할 수 있습니다.
 
 ```bash

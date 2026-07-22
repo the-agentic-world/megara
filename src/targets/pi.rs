@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -10,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
+    agents::{self, RolePolicy},
     installer::PlannedFile,
     paths::InstallScope,
     templates::{HarnessTemplate, TemplateRegistry},
@@ -28,30 +28,6 @@ struct AgentSpec {
     instructions: String,
 }
 
-#[derive(Default, Deserialize)]
-struct MegaraConfig {
-    #[serde(default)]
-    target: TargetConfig,
-}
-
-#[derive(Default, Deserialize)]
-struct TargetConfig {
-    #[serde(default)]
-    pi: PiTargetConfig,
-}
-
-#[derive(Default, Deserialize)]
-struct PiTargetConfig {
-    #[serde(default)]
-    roles: BTreeMap<String, PiRoleOverride>,
-}
-
-#[derive(Clone, Default, Deserialize)]
-struct PiRoleOverride {
-    model: Option<String>,
-    thinking_level: Option<String>,
-}
-
 #[derive(Deserialize, Serialize)]
 struct ProjectTrust {
     project_root: String,
@@ -60,7 +36,7 @@ struct ProjectTrust {
 
 pub fn projection_files(
     root: PathBuf,
-    _scope: InstallScope,
+    scope: InstallScope,
     registry: &TemplateRegistry,
 ) -> Result<Vec<PlannedFile>> {
     let extension = registry
@@ -71,8 +47,19 @@ pub fn projection_files(
         PlannedFile::new(root.join("extensions/megara.ts"), extension.content.clone()),
     ];
     for agent in registry.agents() {
-        let role_override = role_override(registry, &agent.name)?;
-        let (id, content) = agent_markdown(agent, role_override.as_ref())?;
+        let role_override = registry
+            .config()
+            .map(|config| {
+                agents::effective_policy(
+                    scope,
+                    crate::paths::TargetRuntime::Pi,
+                    &agent.name,
+                    &config.content,
+                )
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let (id, content) = agent_markdown(agent, &role_override)?;
         files.push(PlannedFile::new(
             root.join("agents").join(format!("{id}.md")),
             content,
@@ -211,19 +198,21 @@ fn pi_settings() -> String {
 
 fn agent_markdown(
     template: &HarnessTemplate,
-    override_config: Option<&PiRoleOverride>,
+    override_config: &RolePolicy,
 ) -> Result<(String, String)> {
     let agent: AgentSpec = toml::from_str(&template.content)
         .with_context(|| format!("failed to parse agent SSOT {}", template.relative_path))?;
     let thinking = override_config
-        .and_then(|config| config.thinking_level.as_deref())
+        .thinking_level
+        .as_deref()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
             (!agent.thinking_level.trim().is_empty()).then_some(agent.thinking_level.as_str())
         })
         .unwrap_or("medium");
     let model = override_config
-        .and_then(|config| config.model.as_deref())
+        .model
+        .as_deref()
         .filter(|value| !value.trim().is_empty())
         .map(|value| format!("model: {value}\n"))
         .unwrap_or_default();
@@ -234,15 +223,6 @@ fn agent_markdown(
             agent.id, agent.description, model, thinking, agent.name, agent.instructions
         ),
     ))
-}
-
-fn role_override(registry: &TemplateRegistry, role: &str) -> Result<Option<PiRoleOverride>> {
-    let Some(config) = registry.config() else {
-        return Ok(None);
-    };
-    let config: MegaraConfig = toml::from_str(&config.content)
-        .context("failed to parse Megara configuration for Pi role projection")?;
-    Ok(config.target.pi.roles.get(role).cloned())
 }
 
 fn agents_sha256(registry: &TemplateRegistry) -> String {

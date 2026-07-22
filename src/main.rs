@@ -1,3 +1,4 @@
+mod agents;
 mod cli;
 mod docs;
 mod doctor;
@@ -55,6 +56,7 @@ fn main() -> Result<()> {
                 report.print()?;
             }
         }
+        Commands::Agents(args) => agents::run(args, &registry)?,
         Commands::Hook(args) => {
             let exit_code = hook::run(args)?;
             if exit_code != 0 {

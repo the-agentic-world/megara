@@ -72,6 +72,13 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         content: include_str!("../../harness/skills/insane-search/SKILL.md"),
     },
     TemplateSpec {
+        name: "agent-models",
+        kind: TemplateKind::Skill,
+        relative_path: "skills/agent-models/SKILL.md",
+        description: "Approved role model policy management",
+        content: include_str!("../../harness/skills/agent-models/SKILL.md"),
+    },
+    TemplateSpec {
         name: "insane-search",
         kind: TemplateKind::Tool,
         relative_path: "tools/insane-search/TOOL.md",

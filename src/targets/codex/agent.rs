@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::templates::HarnessTemplate;
+use crate::{agents::RolePolicy, templates::HarnessTemplate};
 
 #[derive(Debug, Deserialize)]
 struct AgentSpec {
@@ -29,20 +29,27 @@ struct CodexAgentSpec<'a> {
     developer_instructions: &'a str,
 }
 
-pub(super) fn agent_toml(template: &HarnessTemplate) -> Result<(String, String)> {
+pub(super) fn agent_toml(
+    template: &HarnessTemplate,
+    policy: RolePolicy,
+) -> Result<(String, String)> {
     let agent: AgentSpec = toml::from_str(&template.content)
         .with_context(|| format!("failed to parse agent SSOT {}", template.relative_path))?;
     let codex_agent = CodexAgentSpec {
         name: &agent.name,
         description: &agent.description,
-        model: agent
-            .codex
-            .as_ref()
-            .and_then(|codex| codex.model.as_deref()),
-        model_reasoning_effort: agent
-            .codex
-            .as_ref()
-            .and_then(|codex| codex.model_reasoning_effort.as_deref()),
+        model: policy.model.as_deref().or_else(|| {
+            agent
+                .codex
+                .as_ref()
+                .and_then(|codex| codex.model.as_deref())
+        }),
+        model_reasoning_effort: policy.reasoning_effort.as_deref().or_else(|| {
+            agent
+                .codex
+                .as_ref()
+                .and_then(|codex| codex.model_reasoning_effort.as_deref())
+        }),
         developer_instructions: &agent.instructions,
     };
     let content = toml::to_string_pretty(&codex_agent)

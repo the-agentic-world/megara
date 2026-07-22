@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 use toml::Value;
@@ -33,6 +33,11 @@ impl<'a> Planner<'a> {
         let projection_registry = match self.options.action {
             InstallAction::Install => {
                 let registry = registry_with_locale(self.registry, self.options.locale.as_deref())?;
+                let registry = if self.options.locale.is_none() {
+                    registry_with_existing_config(&paths.ssot_root, registry)?
+                } else {
+                    registry
+                };
                 files.extend(ssot_files(paths.ssot_root.clone(), &registry));
                 registry
             }
@@ -177,6 +182,22 @@ fn registry_with_locale(
     };
     let content = render_config_template(&config.content, Some(locale))?;
     Ok(registry.with_config_content(content))
+}
+
+fn registry_with_existing_config(
+    root: &std::path::Path,
+    registry: TemplateRegistry,
+) -> Result<TemplateRegistry> {
+    let Some(config) = registry.config() else {
+        return Ok(registry);
+    };
+    let path = root.join(&config.relative_path);
+    if !path.exists() {
+        return Ok(registry);
+    }
+    let content = fs::read_to_string(&path)
+        .with_context(|| format!("failed to read existing Megara config {}", path.display()))?;
+    Ok(registry.with_config_content(crate::installer::strip_managed_marker(&content)))
 }
 
 fn render_config_template(content: &str, locale: Option<&str>) -> Result<String> {

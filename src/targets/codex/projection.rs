@@ -2,7 +2,12 @@ use std::{env, path::PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::{installer::PlannedFile, paths::InstallScope, templates::TemplateRegistry};
+use crate::{
+    agents,
+    installer::PlannedFile,
+    paths::{InstallScope, TargetRuntime},
+    templates::TemplateRegistry,
+};
 
 use super::{agent::agent_toml, agents_md::codex_agents_md, hooks::*};
 
@@ -36,7 +41,14 @@ pub(super) fn projection_files(
         ));
     }
     for agent in registry.agents() {
-        let (agent_id, agent_content) = agent_toml(agent)?;
+        let policy = registry
+            .config()
+            .map(|config| {
+                agents::effective_policy(scope, TargetRuntime::Codex, &agent.name, &config.content)
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let (agent_id, agent_content) = agent_toml(agent, policy)?;
         files.push(PlannedFile::new(
             root.join("agents").join(format!("{agent_id}.toml")),
             agent_content,

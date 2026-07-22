@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+#[path = "cli/agents.rs"]
+mod agents;
 #[path = "cli/common.rs"]
 mod common;
 #[path = "cli/docs.rs"]
@@ -19,6 +21,9 @@ mod ultragoal;
 #[path = "cli/update.rs"]
 mod update;
 
+pub use agents::{
+    AgentsArgs, AgentsCommands, ConfigureAgentsArgs, ResetAgentsArgs, ShowAgentsArgs,
+};
 pub use common::{ScopeArg, TargetArg};
 #[allow(unused_imports)]
 pub use docs::{DocsArgs, DocsCheckArgs, DocsCommands, DocsInitArgs};
@@ -63,6 +68,8 @@ pub enum Commands {
         #[command(subcommand)]
         command: TargetCommands,
     },
+    /// Configure role model and reasoning policies.
+    Agents(AgentsArgs),
     /// Manage durable goal execution state.
     Ultragoal(UltragoalArgs),
     /// Prepare and run team workflow helpers.

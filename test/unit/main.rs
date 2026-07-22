@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+#[path = "../../src/agents.rs"]
+mod agents;
 #[path = "../../src/cli.rs"]
 mod cli;
 #[path = "../../src/docs.rs"]

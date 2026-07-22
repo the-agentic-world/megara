@@ -86,6 +86,7 @@ fn occurrences(haystack: &str, needle: &str) -> usize {
     haystack.match_indices(needle).count()
 }
 
+mod agent_policies;
 mod docs;
 mod doctor;
 mod hook_deep_interview;
