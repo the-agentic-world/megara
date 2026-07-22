@@ -38,9 +38,10 @@ fn main() -> Result<()> {
             result.print()?;
         }
         Commands::Sync(args) => {
-            let options = InstallOptions::resolve(args.into(), false, InstallAction::Sync)?;
-            let result = Planner::new(&registry, options).execute()?;
-            result.print()?;
+            for options in InstallOptions::resolve_sync(args)? {
+                let result = Planner::new(&registry, options).execute()?;
+                result.print()?;
+            }
         }
         Commands::Doctor(args) => {
             let use_tui = tui::use_doctor_tui(&args);

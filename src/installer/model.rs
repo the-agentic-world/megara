@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::{env, fs, path::PathBuf};
 
 use anyhow::{bail, Result};
 use serde::Serialize;
 
 use crate::{
-    cli::{resolve_scope, resolve_target, DoctorArgs, InstallArgs},
-    paths::{InstallScope, TargetRuntime},
+    cli::{resolve_scope, resolve_target, DoctorArgs, InstallArgs, ScopeArg, SyncArgs},
+    paths::{InstallPaths, InstallScope, TargetRuntime},
     targets::codex,
     writer::WriteSummary,
 };
@@ -44,6 +44,79 @@ impl InstallOptions {
             json: args.json,
         })
     }
+
+    pub fn resolve_sync(args: SyncArgs) -> Result<Vec<Self>> {
+        let scope = resolve_sync_scope(args.scope)?;
+        let targets = match args.target {
+            Some(target) => vec![target.into()],
+            None => detected_sync_targets(scope)?,
+        };
+        if targets.is_empty() {
+            bail!(
+                "no managed runtime projection found; run megara install --scope {} --target <codex|pi> first",
+                scope
+            );
+        }
+        Ok(targets
+            .into_iter()
+            .map(|target| Self {
+                action: InstallAction::Sync,
+                scope,
+                target,
+                locale: None,
+                dry_run: args.dry_run,
+                force: args.force,
+                trust_project: false,
+                json: args.json,
+            })
+            .collect())
+    }
+}
+
+fn resolve_sync_scope(scope: Option<ScopeArg>) -> Result<InstallScope> {
+    if let Some(scope) = scope {
+        return Ok(scope.into());
+    }
+    let cwd = env::current_dir()?;
+    if cwd.join(".agents/megara.toml").exists() {
+        return Ok(InstallScope::Project);
+    }
+    if crate::paths::home_dir()?
+        .join(".megara/megara.toml")
+        .exists()
+    {
+        return Ok(InstallScope::Global);
+    }
+    bail!("no Megara SSOT found; specify --scope or run megara install first")
+}
+
+fn detected_sync_targets(scope: InstallScope) -> Result<Vec<TargetRuntime>> {
+    let mut targets = Vec::new();
+    for target in [TargetRuntime::Codex, TargetRuntime::Pi] {
+        if managed_projection_exists(scope, target)? {
+            targets.push(target);
+        }
+    }
+    Ok(targets)
+}
+
+fn managed_projection_exists(scope: InstallScope, target: TargetRuntime) -> Result<bool> {
+    let paths = InstallPaths::resolve(scope, target)?;
+    let marker_paths = match target {
+        TargetRuntime::Codex => vec![
+            paths.target_root.join("AGENTS.md"),
+            paths.target_root.join("config.toml"),
+        ],
+        TargetRuntime::Pi => vec![
+            paths.target_root.join("extensions/megara.ts"),
+            paths.target_root.join("agents/executor.md"),
+        ],
+    };
+    Ok(marker_paths.into_iter().any(|path| {
+        fs::read_to_string(path)
+            .map(|content| content.contains(crate::installer::MANAGED_MARKER))
+            .unwrap_or(false)
+    }))
 }
 
 fn normalize_locale(locale: Option<String>) -> Result<Option<String>> {

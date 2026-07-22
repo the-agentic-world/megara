@@ -54,6 +54,73 @@ fn sync_refreshes_managed_projection() {
         .contains("SSOT AGENT TOKEN"));
 }
 
+#[test]
+fn sync_without_target_detects_only_installed_runtime() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let agents = dir.path().join(".codex/AGENTS.md");
+    fs::remove_file(&agents).unwrap();
+
+    let sync = megara_with_codex_home(codex_home.path())
+        .arg("sync")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        sync.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&sync.stdout);
+    assert!(stdout.contains("target=codex"));
+    assert!(!stdout.contains("target=pi"));
+    assert!(agents.exists());
+    assert!(!dir.path().join(".pi/extensions/megara.ts").exists());
+}
+
+#[test]
+fn sync_without_target_detects_pi_when_it_is_the_only_runtime() {
+    let dir = tempdir().unwrap();
+    let install = megara()
+        .args([
+            "install",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--no-interactive",
+        ])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        install.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    let extension = dir.path().join(".pi/extensions/megara.ts");
+    fs::remove_file(&extension).unwrap();
+
+    let sync = megara()
+        .arg("sync")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        sync.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&sync.stdout);
+    assert!(stdout.contains("target=pi"));
+    assert!(!stdout.contains("target=codex"));
+    assert!(extension.exists());
+    assert!(!dir.path().join(".codex/AGENTS.md").exists());
+}
+
 fn update_executor_ssot(ssot_agent: &Path) {
     let ssot_agent_content = fs::read_to_string(ssot_agent).unwrap();
     fs::write(

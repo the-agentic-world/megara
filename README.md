@@ -55,7 +55,7 @@ curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/
 특정 버전이나 설치 위치를 지정할 수 있습니다.
 
 ```bash
-curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/install.sh | MEGARA_VERSION=v1.1.4 MEGARA_INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://github.com/the-agentic-world/megara/releases/latest/download/install.sh | MEGARA_VERSION=v<version> MEGARA_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 설치 스크립트는 macOS arm64와 Linux x86_64를 지원하며 기본 설치 위치는 `$HOME/.local/bin`입니다. 기본 경로가 쓸 수 없으면 다른 사용자 쓰기 가능 경로로 설치를 시도합니다. 설치 후 `megara` 명령을 바로 사용하려면 설치 경로가 `PATH`에 포함되어 있어야 합니다. 이전 기본 위치에 남은 Megara 바이너리는 `sudo` 없이 제거를 시도하며, 권한상 제거할 수 없으면 직접 제거 또는 `PATH` 우선순위 조정을 안내합니다.
@@ -148,9 +148,12 @@ megara update --scope project
 megara update --scope global
 ```
 
-설치된 `.agents/` 또는 `~/.megara` source of truth에서 런타임 파일을 다시 투영합니다.
+설치된 `.agents/` 또는 `~/.megara` source of truth에서 런타임 파일을 다시 투영합니다. 인자 없이 실행하면 현재 scope의 managed runtime만 탐색해 동기화합니다.
 
 ```bash
+megara sync
+
+# 특정 runtime만 동기화
 megara sync --scope project --target codex
 ```
 
