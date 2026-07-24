@@ -156,6 +156,20 @@ jobs:
           test -f .pi/extensions/megara.ts
           test -f .pi/agents/executor.md
           grep -q 'Follow the loaded workflow skill' .pi/extensions/megara.ts
+      - name: Install Codex harness from published release script
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="${RUNNER_TEMP}/codex-project"
+          codex_home="${RUNNER_TEMP}/codex-home"
+          mkdir -p "${project}"
+          cd "${project}"
+          CODEX_HOME="${codex_home}" "${RUNNER_TEMP}/bin/megara" install --scope project --target codex --trust-project --no-interactive
+          test -f .codex/hooks.json
+          grep -q 'megara-hook-PostToolUse' .codex/hooks.json
+          grep -q -- '--event PostToolUse' .codex/hooks.json
+          grep -q 'post_tool_use' "${codex_home}/config.toml"
+          test "$(grep -c 'trusted_hash = "sha256:' "${codex_home}/config.toml")" -eq 7
       - name: Install with default fallback path
         shell: bash
         run: |
