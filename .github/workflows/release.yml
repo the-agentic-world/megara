@@ -144,6 +144,18 @@ jobs:
           MEGARA_VERSION="${GITHUB_REF_NAME}" MEGARA_INSTALL_DIR="${RUNNER_TEMP}/bin" sh "${RUNNER_TEMP}/install.sh"
           "${RUNNER_TEMP}/bin/megara" --version
           "${RUNNER_TEMP}/bin/megara" targets list --json | grep -q '"name": "codex"'
+          "${RUNNER_TEMP}/bin/megara" targets list --json | grep -q '"name": "pi"'
+      - name: Install Pi harness from published release script
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="${RUNNER_TEMP}/pi-project"
+          mkdir -p "${project}"
+          cd "${project}"
+          "${RUNNER_TEMP}/bin/megara" install --scope project --target pi --trust-project --no-interactive
+          test -f .pi/extensions/megara.ts
+          test -f .pi/agents/executor.md
+          grep -q 'Follow the loaded workflow skill' .pi/extensions/megara.ts
       - name: Install with default fallback path
         shell: bash
         run: |
