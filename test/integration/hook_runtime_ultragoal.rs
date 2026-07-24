@@ -100,7 +100,7 @@ fn hook_blocks_direct_runtime_artifact_writes() {
 }
 
 #[test]
-fn hook_redirects_repeated_status_polling_to_the_active_goal() {
+fn hook_blocks_repeated_status_polling_without_rewriting_the_command() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
@@ -118,22 +118,19 @@ fn hook_redirects_repeated_status_polling_to_the_active_goal() {
         );
     }
 
-    let redirected = run_read_only_tool(dir.path(), session_id, turn_id, status);
+    let blocked = run_read_only_tool(dir.path(), session_id, turn_id, status);
     assert!(
-        redirected.status.success(),
+        blocked.status.success(),
         "stderr={}",
-        String::from_utf8_lossy(&redirected.stderr)
+        String::from_utf8_lossy(&blocked.stderr)
     );
-    let output: serde_json::Value = serde_json::from_slice(&redirected.stdout).unwrap();
-    assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "allow");
-    assert_eq!(
-        output["hookSpecificOutput"]["updatedInput"]["command"],
-        "megara ultragoal --scope project --session-id tool-loop-session start-goal --json"
-    );
-    assert!(output["hookSpecificOutput"]["additionalContext"]
+    let output: serde_json::Value = serde_json::from_slice(&blocked.stdout).unwrap();
+    assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "deny");
+    assert!(output["hookSpecificOutput"]["permissionDecisionReason"]
         .as_str()
         .unwrap()
         .contains("Do not inspect status again"));
+    assert!(output["hookSpecificOutput"].get("updatedInput").is_none());
 
     let prompt = run_hook(
         dir.path(),
@@ -150,6 +147,128 @@ fn hook_redirects_repeated_status_polling_to_the_active_goal() {
         "stderr={}",
         String::from_utf8_lossy(&resumed.stderr)
     );
+}
+
+#[test]
+fn hook_continues_once_when_an_ultragoal_has_an_active_next_goal() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    submit_ultragoal_state(dir.path(), "active", "execute G002");
+
+    let inactive_checkpoint = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{
+          "session_id": "sess-ug-hook",
+          "turn_id": "checkpoint-turn",
+          "stop_hook_active": false,
+          "last_assistant_message": "The first product goal is complete."
+        }"#,
+    );
+    assert!(inactive_checkpoint.status.success());
+    assert!(inactive_checkpoint.stdout.is_empty());
+
+    let recorded = run_hook(
+        dir.path(),
+        dir.path(),
+        "PostToolUse",
+        Some("Bash"),
+        br#"{
+          "session_id": "sess-ug-hook",
+          "turn_id": "checkpoint-turn",
+          "tool_use_id": "checkpoint-1",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "megara ultragoal --scope project --session-id sess-ug-hook checkpoint --goal-id G001 --status complete --json"
+          },
+          "tool_response": {
+            "output": "{\"next_goal_started\":{\"id\":\"G002\"}}"
+          }
+        }"#,
+    );
+    assert!(
+        recorded.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&recorded.stderr)
+    );
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{
+          "session_id": "sess-ug-hook",
+          "turn_id": "checkpoint-turn",
+          "stop_hook_active": false,
+          "last_assistant_message": "The first product goal is complete."
+        }"#,
+    );
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["decision"], "block");
+    assert!(output["reason"]
+        .as_str()
+        .unwrap()
+        .contains("completed checkpoint activated this next goal"));
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{
+          "session_id": "sess-ug-hook",
+          "turn_id": "checkpoint-turn",
+          "stop_hook_active": true,
+          "last_assistant_message": "The next product step needs more investigation."
+        }"#,
+    );
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let recorded = run_hook(
+        dir.path(),
+        dir.path(),
+        "PostToolUse",
+        Some("Bash"),
+        br#"{
+          "session_id": "sess-ug-hook",
+          "turn_id": "checkpoint-turn",
+          "tool_use_id": "checkpoint-2",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "megara ultragoal --scope project --session-id sess-ug-hook checkpoint --goal-id G002 --status=complete --json"
+          },
+          "tool_response": {
+            "output": "ultragoal checkpoint recorded for G002 (complete); next active goal: G003 - Verify release"
+          }
+        }"#,
+    );
+    assert!(recorded.status.success());
+
+    let output = run_hook(
+        dir.path(),
+        dir.path(),
+        "Stop",
+        None,
+        br#"{
+          "session_id": "sess-ug-hook",
+          "turn_id": "checkpoint-turn",
+          "stop_hook_active": true,
+          "last_assistant_message": "The second product goal is complete."
+        }"#,
+    );
+    assert!(output.status.success());
+    let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["decision"], "block");
 }
 
 fn submit_ultragoal_state(project: &Path, status: &str, next: &str) {

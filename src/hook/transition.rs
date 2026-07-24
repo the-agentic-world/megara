@@ -169,6 +169,7 @@ pub(super) fn prepare_ultragoal(timestamp: &str, state: &mut Value) {
         "artifact_revision": plan_sha256,
         "status": "starting",
         "started_at": timestamp,
+        "continuation_status": "pending",
     });
 }
 
@@ -176,7 +177,30 @@ pub(super) fn ultragoal_start_pending(state: &Value) -> bool {
     state.get("transition").is_some_and(|transition| {
         transition.get("target").and_then(Value::as_str) == Some(ULTRAGOAL)
             && transition.get("status").and_then(Value::as_str) == Some("starting")
+            && transition
+                .get("continuation_status")
+                .and_then(Value::as_str)
+                == Some("pending")
     })
+}
+
+pub(super) fn ultragoal_start_recoverable(state: &Value) -> bool {
+    state.get("approval_status").and_then(Value::as_str) == Some("approved")
+        && state.get("approved_handoff_target").and_then(Value::as_str) == Some(ULTRAGOAL)
+        && state.get("transition").is_some_and(|transition| {
+            transition.get("target").and_then(Value::as_str) == Some(ULTRAGOAL)
+                && transition.get("status").and_then(Value::as_str) == Some("starting")
+                && transition
+                    .get("continuation_status")
+                    .and_then(Value::as_str)
+                    == Some("delivered")
+        })
+}
+
+pub(super) fn mark_ultragoal_continuation_delivered(timestamp: &str, state: &mut Value) {
+    state["transition"]["continuation_status"] = json!("delivered");
+    state["transition"]["continuation_delivered_at"] = json!(timestamp);
+    state["updated_at"] = json!(timestamp);
 }
 
 pub(super) fn ultragoal_start_context(scope: ScopeArg, session_id: &str) -> String {

@@ -379,6 +379,7 @@ fn installs_project_scope_codex_harness() {
     assert!(hooks_json.contains("CAVEMAN MODE ACTIVE"));
     assert!(hooks_json.contains("megara-hook-UserPromptSubmit"));
     assert!(hooks_json.contains("megara-hook-PreToolUse"));
+    assert!(hooks_json.contains("megara-hook-PostToolUse"));
     assert!(hooks_json.contains("megara-hook-SubagentStart"));
     assert!(hooks_json.contains("megara-hook-SubagentStop"));
     assert!(

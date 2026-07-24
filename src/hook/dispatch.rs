@@ -13,6 +13,9 @@ pub(super) fn run_workflow_event(
             user_prompt::handle_user_prompt(timestamp, state_dir, options, payload, payload_file)
         }
         "PreToolUse" => pre_tool::handle_pre_tool_use(timestamp, state_dir, payload, payload_file),
+        "PostToolUse" => {
+            post_tool::handle_post_tool_use(timestamp, state_dir, payload, payload_file)
+        }
         "SubagentStart" | "SubagentStop" => {
             subagent::handle_subagent_event(timestamp, state_dir, options, payload, payload_file)
         }

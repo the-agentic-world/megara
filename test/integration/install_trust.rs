@@ -19,7 +19,7 @@ fn install_registers_codex_hook_trust_state_once() {
         "stderr={}",
         String::from_utf8_lossy(&install.stderr)
     );
-    assert!(String::from_utf8_lossy(&install.stdout).contains("hook trust: registered=6"));
+    assert!(String::from_utf8_lossy(&install.stdout).contains("hook trust: registered=7"));
 
     let config_path = codex_home.path().join("config.toml");
     let config = fs::read_to_string(&config_path).unwrap();
@@ -27,6 +27,7 @@ fn install_registers_codex_hook_trust_state_once() {
     let hooks_path = hooks_path.display().to_string();
     for event in [
         "pre_tool_use",
+        "post_tool_use",
         "session_start",
         "stop",
         "subagent_start",
@@ -36,7 +37,7 @@ fn install_registers_codex_hook_trust_state_once() {
         let header = format!("[hooks.state.\"{hooks_path}:{event}:0:0\"]");
         assert_eq!(occurrences(&config, &header), 1);
     }
-    assert_eq!(occurrences(&config, "trusted_hash = \"sha256:"), 6);
+    assert_eq!(occurrences(&config, "trusted_hash = \"sha256:"), 7);
 
     let sync = megara_with_codex_home(codex_home.path())
         .arg("sync")

@@ -116,6 +116,19 @@ pub(super) fn handle_stop(
         return Ok(0);
     }
 
+    if let Some(reason) =
+        ultragoal_continuation::take_stop_continuation(timestamp, state_dir, payload, payload_file)?
+    {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "decision": "block",
+                "reason": reason,
+            }))?
+        );
+        return Ok(0);
+    }
+
     let Some(mut question) = question_from_text(timestamp, text, payload_file) else {
         return Ok(0);
     };

@@ -30,6 +30,8 @@ mod git_guard;
 pub(crate) mod mutation;
 #[path = "hook/parser.rs"]
 pub(crate) mod parser;
+#[path = "hook/post_tool.rs"]
+mod post_tool;
 #[path = "hook/pre_tool.rs"]
 mod pre_tool;
 #[path = "hook/ralplan_approval.rs"]
@@ -68,6 +70,8 @@ mod terminal;
 mod tool_loop;
 #[path = "hook/transition.rs"]
 mod transition;
+#[path = "hook/ultragoal_continuation.rs"]
+mod ultragoal_continuation;
 #[path = "hook/user_prompt.rs"]
 mod user_prompt;
 

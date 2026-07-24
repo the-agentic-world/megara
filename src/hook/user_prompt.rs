@@ -23,11 +23,29 @@ pub(super) fn handle_user_prompt(
     );
 
     let workflow_start = subagent_gate::workflow_start_from_prompt(&prompt);
+    let explicit_ultragoal_start = subagent_gate::ultragoal_start_from_prompt(&prompt);
 
     let ralplan_paths = workflow_paths(state_dir, payload, RALPLAN);
     reconcile_session_aliases(timestamp, payload_file, &ralplan_paths, RALPLAN, payload)?;
     if let Some(mut state) = load_json(&ralplan_paths.session_file) {
-        if transition::ultragoal_start_pending(&state) {
+        let ultragoal_paths = workflow_paths(state_dir, payload, ULTRAGOAL);
+        reconcile_session_aliases(
+            timestamp,
+            payload_file,
+            &ultragoal_paths,
+            ULTRAGOAL,
+            payload,
+        )?;
+        let ultragoal_is_active = load_json(&ultragoal_paths.session_file)
+            .as_ref()
+            .is_some_and(|state| state.get("active").and_then(Value::as_bool) == Some(true));
+        if transition::ultragoal_start_pending(&state)
+            || (explicit_ultragoal_start
+                && !ultragoal_is_active
+                && transition::ultragoal_start_recoverable(&state))
+        {
+            transition::mark_ultragoal_continuation_delivered(timestamp, &mut state);
+            write_json_atomic(&ralplan_paths.session_file, &state)?;
             let session_id = state
                 .get("session_id")
                 .map(value_to_string)
@@ -45,6 +63,7 @@ pub(super) fn handle_user_prompt(
             let handoff_target = decision.handoff_target.clone();
             if handoff_target.as_str() == Some(ULTRAGOAL) {
                 transition::prepare_ultragoal(timestamp, &mut state);
+                transition::mark_ultragoal_continuation_delivered(timestamp, &mut state);
             }
             let session_id = state
                 .get("session_id")

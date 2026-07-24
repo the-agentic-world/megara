@@ -122,20 +122,64 @@ fn projected_hook_runner_tracks_visible_only_plan_and_numeric_approval() {
     assert_eq!(approved["approved_handoff_target"], "ultragoal");
     assert_eq!(approved["transition"]["target"], "ultragoal");
     assert_eq!(approved["transition"]["status"], "starting");
+    assert_eq!(approved["transition"]["continuation_status"], "delivered");
 
     let repeated = user_prompt(dir.path(), "sess-visible-rp", "2");
     assert_success(&repeated);
-    let repeated_output: serde_json::Value = serde_json::from_slice(&repeated.stdout).unwrap();
-    assert!(repeated_output["hookSpecificOutput"]["additionalContext"]
+    assert!(repeated.stdout.is_empty());
+
+    let recovery = user_prompt(dir.path(), "sess-visible-rp", "$ultragoal retry handoff");
+    assert_success(&recovery);
+    let recovery: serde_json::Value = serde_json::from_slice(&recovery.stdout).unwrap();
+    assert!(recovery["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap()
-        .contains("--session-id 'sess-visible-rp'"));
+        .contains("Start ultragoal now"));
 
     let output = run_mutation(dir.path(), "sess-visible-rp");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("ralplan is approved for ultragoal"));
     assert!(stderr.contains("create-goals"));
+}
+
+#[test]
+fn stale_ultragoal_transition_does_not_preempt_later_user_prompts() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let state_path = workflow_state_path(dir.path(), RALPLAN, "sess-stale-handoff");
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    fs::write(
+        &state_path,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "skill": RALPLAN,
+            "session_id": "sess-stale-handoff",
+            "active": true,
+            "phase": "pending_approval",
+            "status": "pending_approval",
+            "approval_status": "pending",
+            "transition": {
+                "target": "ultragoal",
+                "status": "starting"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = user_prompt(
+        dir.path(),
+        "sess-stale-handoff",
+        "Can this build log resolve the current blocker?",
+    );
+    assert_success(&output);
+    assert!(output.stdout.is_empty());
+
+    let output = user_prompt(dir.path(), "sess-stale-handoff", "$ultragoal retry handoff");
+    assert_success(&output);
+    assert!(output.stdout.is_empty());
 }
 
 #[test]

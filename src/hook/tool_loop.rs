@@ -2,15 +2,14 @@ use super::*;
 
 const MAX_STATUS_CALLS_PER_TURN: u64 = 2;
 
-pub(super) struct StatusLoopRedirect {
-    pub(super) command: String,
+pub(super) struct StatusLoopBlock {
     pub(super) context: &'static str,
 }
 
-pub(super) fn repeated_ultragoal_status_redirect(
+pub(super) fn repeated_ultragoal_status_block(
     state_dir: &Path,
     payload: &Value,
-) -> Result<Option<StatusLoopRedirect>> {
+) -> Result<Option<StatusLoopBlock>> {
     let Some(command) = payload
         .pointer("/tool_input/command")
         .and_then(Value::as_str)
@@ -39,23 +38,12 @@ pub(super) fn repeated_ultragoal_status_redirect(
     state["status_calls"] = json!(calls);
     write_json_atomic(&path, &state)?;
 
-    Ok((calls > MAX_STATUS_CALLS_PER_TURN).then(|| StatusLoopRedirect {
-        command: resume_active_goal_command(command).expect("ultragoal status command was checked"),
-        context: "Megara redirected repeated status polling to the active goal. Treat the returned goal as authoritative; perform its product work or finish the turn. Do not inspect status again this turn.",
+    Ok((calls > MAX_STATUS_CALLS_PER_TURN).then_some(StatusLoopBlock {
+        context: "Megara already returned the workflow status in this turn. Continue the active product task or finish the turn. Do not inspect status again this turn.",
     }))
 }
 
 fn is_ultragoal_status(command: &str) -> bool {
     let command = command.trim();
     command.contains(" ultragoal ") && command.split_whitespace().last() == Some("status")
-}
-
-fn resume_active_goal_command(command: &str) -> Option<String> {
-    let command = command.trim_end();
-    let prefix = command.strip_suffix("status")?;
-    prefix
-        .chars()
-        .last()
-        .filter(|value| value.is_whitespace())?;
-    Some(format!("{prefix}start-goal --json"))
 }

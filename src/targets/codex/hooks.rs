@@ -60,6 +60,17 @@ pub(super) fn codex_hooks_json(
         }]),
     );
     hook_events.insert(
+        "PostToolUse".to_string(),
+        serde_json::json!([{
+            "hooks": [{
+                "name": "megara-hook-PostToolUse",
+                "type": "command",
+                "command": hook_command(megara_bin, scope, root, "PostToolUse"),
+                "timeout": 10
+            }]
+        }]),
+    );
+    hook_events.insert(
         "Stop".to_string(),
         serde_json::json!([{
             "hooks": [{

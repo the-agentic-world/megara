@@ -20,6 +20,13 @@ pub(super) fn workflow_start_from_prompt(prompt: &str) -> Option<&'static str> {
     None
 }
 
+pub(super) fn ultragoal_start_from_prompt(prompt: &str) -> bool {
+    let lower = prompt_after_optional_plan_prefix(prompt)
+        .trim_start()
+        .to_ascii_lowercase();
+    starts_workflow(&lower, ULTRAGOAL)
+}
+
 pub(super) fn register_requirement(
     timestamp: &str,
     state: &mut Value,

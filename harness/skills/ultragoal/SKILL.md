@@ -95,7 +95,9 @@ MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
 3. Run focused verification.
 4. Run review and cleanup gates.
 5. Record a checkpoint with exact evidence.
-6. Continue only after the checkpoint changes the active goal or a user message changes scope.
+6. When a complete checkpoint activates another goal, continue that goal in the same turn. Do not stop between goals. The Codex runtime sends one continuation if you attempt to stop while another goal is active.
+
+If automatic handoff was interrupted before goals were created, explicitly invoke `$ultragoal` once to retry the approved handoff. Do not retry from unrelated user prompts.
 
 ## Completion Gate
 
