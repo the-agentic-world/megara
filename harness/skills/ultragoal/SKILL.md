@@ -17,6 +17,10 @@ Use this workflow when an approved plan should be executed to completion with du
 - Record durable state through the Megara CLI; do not rely only on chat memory.
 - Resolve the CLI before running any command: `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"`. Do not rely on bare `megara` being present on `PATH`.
 - When the user selects `ultragoal` from the final `ralplan` choices, that selection is sufficient authorization. Immediately create and start goals from the approved plan; do not require a separate `$ultragoal` invocation or approval.
+- A runtime reminder, hook context, tool result, or assistant progress message is not a user request to resume work. Do not treat it as a new execution turn.
+- Use `status` only when the user asks for progress or recovery needs state inspection. It is not an execution-loop step. Never poll it to recover context; after an inspection, make product progress, checkpoint, finish, or wait.
+- If a system reminder, hook context, or tool result resumes the model without a new user prompt, do not begin another inspection cycle. Continue only a pending product action with new input; otherwise end the turn.
+- The runtime redirects repeated `status` polling to `start-goal --json`. Use the returned active goal immediately; do not issue another status command in that turn.
 - Record evidence before considering a goal complete.
 - Treat missing tests, shallow evidence, failed review, or plan/code mismatch as blockers.
 - Do not ask the user to resolve work the agent can investigate or fix.
@@ -86,13 +90,12 @@ MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"
 
 ## Execution Loop
 
-1. Run `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"; "$MEGARA_BIN" ultragoal --scope project --session-id <session-id> status`.
-2. Run `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"; "$MEGARA_BIN" ultragoal --scope project --session-id <session-id> start-goal`.
-3. Execute the returned active goal with the smallest correct change.
-4. Run focused verification.
-5. Run review and cleanup gates.
-6. Record a checkpoint with exact evidence.
-7. Continue until every goal is complete.
+1. Run `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"; "$MEGARA_BIN" ultragoal --scope project --session-id <session-id> start-goal` once to select or resume the active goal.
+2. Execute the returned active goal with the smallest correct change.
+3. Run focused verification.
+4. Run review and cleanup gates.
+5. Record a checkpoint with exact evidence.
+6. Continue only after the checkpoint changes the active goal or a user message changes scope.
 
 ## Completion Gate
 

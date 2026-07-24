@@ -26,6 +26,20 @@ pub(super) fn handle_pre_tool_use(
         );
         return if guard_mode == "warn" { Ok(0) } else { Ok(42) };
     }
+    if let Some(redirect) = tool_loop::repeated_ultragoal_status_redirect(state_dir, payload)? {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": {"command": redirect.command},
+                    "additionalContext": redirect.context,
+                }
+            }))?
+        );
+        return Ok(0);
+    }
     let Some(mutation) = mutation_signal(payload) else {
         return Ok(0);
     };

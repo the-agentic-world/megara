@@ -99,6 +99,59 @@ fn hook_blocks_direct_runtime_artifact_writes() {
     assert!(stderr.contains("runtime state and artifacts are managed"));
 }
 
+#[test]
+fn hook_redirects_repeated_status_polling_to_the_active_goal() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+
+    let session_id = "tool-loop-session";
+    let turn_id = "tool-loop-turn";
+    let status = r#"megara ultragoal --scope project --session-id tool-loop-session status"#;
+    let inspect = "cat docs/parity-traceability.json";
+    for command in [status, inspect, status, inspect] {
+        let output = run_read_only_tool(dir.path(), session_id, turn_id, command);
+        assert!(
+            output.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let redirected = run_read_only_tool(dir.path(), session_id, turn_id, status);
+    assert!(
+        redirected.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&redirected.stderr)
+    );
+    let output: serde_json::Value = serde_json::from_slice(&redirected.stdout).unwrap();
+    assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert_eq!(
+        output["hookSpecificOutput"]["updatedInput"]["command"],
+        "megara ultragoal --scope project --session-id tool-loop-session start-goal --json"
+    );
+    assert!(output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("Do not inspect status again"));
+
+    let prompt = run_hook(
+        dir.path(),
+        dir.path(),
+        "UserPromptSubmit",
+        None,
+        br#"{"session_id":"tool-loop-session","turn_id":"next-user-turn","prompt":"Continue with the next approved task."}"#,
+    );
+    assert!(prompt.status.success());
+
+    let resumed = run_read_only_tool(dir.path(), session_id, "next-user-turn", status);
+    assert!(
+        resumed.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
+}
+
 fn submit_ultragoal_state(project: &Path, status: &str, next: &str) {
     let payload = format!(
         "{{\"session_id\":\"sess-ug-hook\",\"last_assistant_message\":\"Status update.\\n\\n<!--\\nMegara Workflow State:\\n- skill: ultragoal\\n- status: {status}\\n- next: {next}\\n-->\\n\"}}"
@@ -118,5 +171,22 @@ fn run_mutation(project: &Path) -> Output {
         "PreToolUse",
         Some("Bash"),
         br#"{"session_id":"sess-ug-hook","tool_input":{"command":"echo changed > app.js"}}"#,
+    )
+}
+
+fn run_read_only_tool(project: &Path, session_id: &str, turn_id: &str, command: &str) -> Output {
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+    })
+    .to_string();
+    run_hook(
+        project,
+        project,
+        "PreToolUse",
+        Some("Bash"),
+        payload.as_bytes(),
     )
 }
