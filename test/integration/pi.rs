@@ -54,6 +54,8 @@ fn pi_project_install_projects_agents_and_requires_explicit_trust() {
     assert!(!extension.contains("--agent"));
     assert!(extension.contains("event.text.match(WORKFLOW_PATTERN)"));
     assert!(!extension.contains("event.input.match(WORKFLOW_PATTERN)"));
+    assert!(extension.contains("${event.systemPrompt}"));
+    assert!(extension.contains("Follow the loaded workflow skill"));
     let executor = fs::read_to_string(project.path().join(".pi/agents/executor.md")).unwrap();
     assert!(executor.contains("name: executor"));
     assert!(executor.contains("# Executor"));
@@ -126,6 +128,42 @@ fn pi_event_protocol_recovers_completed_output_and_bounds_retries() {
             json!({"protocol_version": 1, "action": "attempt-finished", "event_id": "retry", "workflow": "team", "attempt_id": started["attempt_id"], "status": "failed", "error": "Selected model is at capacity"}),
         );
         assert_eq!(response["status"], expected);
+    }
+}
+
+#[test]
+fn pi_role_receipts_keep_each_completed_output() {
+    let project = tempdir().unwrap();
+    install_pi(project.path(), true);
+    let activate = json!({"protocol_version": 1, "action": "activate", "event_id": "role-output", "workflow": "deep-interview"});
+    assert_eq!(event(project.path(), activate)["status"], "active");
+
+    for (role, output) in [
+        ("researcher", "research finding"),
+        ("contrarian", "risk finding"),
+    ] {
+        let started = event(
+            project.path(),
+            json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "role-output", "workflow": "deep-interview", "role": role}),
+        );
+        assert_eq!(started["status"], "started");
+        let completed = event(
+            project.path(),
+            json!({"protocol_version": 1, "action": "attempt-finished", "event_id": "role-output", "workflow": "deep-interview", "attempt_id": started["attempt_id"], "status": "completed", "output": output}),
+        );
+        assert_eq!(completed["output"], output);
+    }
+
+    for (role, output) in [
+        ("researcher", "research finding"),
+        ("contrarian", "risk finding"),
+    ] {
+        let replay = event(
+            project.path(),
+            json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "role-output", "workflow": "deep-interview", "role": role}),
+        );
+        assert_eq!(replay["status"], "completed");
+        assert_eq!(replay["output"], output);
     }
 }
 

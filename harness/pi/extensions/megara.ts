@@ -129,11 +129,16 @@ export default function (pi: ExtensionAPI) {
     pi.appendEntry("megara-pi-workflow", active);
   });
 
-  pi.on("before_agent_start", async (_event, ctx) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     if (!active) return;
     const response = await runtimeEvent(ctx.cwd, { action: "next-action", event_id: active.eventId, workflow: active.workflow });
     const roles = Array.isArray(response.required_roles) ? response.required_roles.join(", ") : "";
-    return roles ? { systemPrompt: `Megara requires completed role reviews before this workflow advances. Delegate focused work with megara_subagent and wait for each result: ${roles}.` } : undefined;
+    const roleInstruction = roles
+      ? ` Delegate focused work with megara_subagent and wait for each result: ${roles}.`
+      : "";
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n[MEGARA WORKFLOW]\nThe active workflow is ${active.workflow}. Follow the loaded workflow skill; do not replace it with a free-form plan.${roleInstruction}`,
+    };
   });
 
   pi.registerTool({

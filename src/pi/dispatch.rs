@@ -96,9 +96,13 @@ fn prepare_attempt(request: &PiEventRequest, runtime_root: &Path) -> Result<PiEv
         active: true,
         ..EventReceipt::default()
     });
-    if let Some(output) = &receipt.completed_output {
+    if let Some(output) = receipt.attempts.iter().find_map(|attempt| {
+        (attempt.status == "completed" && attempt.role == role)
+            .then_some(attempt.output.as_deref())
+            .flatten()
+    }) {
         let mut response = PiEventResponse::new("completed", &request.event_id);
-        response.output = Some(output.clone());
+        response.output = Some(output.to_string());
         return Ok(response);
     }
     if let Some(attempt) = receipt.attempts.iter().find(|attempt| {
@@ -151,7 +155,6 @@ fn attempt_finished(request: &PiEventRequest, runtime_root: &Path) -> Result<PiE
         )
     };
     if attempt_status == "completed" {
-        receipt.completed_output = attempt_output.clone();
         receipt::save(runtime_root, &receipt)?;
         let mut response = PiEventResponse::new("completed", &request.event_id);
         response.attempt_id = Some(attempt_id.to_string());

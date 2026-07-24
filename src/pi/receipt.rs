@@ -24,8 +24,6 @@ pub struct EventReceipt {
     #[serde(default)]
     pub attempts: Vec<AttemptReceipt>,
     #[serde(default)]
-    pub completed_output: Option<String>,
-    #[serde(default)]
     pub fallback_attempted: bool,
 }
 
