@@ -66,8 +66,6 @@ mod subagent_gate;
 mod team;
 #[path = "hook/terminal.rs"]
 mod terminal;
-#[path = "hook/tool_loop.rs"]
-mod tool_loop;
 #[path = "hook/transition.rs"]
 mod transition;
 #[path = "hook/ultragoal_continuation.rs"]

@@ -100,7 +100,7 @@ fn hook_blocks_direct_runtime_artifact_writes() {
 }
 
 #[test]
-fn hook_blocks_repeated_status_polling_without_rewriting_the_command() {
+fn hook_allows_repeated_status_checks_in_one_turn() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
@@ -108,45 +108,15 @@ fn hook_blocks_repeated_status_polling_without_rewriting_the_command() {
     let session_id = "tool-loop-session";
     let turn_id = "tool-loop-turn";
     let status = r#"megara ultragoal --scope project --session-id tool-loop-session status"#;
-    let inspect = "cat docs/parity-traceability.json";
-    for command in [status, inspect, status, inspect] {
+    for command in [status, status, status, status] {
         let output = run_read_only_tool(dir.path(), session_id, turn_id, command);
         assert!(
             output.status.success(),
             "stderr={}",
             String::from_utf8_lossy(&output.stderr)
         );
+        assert!(output.stdout.is_empty());
     }
-
-    let blocked = run_read_only_tool(dir.path(), session_id, turn_id, status);
-    assert!(
-        blocked.status.success(),
-        "stderr={}",
-        String::from_utf8_lossy(&blocked.stderr)
-    );
-    let output: serde_json::Value = serde_json::from_slice(&blocked.stdout).unwrap();
-    assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "deny");
-    assert!(output["hookSpecificOutput"]["permissionDecisionReason"]
-        .as_str()
-        .unwrap()
-        .contains("Do not inspect status again"));
-    assert!(output["hookSpecificOutput"].get("updatedInput").is_none());
-
-    let prompt = run_hook(
-        dir.path(),
-        dir.path(),
-        "UserPromptSubmit",
-        None,
-        br#"{"session_id":"tool-loop-session","turn_id":"next-user-turn","prompt":"Continue with the next approved task."}"#,
-    );
-    assert!(prompt.status.success());
-
-    let resumed = run_read_only_tool(dir.path(), session_id, "next-user-turn", status);
-    assert!(
-        resumed.status.success(),
-        "stderr={}",
-        String::from_utf8_lossy(&resumed.stderr)
-    );
 }
 
 #[test]
