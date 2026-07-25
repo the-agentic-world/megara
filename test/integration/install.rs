@@ -314,6 +314,9 @@ fn installs_project_scope_codex_harness() {
     assert!(ultragoal.contains("checkpoint attempts"));
     assert!(ultragoal.contains("start-goal"));
     assert!(ultragoal.contains("that selection is sufficient authorization"));
+    assert!(ultragoal.contains("no more than once per user turn"));
+    assert!(ultragoal.contains("Never retry a Megara CLI command with identical arguments"));
+    assert!(!ultragoal.contains("redirects repeated `status` polling"));
     assert!(ultragoal
         .contains("User-visible progress should mention only externally meaningful product work"));
     assert!(ultragoal.contains("Runtime state is managed by the `megara ultragoal` CLI commands"));

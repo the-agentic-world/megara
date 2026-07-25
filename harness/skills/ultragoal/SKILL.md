@@ -18,9 +18,9 @@ Use this workflow when an approved plan should be executed to completion with du
 - Resolve the CLI before running any command: `MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}"`. Do not rely on bare `megara` being present on `PATH`.
 - When the user selects `ultragoal` from the final `ralplan` choices, that selection is sufficient authorization. Immediately create and start goals from the approved plan; do not require a separate `$ultragoal` invocation or approval.
 - A runtime reminder, hook context, tool result, or assistant progress message is not a user request to resume work. Do not treat it as a new execution turn.
-- Use `status` only when the user asks for progress or recovery needs state inspection. It is not an execution-loop step. Never poll it to recover context; after an inspection, make product progress, checkpoint, finish, or wait.
+- Use `status` only when the user asks for progress or recovery needs state inspection, and no more than once per user turn. It is not an execution-loop step. Never poll it to recover context; after an inspection, make product progress, checkpoint, finish, or wait.
 - If a system reminder, hook context, or tool result resumes the model without a new user prompt, do not begin another inspection cycle. Continue only a pending product action with new input; otherwise end the turn.
-- The runtime redirects repeated `status` polling to `start-goal --json`. Use the returned active goal immediately; do not issue another status command in that turn.
+- Never retry a Megara CLI command with identical arguments after either a successful or failed response. Use the result to take a different product action, report a concrete blocker, or wait for new user input.
 - Record evidence before considering a goal complete.
 - Treat missing tests, shallow evidence, failed review, or plan/code mismatch as blockers.
 - Do not ask the user to resolve work the agent can investigate or fix.
