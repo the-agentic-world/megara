@@ -12,6 +12,7 @@ mod templates;
 mod tui;
 mod ui;
 mod ultragoal;
+mod uninstall;
 mod update;
 mod writer;
 
@@ -43,6 +44,7 @@ fn main() -> Result<()> {
                 result.print()?;
             }
         }
+        Commands::Uninstall(args) => uninstall::run(args, &registry)?,
         Commands::Doctor(args) => {
             let use_tui = tui::use_doctor_tui(&args);
             let options = if use_tui {

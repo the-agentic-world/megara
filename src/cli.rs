@@ -18,6 +18,8 @@ mod team;
 mod templates;
 #[path = "cli/ultragoal.rs"]
 mod ultragoal;
+#[path = "cli/uninstall.rs"]
+mod uninstall;
 #[path = "cli/update.rs"]
 mod update;
 
@@ -39,6 +41,7 @@ pub use ultragoal::{
     UltragoalGoalStatusArg, UltragoalStartGoalArgs, UltragoalStatusArgs, UltragoalSteerArgs,
     UltragoalSteerKindArg,
 };
+pub use uninstall::UninstallArgs;
 pub use update::UpdateArgs;
 #[allow(unused_imports)]
 pub(crate) use update::UpdateScopeArg;
@@ -56,6 +59,8 @@ pub enum Commands {
     Install(InstallArgs),
     /// Reproject managed runtime files from the Megara SSOT.
     Sync(SyncArgs),
+    /// Remove managed harness files while preserving runtime data.
+    Uninstall(UninstallArgs),
     /// Inspect installation health and drift.
     Doctor(DoctorArgs),
     /// Inspect bundled harness templates.

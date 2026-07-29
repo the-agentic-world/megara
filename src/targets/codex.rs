@@ -51,3 +51,7 @@ pub fn runtime_dependency_issues() -> Vec<String> {
 pub fn ensure_hook_trust(hooks_path: &Path, dry_run: bool) -> Result<HookTrustSummary> {
     trust::ensure_hook_trust(hooks_path, dry_run)
 }
+
+pub fn remove_hook_trust(hooks_path: &Path, dry_run: bool) -> Result<usize> {
+    trust::remove_hook_trust(hooks_path, dry_run)
+}

@@ -39,6 +39,35 @@ pub(super) fn merge_hook_trust_state(
     (content, registered, unchanged)
 }
 
+pub(super) fn remove_hook_trust_state(existing: &str, hooks_path: &str) -> (String, usize) {
+    let prefix = format!("[hooks.state.\"{}:", escape_toml_basic_string(hooks_path));
+    let mut content = String::new();
+    let mut section = String::new();
+    let mut remove_section = false;
+    let mut removed = 0;
+
+    for line in existing.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if remove_section {
+                removed += 1;
+            } else {
+                content.push_str(&section);
+            }
+            section.clear();
+            remove_section = trimmed.starts_with(&prefix);
+        }
+        section.push_str(line);
+    }
+    if remove_section {
+        removed += 1;
+    } else {
+        content.push_str(&section);
+    }
+
+    (content, removed)
+}
+
 fn append_trusted_hash(content: &mut String, header: &str, trusted_hash: &str) {
     if !content.ends_with('\n') {
         content.push('\n');

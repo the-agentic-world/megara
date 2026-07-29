@@ -157,6 +157,15 @@ megara sync
 megara sync --scope project --target codex
 ```
 
+설치된 runtime projection을 제거합니다. Megara 관리 파일만 지우며, workflow 복구에 필요한 runtime data는 보존합니다. Pi와 Codex를 함께 설치했다면 한 runtime을 제거해도 공유 SSOT는 남습니다.
+
+```bash
+megara uninstall --scope project --target codex
+
+# 변경 없이 제거 대상 확인
+megara uninstall --scope project --target codex --dry-run
+```
+
 지원 대상과 템플릿을 확인합니다.
 
 ```bash

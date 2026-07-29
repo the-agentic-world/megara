@@ -156,6 +156,12 @@ jobs:
           test -f .pi/extensions/megara.ts
           test -f .pi/agents/executor.md
           grep -q 'Follow the loaded workflow skill' .pi/extensions/megara.ts
+          mkdir -p .megara/state
+          touch .megara/state/recovery.json
+          "${RUNNER_TEMP}/bin/megara" uninstall --scope project --target pi
+          test ! -e .pi/extensions/megara.ts
+          test ! -e .agents/megara.toml
+          test -f .megara/state/recovery.json
       - name: Install Codex harness from published release script
         shell: bash
         run: |
@@ -170,6 +176,13 @@ jobs:
           grep -q -- '--event PostToolUse' .codex/hooks.json
           grep -q 'post_tool_use' "${codex_home}/config.toml"
           test "$(grep -c 'trusted_hash = "sha256:' "${codex_home}/config.toml")" -eq 7
+          mkdir -p .megara/state
+          touch .megara/state/recovery.json
+          "${RUNNER_TEMP}/bin/megara" uninstall --scope project --target codex
+          test ! -e .codex/hooks.json
+          test ! -e .agents/megara.toml
+          test -f .megara/state/recovery.json
+          ! grep -q 'post_tool_use' "${codex_home}/config.toml"
       - name: Install with default fallback path
         shell: bash
         run: |

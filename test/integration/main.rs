@@ -112,4 +112,5 @@ mod install_trust;
 mod pi;
 mod ultragoal;
 mod ultragoal_support;
+mod uninstall;
 mod update;

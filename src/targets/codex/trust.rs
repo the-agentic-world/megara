@@ -7,7 +7,10 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{trust_hash::command_hook_hash, trust_toml::merge_hook_trust_state};
+use super::{
+    trust_hash::command_hook_hash,
+    trust_toml::{merge_hook_trust_state, remove_hook_trust_state},
+};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct HookTrustSummary {
@@ -55,6 +58,18 @@ pub(super) fn ensure_hook_trust(hooks_path: &Path, dry_run: bool) -> Result<Hook
         unchanged,
         skipped: false,
     })
+}
+
+pub(super) fn remove_hook_trust(hooks_path: &Path, dry_run: bool) -> Result<usize> {
+    let config_path = codex_home_dir()?.join("config.toml");
+    let existing = fs::read_to_string(&config_path).unwrap_or_default();
+    let hooks_path = fs::canonicalize(hooks_path).unwrap_or_else(|_| hooks_path.to_path_buf());
+    let (next, removed) = remove_hook_trust_state(&existing, &hooks_path.display().to_string());
+    if removed > 0 && !dry_run {
+        fs::write(&config_path, next)
+            .with_context(|| format!("failed to write {}", config_path.display()))?;
+    }
+    Ok(removed)
 }
 
 fn codex_home_dir() -> Result<PathBuf> {
