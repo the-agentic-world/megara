@@ -178,7 +178,7 @@ jobs:
           test "$(grep -c 'trusted_hash = "sha256:' "${codex_home}/config.toml")" -eq 7
           mkdir -p .megara/state
           touch .megara/state/recovery.json
-          "${RUNNER_TEMP}/bin/megara" uninstall --scope project --target codex
+          CODEX_HOME="${codex_home}" "${RUNNER_TEMP}/bin/megara" uninstall --scope project --target codex
           test ! -e .codex/hooks.json
           test ! -e .agents/megara.toml
           test -f .megara/state/recovery.json
