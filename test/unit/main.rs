@@ -58,10 +58,18 @@ mod docs_tests;
 mod hook_tests;
 #[path = "pi.rs"]
 mod pi_tests;
+#[path = "planning_approval.rs"]
+mod planning_approval;
 #[path = "planning_domain.rs"]
 mod planning_domain;
 #[path = "planning_engine.rs"]
 mod planning_engine;
+#[path = "planning_invalidation.rs"]
+mod planning_invalidation;
+#[path = "planning_support.rs"]
+mod planning_support;
+#[path = "planning_transitions.rs"]
+mod planning_transitions;
 #[path = "team.rs"]
 mod team_tests;
 #[path = "tui.rs"]
