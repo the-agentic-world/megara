@@ -7,6 +7,7 @@ pub(crate) fn start_core() -> (InMemoryPlanningCore, PlanningState) {
             session_id: Some("pln_1".to_string()),
             project_id: "prj_1".to_string(),
             request: "기획 상태를 저장한다.".to_string(),
+            title: None,
         })
         .unwrap();
     (core, result.state)

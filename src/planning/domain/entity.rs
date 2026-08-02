@@ -133,6 +133,7 @@ pub enum EntityValidity {
 #[serde(deny_unknown_fields)]
 pub struct EntityRecord {
     pub entity_id: EntityId,
+    pub internal_uuid: String,
     pub revision: u64,
     pub kind: EntityKind,
     pub body: EntityBody,
@@ -363,6 +364,8 @@ pub enum BlockerSeverity {
 #[serde(deny_unknown_fields)]
 pub struct Blocker {
     pub blocker_id: BlockerId,
+    pub created_event_seq: u64,
+    pub created_ordinal: u32,
     pub revision: u64,
     pub kind: BlockerKind,
     pub severity: BlockerSeverity,

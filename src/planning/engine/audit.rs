@@ -1,4 +1,5 @@
 use serde_json::json;
+use uuid::Uuid;
 
 use super::*;
 
@@ -8,6 +9,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.audit.apply",
+            command_value(&command),
             |state, effects| {
                 if state.phase != LifecyclePhase::Interview {
                     return Err(CoreError::InvalidPhase(
@@ -35,14 +37,15 @@ impl InMemoryPlanningCore {
                                 )
                             })?;
                             state.required_model_action = None;
+                            let question_id = format!("qst_{}", Uuid::now_v7());
                             state.pending_question = Some(PendingQuestion {
-                                question_id: format!("qst_{}", state.revision + 1),
+                                question_id: question_id.clone(),
+                                created_event_seq: state.revision + 1,
+                                created_ordinal: 0,
                                 based_on_revision: state.revision + 1,
                                 proposal: question,
                             });
-                            effects.push(EventEffect::QuestionSet {
-                                question_id: format!("qst_{}", state.revision + 1),
-                            });
+                            effects.push(EventEffect::QuestionSet { question_id });
                         }
                         AuditReadiness::RequestFullAudit => {
                             if command.next_question.is_some() {
@@ -119,14 +122,15 @@ impl InMemoryPlanningCore {
                         )
                     })?;
                     state.required_model_action = None;
+                    let question_id = format!("qst_{}", Uuid::now_v7());
                     state.pending_question = Some(PendingQuestion {
-                        question_id: format!("qst_{}", state.revision + 1),
+                        question_id: question_id.clone(),
+                        created_event_seq: state.revision + 1,
+                        created_ordinal: 0,
                         based_on_revision: state.revision + 1,
                         proposal: question,
                     });
-                    effects.push(EventEffect::QuestionSet {
-                        question_id: format!("qst_{}", state.revision + 1),
-                    });
+                    effects.push(EventEffect::QuestionSet { question_id });
                 }
                 Ok(json!({"readiness": format!("{:?}", command.readiness)}))
             },

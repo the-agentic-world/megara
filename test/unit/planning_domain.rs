@@ -48,6 +48,7 @@ fn graph_rejects_dangling_wrong_duplicate_and_invalid_supersedes_edges() {
     let mut graph = EntityGraph::default();
     let requirement = EntityRecord {
         entity_id: "REQ-001".to_string(),
+        internal_uuid: "00000000-0000-7000-8000-000000000001".to_string(),
         revision: 1,
         kind: EntityKind::Requirement,
         body: EntityBody::Requirement {
@@ -66,6 +67,7 @@ fn graph_rejects_dangling_wrong_duplicate_and_invalid_supersedes_edges() {
     graph
         .insert(EntityRecord {
             entity_id: "AC-001".to_string(),
+            internal_uuid: "00000000-0000-7000-8000-000000000002".to_string(),
             revision: 1,
             kind: EntityKind::AcceptanceCriterion,
             body: EntityBody::AcceptanceCriterion {
@@ -172,6 +174,7 @@ fn entity_revision_must_exceed_history_even_after_stale_or_rejected_latest() {
                   disposition: EntityDisposition,
                   validity: EntityValidity| EntityRecord {
         entity_id: entity_id.to_string(),
+        internal_uuid: format!("00000000-0000-7000-8000-{revision:012}"),
         revision,
         kind: EntityKind::Fact,
         body: EntityBody::Fact {
@@ -255,6 +258,8 @@ fn derived_state_table_keeps_phase_waiting_blocker_approval_and_stale_orthogonal
     ];
     let pending = PendingQuestion {
         question_id: "qst_1".to_string(),
+        created_event_seq: 1,
+        created_ordinal: 0,
         based_on_revision: 1,
         proposal: QuestionProposal {
             context: "배경".to_string(),
@@ -272,6 +277,8 @@ fn derived_state_table_keeps_phase_waiting_blocker_approval_and_stale_orthogonal
     let model_action = ModelWorkItem {
         kind: ModelActionKind::DeltaAudit,
         work_item_id: "wrk_1".to_string(),
+        created_event_seq: 1,
+        created_ordinal: 0,
         session_id: "pln_1".to_string(),
         base_revision: 1,
         base_domain_revision: 1,
@@ -360,6 +367,8 @@ fn derived_state_table_keeps_phase_waiting_blocker_approval_and_stale_orthogonal
         "blk_1".to_string(),
         Blocker {
             blocker_id: "blk_1".to_string(),
+            created_event_seq: 1,
+            created_ordinal: 0,
             revision: 1,
             kind: BlockerKind::Contradiction,
             severity: BlockerSeverity::Blocking,

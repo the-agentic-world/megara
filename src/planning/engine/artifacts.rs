@@ -14,6 +14,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.spec.generate",
+            command_value(&command),
             |state, _effects| {
                 if state.phase != LifecyclePhase::Specification {
                     return Err(CoreError::InvalidPhase(
@@ -42,6 +43,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.spec.approve",
+            command_value(&command),
             |state, effects| {
                 if state.phase != LifecyclePhase::Specification {
                     return Err(CoreError::InvalidPhase(
@@ -98,6 +100,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.spec.revise",
+            command_value(&command),
             |state, effects| {
                 if !matches!(
                     state.phase,
@@ -150,6 +153,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.plan.generate",
+            command_value(&command),
             |state, _effects| {
                 if state.phase != LifecyclePhase::Planning {
                     return Err(CoreError::InvalidPhase(
@@ -182,6 +186,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.plan.approve",
+            command_value(&command),
             |state, effects| {
                 if state.phase != LifecyclePhase::Planning {
                     return Err(CoreError::InvalidPhase(
@@ -230,6 +235,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.plan.revise",
+            command_value(&command),
             |state, effects| {
                 if state.phase != LifecyclePhase::Planning {
                     return Err(CoreError::InvalidPhase(

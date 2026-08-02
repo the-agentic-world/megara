@@ -1,23 +1,63 @@
 {
   "schema": "megara.protocol-operations/v1",
   "result_schema": "megara.result/v1",
+  "request_envelope": {
+    "required": ["protocol_version", "request_id", "operation"],
+    "optional": ["command_id", "session_id", "expected_revision", "params"],
+    "forbidden": ["actor", "adapter", "phase", "approval"],
+    "types": {
+      "protocol_version": "integer",
+      "request_id": "string",
+      "operation": "string",
+      "command_id": "string",
+      "session_id": "string",
+      "expected_revision": "integer",
+      "params": "object"
+    }
+  },
+  "success_envelope": {
+    "required": ["protocol_version", "request_id", "ok", "replayed", "result", "observed"],
+    "optional": ["command_id", "session_id", "revision"],
+    "forbidden": ["error"],
+    "types": {
+      "protocol_version": "integer",
+      "request_id": "string",
+      "ok": "boolean",
+      "replayed": "boolean",
+      "command_id": "string|null",
+      "session_id": "string",
+      "revision": "integer",
+      "result": "object",
+      "observed": "object"
+    }
+  },
+  "observed": {
+    "required": ["projection_status", "evidence_current", "warnings"],
+    "optional": [],
+    "forbidden": ["state", "next_action", "approval"],
+    "types": {
+      "projection_status": "enum(written|unchanged|conflict|io_error)",
+      "evidence_current": "boolean|null",
+      "warnings": "array"
+    }
+  },
   "operations": [
-    {"operation":"planning.start","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","params.request"],"optional":["params.title"],"forbidden":["session_id","expected_revision","actor"]},"result":{"required":["operation","session_id","revision","next_action","projection_status"]}},
-    {"operation":"planning.answer","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.question_id","params.text"],"optional":["params.selected_choice_ids"],"forbidden":["actor","phase"]},"result":{"required":["operation","session_id","revision","next_action","projection_status"]}},
-    {"operation":"planning.status","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id"],"forbidden":["command_id","expected_revision","actor"]},"result":{"required":["operation","state","observed"]}},
-    {"operation":"planning.current","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id"],"forbidden":["command_id","expected_revision","actor"]},"result":{"required":["operation","state","observed"]}},
-    {"operation":"planning.list","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["params.phase"],"forbidden":["session_id","command_id","expected_revision","actor"]},"result":{"required":["operation","sessions","observed"]}},
-    {"operation":"planning.evidence.refresh","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.citations"],"optional":[],"forbidden":["actor","phase"]},"result":{"required":["operation","session_id","revision","next_action","projection_status"]}},
-    {"operation":"planning.audit.apply","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.mode","params.proposal"],"optional":[],"forbidden":["actor","phase","approval"]},"result":{"required":["operation","session_id","revision","next_action","projection_status"]}},
-    {"operation":"planning.spec.generate","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.proposal"],"optional":["params.projection_policy"],"forbidden":["actor","approval"]},"result":{"required":["operation","session_id","revision","candidate","projection_status"]}},
-    {"operation":"planning.spec.show","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id","params.candidate_id","params.format"],"forbidden":["command_id","expected_revision","actor"]},"result":{"required":["operation","candidate","observed"]}},
-    {"operation":"planning.spec.approve","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.semantic_hash","params.base_domain_revision"],"optional":[],"forbidden":["actor"]},"result":{"required":["operation","session_id","revision","approval","next_action","projection_status"]}},
-    {"operation":"planning.spec.revise","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.text"],"optional":[],"forbidden":["actor","approval"]},"result":{"required":["operation","session_id","revision","next_action","projection_status"]}},
-    {"operation":"planning.plan.generate","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.proposal"],"optional":["params.projection_policy"],"forbidden":["actor","approval"]},"result":{"required":["operation","session_id","revision","candidate","projection_status"]}},
-    {"operation":"planning.plan.show","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id","params.candidate_id","params.format"],"forbidden":["command_id","expected_revision","actor"]},"result":{"required":["operation","candidate","observed"]}},
-    {"operation":"planning.plan.approve","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.semantic_hash","params.base_plan_revision"],"optional":[],"forbidden":["actor"]},"result":{"required":["operation","session_id","revision","approval","next_action","projection_status"]}},
-    {"operation":"planning.plan.revise","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.text"],"optional":[],"forbidden":["actor","approval"]},"result":{"required":["operation","session_id","revision","next_action","projection_status"]}},
-    {"operation":"planning.export","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","params.out","params.format"],"optional":["session_id","params.include_transcript","params.force"],"forbidden":["expected_revision","actor"]},"result":{"required":["operation","path","format","included","projection_status"]}},
-    {"operation":"planning.purge","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.confirm"],"optional":[],"forbidden":["actor"]},"result":{"required":["operation","session_id","purged","cleanup_state","projection_status"]}}
+    {"operation":"planning.start","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","params.request"],"optional":["params.title"],"forbidden":["session_id","expected_revision"],"param_types":{"params.request":"string","params.title":"string"}},"result":{"required":["schema","operation","state","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","next_action":"object|null"}}},
+    {"operation":"planning.answer","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.question_id","params.text"],"optional":["params.selected_choice_ids"],"forbidden":[],"param_types":{"params.question_id":"string","params.text":"string","params.selected_choice_ids":"array"}},"result":{"required":["schema","operation","state","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","next_action":"object|null"}}},
+    {"operation":"planning.status","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id"],"forbidden":["command_id","expected_revision"],"param_types":{}},"result":{"required":["schema","operation","state"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object"}}},
+    {"operation":"planning.current","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id"],"forbidden":["command_id","expected_revision"],"param_types":{}},"result":{"required":["schema","operation","state"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object"}}},
+    {"operation":"planning.list","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["params.phase"],"forbidden":["session_id","command_id","expected_revision"],"param_types":{"params.phase":"string"}},"result":{"required":["schema","operation","sessions"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","sessions":"array"}}},
+    {"operation":"planning.evidence.refresh","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.citations"],"optional":[],"forbidden":[],"param_types":{"params.citations":"array"}},"result":{"required":["schema","operation","state","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","next_action":"object|null"}}},
+    {"operation":"planning.audit.apply","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.mode","params.proposal"],"optional":[],"forbidden":[],"param_types":{"params.mode":"string","params.proposal":"object"}},"result":{"required":["schema","operation","state","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","next_action":"object|null"}}},
+    {"operation":"planning.spec.generate","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.proposal"],"optional":["params.projection_policy"],"forbidden":[],"param_types":{"params.proposal":"object","params.projection_policy":"object"}},"result":{"required":["schema","operation","state","candidate","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","candidate":"object","next_action":"object|null"}}},
+    {"operation":"planning.spec.show","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id","params.candidate_id","params.format"],"forbidden":["command_id","expected_revision"],"param_types":{"params.candidate_id":"string","params.format":"string"}},"result":{"required":["schema","operation","candidate"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","candidate":"object|null"}}},
+    {"operation":"planning.spec.approve","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.semantic_hash","params.base_domain_revision"],"optional":[],"forbidden":[],"param_types":{"params.candidate_id":"string","params.semantic_hash":"string","params.base_domain_revision":"integer"}},"result":{"required":["schema","operation","state","approval","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","approval":"object","next_action":"object|null"}}},
+    {"operation":"planning.spec.revise","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.text"],"optional":[],"forbidden":[],"param_types":{"params.candidate_id":"string","params.text":"string"}},"result":{"required":["schema","operation","state","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","next_action":"object|null"}}},
+    {"operation":"planning.plan.generate","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.proposal"],"optional":["params.projection_policy"],"forbidden":[],"param_types":{"params.proposal":"object","params.projection_policy":"object"}},"result":{"required":["schema","operation","state","candidate","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","candidate":"object","next_action":"object|null"}}},
+    {"operation":"planning.plan.show","kind":"query","request":{"required":["protocol_version","request_id","operation"],"optional":["session_id","params.candidate_id","params.format"],"forbidden":["command_id","expected_revision"],"param_types":{"params.candidate_id":"string","params.format":"string"}},"result":{"required":["schema","operation","candidate"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","candidate":"object|null"}}},
+    {"operation":"planning.plan.approve","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.semantic_hash","params.base_plan_revision"],"optional":[],"forbidden":[],"param_types":{"params.candidate_id":"string","params.semantic_hash":"string","params.base_plan_revision":"integer"}},"result":{"required":["schema","operation","state","approval","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","approval":"object","next_action":"object|null"}}},
+    {"operation":"planning.plan.revise","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.candidate_id","params.text"],"optional":[],"forbidden":[],"param_types":{"params.candidate_id":"string","params.text":"string"}},"result":{"required":["schema","operation","state","next_action"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","state":"object","next_action":"object|null"}}},
+    {"operation":"planning.export","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","params.out","params.format"],"optional":["session_id","params.include_transcript","params.force"],"forbidden":["expected_revision"],"param_types":{"params.out":"string","params.format":"string","params.include_transcript":"boolean","params.force":"boolean"}},"result":{"required":["schema","operation","path","format","included"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","path":"string","format":"string","included":"array"}}},
+    {"operation":"planning.purge","kind":"mutation","request":{"required":["protocol_version","request_id","operation","command_id","session_id","expected_revision","params.confirm"],"optional":[],"forbidden":[],"param_types":{"params.confirm":"string"}},"result":{"required":["schema","operation","purged","cleanup_state"],"optional":[],"forbidden":[],"types":{"schema":"string","operation":"string","purged":"boolean","cleanup_state":"string"}}}
   ]
 }

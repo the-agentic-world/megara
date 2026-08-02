@@ -1,5 +1,7 @@
+use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use super::*;
 
@@ -17,19 +19,26 @@ impl InMemoryPlanningCore {
     }
 
     pub fn start(&mut self, command: StartCommand) -> Result<MutationResult, CoreError> {
-        if command.project_id.trim().is_empty() || command.request.trim().is_empty() {
+        if command.project_id.trim().is_empty()
+            || command.request.trim().is_empty()
+            || command
+                .title
+                .as_deref()
+                .is_some_and(|title| title.trim().is_empty())
+        {
             return Err(CoreError::InvalidRequest(
                 "project_id and request must not be blank".to_string(),
             ));
         }
         let session_id = command.session_id.unwrap_or_else(|| {
             self.next_session_number += 1;
-            format!("pln_{:04}", self.next_session_number)
+            format!("pln_{}", Uuid::now_v7())
         });
         if self.sessions.contains_key(&session_id) {
             return Err(CoreError::SessionExists(session_id));
         }
         let mut state = PlanningState::new(session_id.clone(), command.project_id, command.request);
+        state.title = command.title.clone();
         state.domain_revision = 1;
         state.required_model_action = Some(work_item(
             &state,
@@ -37,17 +46,25 @@ impl InMemoryPlanningCore {
             hash_text(&state.transcript.initial_request),
         ));
         state.revision = 1;
+        let event_command = StartCommand {
+            session_id: Some(session_id.clone()),
+            project_id: state.project_id.clone(),
+            request: state.transcript.initial_request.clone(),
+            title: state.title.clone(),
+        };
+        let effects = vec![EventEffect::ModelActionRequested {
+            kind: ModelActionKind::DeltaAudit,
+        }];
         let event = AggregateEvent {
+            schema: EVENT_SCHEMA_VERSION.to_string(),
             session_id: session_id.clone(),
             seq: 1,
             revision_after: 1,
             domain_revision_after: 1,
             plan_revision_after: 0,
             operation: "planning.start".to_string(),
-            primary: json!({"initial_request": state.transcript.initial_request}),
-            effects: vec![EventEffect::ModelActionRequested {
-                kind: ModelActionKind::DeltaAudit,
-            }],
+            primary: event_primary(command_value(&event_command)),
+            effects,
         };
         self.insert_started(state.clone(), event.clone())?;
         Ok(MutationResult { state, event })
@@ -58,6 +75,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.answer",
+            command_value(&command),
             |state, effects| {
                 if state.phase != LifecyclePhase::Interview {
                     return Err(CoreError::InvalidPhase(
@@ -80,13 +98,17 @@ impl InMemoryPlanningCore {
                 }
                 state.pending_question = None;
                 state.domain_revision += 1;
+                let answer_id = format!("ans_{}", Uuid::now_v7());
                 state.transcript.answers.push(AnswerRecord {
-                    answer_id: format!("ans_{}", state.revision + 1),
+                    answer_id: answer_id.clone(),
+                    created_event_seq: state.revision + 1,
+                    created_ordinal: 0,
                     question_id: command.question_id.clone(),
                     based_on_revision: command.based_on_revision,
                     text: command.text.clone(),
                     selected_choice_ids: command.selected_choice_ids.clone(),
                 });
+                effects.push(EventEffect::AnswerSubmitted { answer_id });
                 invalidate_artifacts(state, effects);
                 let next = work_item(state, ModelActionKind::DeltaAudit, hash_text(&command.text));
                 state.required_model_action = Some(next);
@@ -120,6 +142,7 @@ impl InMemoryPlanningCore {
             &command.session_id,
             command.expected_revision,
             "planning.evidence.refresh",
+            command_value(&command),
             |state, effects| {
                 state.repo_snapshot = Some(command.snapshot.clone());
                 state.domain_revision += 1;
@@ -168,6 +191,7 @@ impl InMemoryPlanningCore {
         session_id: &str,
         expected_revision: u64,
         operation: &str,
+        primary: Value,
         apply: F,
     ) -> Result<MutationResult, CoreError>
     where
@@ -186,7 +210,7 @@ impl InMemoryPlanningCore {
         }
         let mut next = current.clone();
         let mut effects = Vec::new();
-        let primary = apply(&mut next, &mut effects)?;
+        let _derived_primary = apply(&mut next, &mut effects)?;
         next.revision += 1;
         if next.domain_revision < current.domain_revision
             || next.domain_revision > current.domain_revision + 1
@@ -199,13 +223,14 @@ impl InMemoryPlanningCore {
         }
         next.assert_invariants().map_err(CoreError::Invariant)?;
         let event = AggregateEvent {
+            schema: EVENT_SCHEMA_VERSION.to_string(),
             session_id: session_id.to_string(),
             seq: next.revision,
             revision_after: next.revision,
             domain_revision_after: next.domain_revision,
             plan_revision_after: next.plan_revision,
             operation: operation.to_string(),
-            primary,
+            primary: event_primary(primary),
             effects,
         };
         self.sessions.insert(session_id.to_string(), next.clone());
@@ -244,6 +269,8 @@ pub(crate) fn work_item(
             state.plan_revision
         )
         .to_lowercase(),
+        created_event_seq: state.revision + 1,
+        created_ordinal: 0,
         session_id: state.session_id.clone(),
         base_revision: state.revision + 1,
         base_domain_revision: state.domain_revision,
@@ -257,6 +284,14 @@ pub(crate) fn work_item(
         )
         .then(QuestionAuthoring::v1),
     }
+}
+
+pub(crate) fn command_value<T: Serialize>(command: &T) -> Value {
+    serde_json::to_value(command).expect("planning command serialization is infallible")
+}
+
+fn event_primary(primary: Value) -> Value {
+    json!({"command": primary})
 }
 
 pub(crate) fn hash_text(text: &str) -> String {

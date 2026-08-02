@@ -9,6 +9,8 @@ use super::{entity::*, proposal::*};
 #[serde(deny_unknown_fields)]
 pub struct PendingQuestion {
     pub question_id: QuestionId,
+    pub created_event_seq: u64,
+    pub created_ordinal: u32,
     pub based_on_revision: u64,
     pub proposal: QuestionProposal,
 }
@@ -17,6 +19,8 @@ pub struct PendingQuestion {
 #[serde(deny_unknown_fields)]
 pub struct AnswerRecord {
     pub answer_id: String,
+    pub created_event_seq: u64,
+    pub created_ordinal: u32,
     pub question_id: QuestionId,
     pub based_on_revision: u64,
     pub text: String,
@@ -102,6 +106,8 @@ impl<T> Default for ArtifactTrack<T> {
 pub struct ModelWorkItem {
     pub kind: ModelActionKind,
     pub work_item_id: WorkItemId,
+    pub created_event_seq: u64,
+    pub created_ordinal: u32,
     pub session_id: SessionId,
     pub base_revision: u64,
     pub base_domain_revision: u64,
@@ -117,6 +123,7 @@ pub struct ModelWorkItem {
 pub struct PlanningState {
     pub session_id: SessionId,
     pub project_id: ProjectId,
+    pub title: Option<String>,
     pub revision: u64,
     pub domain_revision: u64,
     pub plan_revision: u64,
@@ -138,6 +145,7 @@ impl PlanningState {
         Self {
             session_id,
             project_id,
+            title: None,
             revision: 0,
             domain_revision: 0,
             plan_revision: 0,
@@ -249,7 +257,7 @@ impl PlanningState {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DerivedState {
     pub waiting_for_user: bool,
     pub waiting_for_model: bool,

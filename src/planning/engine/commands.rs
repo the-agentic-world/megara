@@ -1,12 +1,18 @@
 use super::super::domain::*;
-#[derive(Clone, Debug, Eq, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct StartCommand {
     pub session_id: Option<SessionId>,
     pub project_id: ProjectId,
     pub request: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnswerCommand {
     pub session_id: SessionId,
     pub expected_revision: u64,
@@ -16,27 +22,31 @@ pub struct AnswerCommand {
     pub selected_choice_ids: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EvidenceRefreshCommand {
     pub session_id: SessionId,
     pub expected_revision: u64,
     pub snapshot: RepoEvidenceSnapshot,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AuditMode {
     Delta,
     Full,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AuditReadiness {
     Continue,
     RequestFullAudit,
     Ready,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReadinessGate {
     pub problem: bool,
     pub outcome: bool,
@@ -67,7 +77,8 @@ impl ReadinessGate {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditCommand {
     pub session_id: SessionId,
     pub expected_revision: u64,
@@ -84,7 +95,8 @@ pub struct AuditCommand {
     pub counterexample_review_performed: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EntityOp {
     Create {
         temp_ref: String,
@@ -105,14 +117,21 @@ pub enum EntityOp {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum AuditEndpoint {
     TempRef(String),
     Entity(EntityRef),
     Source(SourceRef),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EdgeOp {
     pub kind: EdgeKind,
     pub from: AuditEndpoint,
@@ -120,7 +139,8 @@ pub struct EdgeOp {
     pub source_refs: Vec<SourceRef>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BlockerOp {
     Create {
         temp_ref: String,
@@ -137,21 +157,24 @@ pub enum BlockerOp {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpecCandidateCommand {
     pub session_id: SessionId,
     pub expected_revision: u64,
     pub candidate: SpecCandidate,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PlanCandidateCommand {
     pub session_id: SessionId,
     pub expected_revision: u64,
     pub candidate: PlanCandidate,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApprovalCommand {
     pub session_id: SessionId,
     pub expected_revision: u64,
@@ -160,7 +183,8 @@ pub struct ApprovalCommand {
     pub base_revision: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RevisionRequestCommand {
     pub session_id: SessionId,
     pub expected_revision: u64,
