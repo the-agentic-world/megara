@@ -866,7 +866,7 @@ git diff --check
 
 | Check ID | 상태 | 증거 | 영향 | 담당자 |
 | --- | --- | --- | --- | --- |
-| `MPC-EVD-008` | `PARTIAL: OPEN BLOCKING` | partial: FullAudit stale blocking PASS; Delta stale bypass PASS; spec generate/approve, plan generate/approve, export pending Slice4/5/final release | Slice4/5 및 final release의 executable operation matrix가 닫힐 때까지 최종 PASS 불가 | Slice4/5/final release |
+| `MPC-EVD-008` | `PASS` | `test/unit/planning_service_health.rs::stale_full_audit_checks_revision_before_evidence_or_proposal_shape`; `test/unit/planning_service_health.rs::delta_audit_remains_available_when_cited_file_is_missing`; `test/unit/planning_artifact_evidence.rs::stale_evidence_blocks_spec_and_plan_generate_and_approve_with_zero_delta`; `test/unit/planning_export.rs::bundle_stale_and_missing_approval_are_blocked_before_filesystem_write` — FullAudit stale block, Delta stale bypass, spec/plan generate+approve zero-delta stale matrix, approved bundle export stale block | 없음 | Slice4 |
 
 BLOCKING 또는 MANUAL 항목이 한 건이라도 있으면 최종 판정은 FAIL이다.
 
