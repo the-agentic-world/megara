@@ -41,6 +41,24 @@ fn generated_aliases(state: &PlanningState) -> BTreeMap<String, String> {
             ),
         );
     }
+    if let Some(candidate) = &state.spec.current_candidate {
+        aliases.insert(
+            candidate.candidate_id.clone(),
+            format!(
+                "SPEC_CANDIDATE@{}:{}",
+                candidate.created_event_seq, candidate.created_ordinal
+            ),
+        );
+    }
+    if let Some(candidate) = &state.plan.current_candidate {
+        aliases.insert(
+            candidate.candidate_id.clone(),
+            format!(
+                "PLAN_CANDIDATE@{}:{}",
+                candidate.created_event_seq, candidate.created_ordinal
+            ),
+        );
+    }
     for (map_id, blocker) in &state.blockers {
         let alias = format!(
             "BLOCKER@{}:{}",

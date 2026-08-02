@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use super::domain::*;
 
+#[path = "engine/artifact_validation.rs"]
+mod artifact_validation;
 #[path = "engine/artifacts.rs"]
 mod artifacts;
 #[path = "engine/audit.rs"]
@@ -38,6 +40,9 @@ pub struct InMemoryPlanningCore {
     pub(crate) next_session_number: u64,
 }
 
+pub(crate) use artifact_validation::{
+    spec_semantic_hash, validate_entity_refs, validate_plan_content,
+};
 pub(crate) use artifacts::{invalidate_artifacts, invalidate_evidence_entities};
 pub(crate) use audit_ops::apply_audit_ops;
 pub(crate) use core::command_value;
@@ -45,5 +50,7 @@ pub(crate) use evidence_ops::{evidence_changes, validate_snapshot};
 pub(crate) use readiness::{
     compute_readiness_gate, require_model_action, validate_audit_shape, validate_work_item,
 };
-pub(crate) use readiness_validation::{validate_counterexample_review, validate_question_proposal};
-pub(crate) use work_items::work_item;
+pub(crate) use readiness_validation::{
+    validate_counterexample_review, validate_question_proposal, validate_source_refs_exist,
+};
+pub(crate) use work_items::{plan_input_hash, work_item};

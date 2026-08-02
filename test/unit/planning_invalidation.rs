@@ -38,18 +38,55 @@ fn domain_invalidation_revokes_spec_and_plan_approval() {
 #[test]
 fn plan_only_invalidation_preserves_spec_approval() {
     let (mut core, approved_spec) = approved_spec_core();
+    let requirement = approved_spec.entities.current_requirements()[0];
+    let criterion = approved_spec.entities.current_acceptance_criteria()[0];
+    let content = serde_json::json!({
+        "baseline": {
+            "commands": ["cargo test"],
+            "known_failure_policy": "stop"
+        },
+        "steps": [{
+            "temp_ref": "step-1",
+            "objective": "검증 가능한 계획을 만든다.",
+            "requirement_refs": [{
+                "id": requirement.entity_id,
+                "revision": requirement.revision
+            }],
+            "depends_on": [],
+            "change_surface": ["src"],
+            "risks": [],
+            "rollback_or_recovery": "이전 상태로 복구한다."
+        }],
+        "verifications": [{
+            "temp_ref": "verify-1",
+            "acceptance_criterion_ref": {
+                "id": criterion.entity_id,
+                "revision": criterion.revision
+            },
+            "plan_step_refs": ["step-1"],
+            "method": "command",
+            "procedure": "cargo test",
+            "expected_result": "통과한다."
+        }],
+        "plan_risks": []
+    });
+    let plan_hash = crate::planning::canonical::canonical_hash(&content);
+    let plan_work = approved_spec.required_model_action.as_ref().unwrap();
+    let spec_approval = approved_spec.spec.approval.as_ref().unwrap();
     let generated_plan = core
         .generate_plan(PlanCandidateCommand {
             session_id: approved_spec.session_id.clone(),
             expected_revision: approved_spec.revision,
             candidate: PlanCandidate {
                 candidate_id: "cand_plan".to_string(),
+                created_event_seq: approved_spec.revision + 1,
+                created_ordinal: 0,
                 base_plan_revision: approved_spec.plan_revision,
-                plan_input_hash: "sha256:plan-input".to_string(),
-                semantic_hash: "sha256:plan".to_string(),
-                spec_candidate_id: "cand_spec".to_string(),
-                spec_semantic_hash: "sha256:spec".to_string(),
-                content: serde_json::json!({"steps": []}),
+                plan_input_hash: plan_work.input_hash.clone(),
+                semantic_hash: plan_hash,
+                spec_candidate_id: spec_approval.candidate_id.clone(),
+                spec_semantic_hash: spec_approval.semantic_hash.clone(),
+                content,
                 stale: false,
             },
         })

@@ -107,6 +107,8 @@ pub struct FullAuditRef {
 #[serde(deny_unknown_fields)]
 pub struct SpecCandidate {
     pub candidate_id: CandidateId,
+    pub created_event_seq: u64,
+    pub created_ordinal: u32,
     pub base_domain_revision: u64,
     pub audit_input_hash: String,
     pub semantic_hash: String,
@@ -119,6 +121,8 @@ pub struct SpecCandidate {
 #[serde(deny_unknown_fields)]
 pub struct PlanCandidate {
     pub candidate_id: CandidateId,
+    pub created_event_seq: u64,
+    pub created_ordinal: u32,
     pub base_plan_revision: u64,
     pub plan_input_hash: String,
     pub semantic_hash: String,

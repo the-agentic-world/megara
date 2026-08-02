@@ -16,6 +16,8 @@ pub struct ProjectIdentity {
     pub project_id: String,
 }
 
+#[path = "store/artifacts.rs"]
+mod artifacts;
 #[path = "store/command_cache.rs"]
 mod command_cache;
 #[path = "store/hash.rs"]

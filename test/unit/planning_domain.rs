@@ -307,6 +307,8 @@ fn derived_state_table_keeps_phase_waiting_blocker_approval_and_stale_orthogonal
 
     let candidate = SpecCandidate {
         candidate_id: "cand_spec".to_string(),
+        created_event_seq: 2,
+        created_ordinal: 0,
         base_domain_revision: 1,
         audit_input_hash: "sha256:audit".to_string(),
         semantic_hash: "sha256:spec".to_string(),
@@ -342,6 +344,8 @@ fn derived_state_table_keeps_phase_waiting_blocker_approval_and_stale_orthogonal
     plan_stale.phase = LifecyclePhase::Planning;
     plan_stale.plan.current_candidate = Some(PlanCandidate {
         candidate_id: "cand_plan".to_string(),
+        created_event_seq: 2,
+        created_ordinal: 0,
         base_plan_revision: 1,
         plan_input_hash: "sha256:plan-input".to_string(),
         semantic_hash: "sha256:plan".to_string(),

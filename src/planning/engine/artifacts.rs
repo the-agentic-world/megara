@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use serde_json::json;
@@ -23,9 +22,23 @@ impl InMemoryPlanningCore {
                 }
                 require_model_action(state, ModelActionKind::GenerateSpec)?;
                 let candidate = &command.candidate;
+                let audit = state
+                    .full_audit
+                    .as_ref()
+                    .ok_or(CoreError::ProposalBaseMismatch)?;
+                let expected_created_event_seq =
+                    state.revision.checked_add(1).ok_or_else(|| {
+                        CoreError::Invariant("candidate event sequence overflow".to_string())
+                    })?;
                 if candidate.base_domain_revision != state.domain_revision
+                    || candidate.created_event_seq != expected_created_event_seq
+                    || candidate.created_ordinal != 0
                     || candidate.semantic_hash.trim().is_empty()
                     || candidate.audit_input_hash.trim().is_empty()
+                    || audit.input_hash != candidate.audit_input_hash
+                    || audit.base_domain_revision != candidate.base_domain_revision
+                    || super::spec_semantic_hash(state, &candidate.content)
+                        != candidate.semantic_hash
                 {
                     return Err(CoreError::ProposalBaseMismatch);
                 }
@@ -65,9 +78,21 @@ impl InMemoryPlanningCore {
                 }
                 if candidate.semantic_hash != command.semantic_hash
                     || candidate.base_domain_revision != command.base_revision
+                    || super::spec_semantic_hash(state, &candidate.content)
+                        != candidate.semantic_hash
                 {
                     return Err(CoreError::ApprovalBindingMismatch);
                 }
+                let audit = state
+                    .full_audit
+                    .as_ref()
+                    .ok_or(CoreError::ApprovalBindingMismatch)?;
+                if audit.input_hash != candidate.audit_input_hash
+                    || audit.base_domain_revision != candidate.base_domain_revision
+                {
+                    return Err(CoreError::ApprovalBindingMismatch);
+                }
+                validate_entity_refs(state, &candidate.entity_refs)?;
                 state.spec.approval = Some(ApprovalRef {
                     candidate_id: command.candidate_id.clone(),
                     semantic_hash: command.semantic_hash.clone(),
@@ -159,14 +184,24 @@ impl InMemoryPlanningCore {
                     CoreError::InvalidPhase("approved spec is required".to_string())
                 })?;
                 let candidate = &command.candidate;
+                let expected_created_event_seq =
+                    state.revision.checked_add(1).ok_or_else(|| {
+                        CoreError::Invariant("candidate event sequence overflow".to_string())
+                    })?;
                 if candidate.spec_candidate_id != approved_spec.candidate_id
                     || candidate.spec_semantic_hash != approved_spec.semantic_hash
+                    || candidate.created_event_seq != expected_created_event_seq
+                    || candidate.created_ordinal != 0
                     || candidate.base_plan_revision != state.plan_revision
                     || candidate.plan_input_hash.trim().is_empty()
                     || candidate.semantic_hash.trim().is_empty()
+                    || candidate.plan_input_hash != super::plan_input_hash(state)
+                    || super::super::canonical::canonical_hash(&candidate.content)
+                        != candidate.semantic_hash
                 {
                     return Err(CoreError::ProposalBaseMismatch);
                 }
+                validate_plan_content(state, &candidate.content)?;
                 state.plan.current_candidate = Some(candidate.clone());
                 state.plan.approval = None;
                 state.required_model_action = None;
@@ -202,9 +237,17 @@ impl InMemoryPlanningCore {
                 }
                 if candidate.semantic_hash != command.semantic_hash
                     || candidate.base_plan_revision != command.base_revision
+                    || super::super::canonical::canonical_hash(&candidate.content)
+                        != candidate.semantic_hash
+                    || state.spec.approval.as_ref().is_none_or(|approval| {
+                        candidate.spec_candidate_id != approval.candidate_id
+                            || candidate.spec_semantic_hash != approval.semantic_hash
+                    })
+                    || candidate.plan_input_hash != super::plan_input_hash(state)
                 {
                     return Err(CoreError::ApprovalBindingMismatch);
                 }
+                validate_plan_content(state, &candidate.content)?;
                 state.plan.approval = Some(ApprovalRef {
                     candidate_id: command.candidate_id.clone(),
                     semantic_hash: command.semantic_hash.clone(),
@@ -267,31 +310,6 @@ impl InMemoryPlanningCore {
             },
         )
     }
-}
-fn validate_entity_refs(
-    state: &PlanningState,
-    refs: &[EntityRevisionRef],
-) -> Result<(), CoreError> {
-    let mut seen = BTreeMap::new();
-    for reference in refs {
-        if seen
-            .insert((&reference.id, reference.revision), true)
-            .is_some()
-            || state
-                .entities
-                .at_revision(&reference.id, reference.revision)
-                .is_none()
-            || state
-                .entities
-                .at_revision(&reference.id, reference.revision)
-                .is_none_or(|entity| !entity.is_current())
-        {
-            return Err(CoreError::ProposalSchemaInvalid(
-                "candidate references must be unique current entity revisions".to_string(),
-            ));
-        }
-    }
-    Ok(())
 }
 pub(crate) fn invalidate_artifacts(state: &mut PlanningState, effects: &mut Vec<EventEffect>) {
     state.full_audit = None;

@@ -1,3 +1,4 @@
+use crate::planning::canonical::canonical_hash;
 use crate::planning::{domain::*, engine::*};
 
 pub(crate) fn start_core() -> (InMemoryPlanningCore, PlanningState) {
@@ -126,6 +127,29 @@ pub(crate) fn required_entity_ops() -> (Vec<EntityOp>, Vec<EdgeOp>) {
 }
 
 pub(crate) fn generated_spec_core() -> (InMemoryPlanningCore, PlanningState) {
+    let (mut core, full) = full_audit_core();
+    let audit_input_hash = full.full_audit.as_ref().unwrap().input_hash.clone();
+    let generated = core
+        .generate_spec(SpecCandidateCommand {
+            session_id: full.session_id.clone(),
+            expected_revision: full.revision,
+            candidate: SpecCandidate {
+                candidate_id: "cand_spec".to_string(),
+                created_event_seq: full.revision + 1,
+                created_ordinal: 0,
+                base_domain_revision: full.domain_revision,
+                audit_input_hash,
+                semantic_hash: canonical_hash(&serde_json::json!({"title":"spec"})),
+                entity_refs: Vec::new(),
+                content: serde_json::json!({"title":"spec"}),
+                stale: false,
+            },
+        })
+        .unwrap();
+    (core, generated.state)
+}
+
+pub(crate) fn full_audit_core() -> (InMemoryPlanningCore, PlanningState) {
     let (mut core, state) = start_core();
     let evidence = core
         .refresh_evidence(EvidenceRefreshCommand {
@@ -175,32 +199,24 @@ pub(crate) fn generated_spec_core() -> (InMemoryPlanningCore, PlanningState) {
             counterexample_review: Some(CounterexampleReview::performed()),
         })
         .unwrap();
-    let generated = core
-        .generate_spec(SpecCandidateCommand {
-            session_id: state.session_id.clone(),
-            expected_revision: full.state.revision,
-            candidate: SpecCandidate {
-                candidate_id: "cand_spec".to_string(),
-                base_domain_revision: full.state.domain_revision,
-                audit_input_hash: full_work.input_hash,
-                semantic_hash: "sha256:spec".to_string(),
-                entity_refs: Vec::new(),
-                content: serde_json::json!({"title":"spec"}),
-                stale: false,
-            },
-        })
-        .unwrap();
-    (core, generated.state)
+    (core, full.state)
 }
 
 pub(crate) fn approved_spec_core() -> (InMemoryPlanningCore, PlanningState) {
     let (mut core, generated) = generated_spec_core();
+    let semantic_hash = generated
+        .spec
+        .current_candidate
+        .as_ref()
+        .unwrap()
+        .semantic_hash
+        .clone();
     let approved = core
         .approve_spec(ApprovalCommand {
             session_id: generated.session_id.clone(),
             expected_revision: generated.revision,
             candidate_id: "cand_spec".to_string(),
-            semantic_hash: "sha256:spec".to_string(),
+            semantic_hash,
             base_revision: generated.domain_revision,
         })
         .unwrap();
@@ -209,18 +225,60 @@ pub(crate) fn approved_spec_core() -> (InMemoryPlanningCore, PlanningState) {
 
 pub(crate) fn completed_core() -> (InMemoryPlanningCore, PlanningState) {
     let (mut core, approved) = approved_spec_core();
+    let plan_input_hash = approved
+        .required_model_action
+        .as_ref()
+        .unwrap()
+        .input_hash
+        .clone();
+    let spec_approval = approved.spec.approval.as_ref().unwrap();
+    let requirement = approved.entities.current_requirements()[0];
+    let criterion = approved.entities.current_acceptance_criteria()[0];
+    let content = serde_json::json!({
+        "baseline": {
+            "commands": ["cargo test"],
+            "known_failure_policy": "stop"
+        },
+        "steps": [{
+            "temp_ref": "step-1",
+            "objective": "검증 가능한 계획을 만든다.",
+            "requirement_refs": [{
+                "id": requirement.entity_id,
+                "revision": requirement.revision
+            }],
+            "depends_on": [],
+            "change_surface": ["src"],
+            "risks": [],
+            "rollback_or_recovery": "이전 상태로 복구한다."
+        }],
+        "verifications": [{
+            "temp_ref": "verify-1",
+            "acceptance_criterion_ref": {
+                "id": criterion.entity_id,
+                "revision": criterion.revision
+            },
+            "plan_step_refs": ["step-1"],
+            "method": "command",
+            "procedure": "cargo test",
+            "expected_result": "통과한다."
+        }],
+        "plan_risks": []
+    });
+    let plan_hash = canonical_hash(&content);
     let generated = core
         .generate_plan(PlanCandidateCommand {
             session_id: approved.session_id.clone(),
             expected_revision: approved.revision,
             candidate: PlanCandidate {
                 candidate_id: "cand_plan".to_string(),
+                created_event_seq: approved.revision + 1,
+                created_ordinal: 0,
                 base_plan_revision: approved.plan_revision,
-                plan_input_hash: "sha256:plan-input".to_string(),
-                semantic_hash: "sha256:plan".to_string(),
-                spec_candidate_id: "cand_spec".to_string(),
-                spec_semantic_hash: "sha256:spec".to_string(),
-                content: serde_json::json!({"steps": []}),
+                plan_input_hash,
+                semantic_hash: plan_hash.clone(),
+                spec_candidate_id: spec_approval.candidate_id.clone(),
+                spec_semantic_hash: spec_approval.semantic_hash.clone(),
+                content,
                 stale: false,
             },
         })
@@ -230,7 +288,7 @@ pub(crate) fn completed_core() -> (InMemoryPlanningCore, PlanningState) {
             session_id: generated.state.session_id.clone(),
             expected_revision: generated.state.revision,
             candidate_id: "cand_plan".to_string(),
-            semantic_hash: "sha256:plan".to_string(),
+            semantic_hash: plan_hash,
             base_revision: generated.state.plan_revision,
         })
         .unwrap();

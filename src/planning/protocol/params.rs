@@ -103,7 +103,14 @@ struct AuditApplyParams {
 #[serde(deny_unknown_fields)]
 struct CandidateGenerateParams {
     proposal: Map<String, Value>,
-    projection_policy: Option<Map<String, Value>>,
+    projection_policy: Option<ProjectionPolicy>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectionPolicy {
+    #[serde(default)]
+    force: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -154,7 +161,7 @@ struct ExportParams {
     force: bool,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum ExportFormat {
     Bundle,

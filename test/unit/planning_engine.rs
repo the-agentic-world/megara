@@ -176,6 +176,8 @@ fn source_rule_and_illegal_phase_failures_preserve_state() {
             expected_revision: before.revision,
             candidate: SpecCandidate {
                 candidate_id: "cand_invalid".to_string(),
+                created_event_seq: before.revision + 1,
+                created_ordinal: 0,
                 base_domain_revision: 0,
                 audit_input_hash: "sha256:none".to_string(),
                 semantic_hash: "sha256:none".to_string(),

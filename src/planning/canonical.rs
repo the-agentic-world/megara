@@ -83,6 +83,7 @@ fn is_set_array(key: Option<&str>) -> bool {
                 | "autonomous_scope"
                 | "requires_user_approval"
                 | "change_surface"
+                | "depends_on"
                 | "requirement_refs"
                 | "verification_refs"
                 | "dependencies"

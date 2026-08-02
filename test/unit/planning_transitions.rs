@@ -155,6 +155,8 @@ fn transition_matrix_lists_allowed_phases_and_rejects_each_illegal_phase_atomica
                         expected_revision: before.revision,
                         candidate: SpecCandidate {
                             candidate_id: "cand_spec".to_string(),
+                            created_event_seq: before.revision + 1,
+                            created_ordinal: 0,
                             base_domain_revision: before.domain_revision,
                             audit_input_hash: "sha256:audit".to_string(),
                             semantic_hash: "sha256:spec".to_string(),
@@ -179,6 +181,8 @@ fn transition_matrix_lists_allowed_phases_and_rejects_each_illegal_phase_atomica
                         expected_revision: before.revision,
                         candidate: PlanCandidate {
                             candidate_id: "cand_plan".to_string(),
+                            created_event_seq: before.revision + 1,
+                            created_ordinal: 0,
                             base_plan_revision: before.plan_revision,
                             plan_input_hash: "sha256:plan-input".to_string(),
                             semantic_hash: "sha256:plan".to_string(),
