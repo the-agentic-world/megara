@@ -114,6 +114,9 @@ mod pi;
 #[path = "../../src/planning.rs"]
 mod planning;
 mod planning_cli;
+mod planning_cli_aliases;
+mod planning_cli_artifact_support;
+mod planning_cli_artifacts;
 mod planning_cli_evidence;
 mod ultragoal;
 mod ultragoal_support;

@@ -20,7 +20,8 @@ mod writer;
 use anyhow::Result;
 use clap::Parser;
 use cli::{
-    Cli, Commands, DocsCommands, PiCommands, TargetCommands, TeamCommands, TemplateCommands,
+    Cli, Commands, DocsCommands, PiCommands, PlanningArgs, PlanningCommands, PlanningSessionArgs,
+    PlanningStartArgs, TargetCommands, TeamCommands, TemplateCommands,
 };
 use installer::{InstallAction, InstallOptions, Planner};
 use templates::TemplateRegistry;
@@ -31,6 +32,22 @@ fn main() -> Result<()> {
     let registry = TemplateRegistry::default();
 
     match cli.command {
+        Commands::Define(args) => cli::run_planning(PlanningArgs {
+            command: PlanningCommands::Start(PlanningStartArgs {
+                project: args.project,
+                request: args.request,
+                title: args.title,
+                command_id: args.command_id,
+                json: args.json,
+            }),
+        })?,
+        Commands::Plan(args) => cli::run_planning(PlanningArgs {
+            command: PlanningCommands::Current(PlanningSessionArgs {
+                project: args.project,
+                session: args.session,
+                json: args.json,
+            }),
+        })?,
         Commands::Install(args) => {
             let Some(args) = tui::prepare_install(args)? else {
                 return Ok(());

@@ -1,4 +1,6 @@
-use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+use clap::{Args, Parser, Subcommand};
 
 #[path = "cli/agents.rs"]
 mod agents;
@@ -37,7 +39,30 @@ pub use pi::{PiArgs, PiCommands, PiEventArgs};
 #[allow(unused_imports)]
 pub(crate) use planning::run as run_planning;
 #[allow(unused_imports)]
-pub use planning::{PlanningArgs, PlanningCommands};
+pub use planning::{PlanningArgs, PlanningCommands, PlanningSessionArgs, PlanningStartArgs};
+
+#[derive(Debug, Args)]
+pub struct DefineArgs {
+    pub request: String,
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+    #[arg(long)]
+    pub title: Option<String>,
+    #[arg(long)]
+    pub command_id: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PlanAliasArgs {
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+    #[arg(long)]
+    pub session: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
 pub use resolve::{resolve_scope, resolve_target};
 #[allow(unused_imports)]
 pub use team::{TeamArgs, TeamCommands, TeamSplitArgs, TeamTeammateArgs};
@@ -61,6 +86,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Start a deterministic planning session for a request.
+    Define(DefineArgs),
+    /// Show current planning state and next action.
+    Plan(PlanAliasArgs),
     /// Run the harness installer wizard.
     Install(InstallArgs),
     /// Reproject managed runtime files from the Megara SSOT.

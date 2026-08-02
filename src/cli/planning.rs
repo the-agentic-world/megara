@@ -12,14 +12,16 @@ use crate::planning::service::{protocol_error_response, store_error_response, Pl
 
 #[path = "planning_args.rs"]
 mod args;
+#[path = "planning_artifacts.rs"]
+mod artifacts;
 #[path = "planning_input.rs"]
 mod input;
 use args::{
     PlanningAnswerArgs, PlanningAuditApplyArgs, PlanningAuditCommands, PlanningEvidenceCommands,
-    PlanningEvidenceRefreshArgs, PlanningListArgs, PlanningPurgeArgs, PlanningRpcArgs,
-    PlanningSessionArgs, PlanningStartArgs,
+    PlanningEvidenceRefreshArgs, PlanningListArgs, PlanningPlanCommands, PlanningPurgeArgs,
+    PlanningRpcArgs, PlanningSpecCommands,
 };
-pub use args::{PlanningArgs, PlanningCommands};
+pub use args::{PlanningArgs, PlanningCommands, PlanningSessionArgs, PlanningStartArgs};
 use input::{read_json_input, read_text_input};
 
 pub fn run(args: PlanningArgs) -> Result<()> {
@@ -36,6 +38,19 @@ pub fn run(args: PlanningArgs) -> Result<()> {
         PlanningCommands::Audit { command } => match command {
             PlanningAuditCommands::Apply(args) => run_audit_apply(args),
         },
+        PlanningCommands::Spec { command } => match command {
+            PlanningSpecCommands::Generate(args) => artifacts::run_spec_generate(args),
+            PlanningSpecCommands::Show(args) => artifacts::run_spec_show(args),
+            PlanningSpecCommands::Approve(args) => artifacts::run_spec_approve(args),
+            PlanningSpecCommands::Revise(args) => artifacts::run_spec_revise(args),
+        },
+        PlanningCommands::Plan { command } => match command {
+            PlanningPlanCommands::Generate(args) => artifacts::run_plan_generate(args),
+            PlanningPlanCommands::Show(args) => artifacts::run_plan_show(args),
+            PlanningPlanCommands::Approve(args) => artifacts::run_plan_approve(args),
+            PlanningPlanCommands::Revise(args) => artifacts::run_plan_revise(args),
+        },
+        PlanningCommands::Export(args) => artifacts::run_export(args),
         PlanningCommands::Purge(args) => run_purge(args),
     }
 }
@@ -241,39 +256,39 @@ fn run_audit_apply(args: PlanningAuditApplyArgs) -> Result<()> {
     )
 }
 
-fn run_request(
+pub(super) fn run_request(
     project: &std::path::Path,
     request: LogicalRequest,
     user_entrypoint: bool,
     json_output: bool,
 ) -> Result<()> {
-    let request_id = request.request_id.clone();
-    let operation = request.operation.clone();
-    let response = match PlanningService::open_project(project) {
-        Ok(mut service) if user_entrypoint => service.handle_user_request(request),
-        Ok(mut service) => service.handle_request(request),
-        Err(error) => store_error_response(Some(&request_id), Some(&operation), error),
-    };
+    let response = request_response(project, request, user_entrypoint);
     finish_response(response, json_output)
 }
 
-fn finish_response(response: Value, json_output: bool) -> Result<()> {
+pub(super) fn request_response(
+    project: &std::path::Path,
+    request: LogicalRequest,
+    user_entrypoint: bool,
+) -> Value {
+    let request_id = request.request_id.clone();
+    let operation = request.operation.clone();
+    match PlanningService::open_project(project) {
+        Ok(mut service) if user_entrypoint => service.handle_user_request(request),
+        Ok(mut service) => service.handle_request(request),
+        Err(error) => store_error_response(Some(&request_id), Some(&operation), error),
+    }
+}
+
+pub(super) fn finish_response(response: Value, json_output: bool) -> Result<()> {
     let is_error = response.get("ok").and_then(Value::as_bool) == Some(false);
     if json_output || is_error {
         let line = serde_json::to_string(&response)?;
         let mut stdout = io::stdout().lock();
         writeln!(stdout, "{line}")?;
         stdout.flush()?;
-    } else if let Some(revision) = response.get("revision").and_then(Value::as_u64) {
-        let session = response
-            .get("session_id")
-            .and_then(Value::as_str)
-            .unwrap_or("session");
-        println!("{session} revision {revision}");
-    } else if let Some(sessions) = response["result"]["sessions"].as_array() {
-        println!("{} planning session(s)", sessions.len());
     } else {
-        println!("planning operation completed");
+        print_human_success(&response);
     }
     if is_error {
         let code = response["error"]["code"].as_str().unwrap_or_default();
@@ -289,7 +304,8 @@ fn finish_response(response: Value, json_output: bool) -> Result<()> {
             | "SESSION_PURGED"
             | "EVIDENCE_STALE"
             | "MODEL_ACTION_MISMATCH"
-            | "PROPOSAL_BASE_MISMATCH" => 3,
+            | "PROPOSAL_BASE_MISMATCH"
+            | "CANDIDATE_NOT_FOUND" => 3,
             "DB_BUSY"
             | "DB_CORRUPT"
             | "PROJECTION_DIVERGED"
@@ -303,6 +319,49 @@ fn finish_response(response: Value, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn new_id(prefix: &str) -> String {
+fn print_human_success(response: &Value) {
+    if let Some(next_action) = response["result"]["next_action"].as_object() {
+        match next_action.get("kind").and_then(Value::as_str) {
+            Some("model") => {
+                let work_item = &next_action["work_item"];
+                let kind = work_item["kind"].as_str().unwrap_or("unknown");
+                let work_item_id = work_item["work_item_id"].as_str().unwrap_or("unknown");
+                println!("next action: {kind}");
+                println!("work item: {work_item_id}");
+            }
+            Some("question") => {
+                let question_id = next_action["question"]["question_id"]
+                    .as_str()
+                    .unwrap_or("unknown");
+                println!("next action: question");
+                println!("question: {question_id}");
+            }
+            _ => println!("next action: unknown"),
+        }
+    } else if let Some(work_item) = response["result"]["state"]["required_model_action"].as_object()
+    {
+        let kind = work_item["kind"].as_str().unwrap_or("unknown");
+        let work_item_id = work_item["work_item_id"].as_str().unwrap_or("unknown");
+        println!("next action: {kind}");
+        println!("work item: {work_item_id}");
+    } else if let Some(question) = response["result"]["state"]["pending_question"].as_object() {
+        let question_id = question["question_id"].as_str().unwrap_or("unknown");
+        println!("next action: question");
+        println!("question: {question_id}");
+    } else if let Some(sessions) = response["result"]["sessions"].as_array() {
+        println!("{} planning session(s)", sessions.len());
+    } else {
+        println!("planning operation completed");
+    }
+    if let Some(revision) = response.get("revision").and_then(Value::as_u64) {
+        let session = response
+            .get("session_id")
+            .and_then(Value::as_str)
+            .unwrap_or("session");
+        println!("{session} revision {revision}");
+    }
+}
+
+pub(super) fn new_id(prefix: &str) -> String {
     format!("{prefix}_{}", Uuid::now_v7())
 }
