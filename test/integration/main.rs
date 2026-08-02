@@ -114,6 +114,7 @@ mod pi;
 #[path = "../../src/planning.rs"]
 mod planning;
 mod planning_cli;
+mod planning_cli_evidence;
 mod ultragoal;
 mod ultragoal_support;
 mod uninstall;

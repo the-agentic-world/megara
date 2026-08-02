@@ -262,8 +262,23 @@ impl PlanningStore {
         request_hash: &str,
         command: EvidenceRefreshCommand,
     ) -> Result<StoredOutcome, StoreError> {
+        self.refresh_evidence_with_context(
+            command_id,
+            request_hash,
+            command,
+            EventContext::default(),
+        )
+    }
+
+    pub(crate) fn refresh_evidence_with_context(
+        &mut self,
+        command_id: &str,
+        request_hash: &str,
+        command: EvidenceRefreshCommand,
+        context: EventContext,
+    ) -> Result<StoredOutcome, StoreError> {
         let session_id = command.session_id.clone();
-        self.execute(
+        self.execute_with_context(
             command_id,
             request_hash,
             &session_id,
@@ -271,6 +286,7 @@ impl PlanningStore {
                 EvidenceRefreshResult::Changed(result) => Ok(CoreOutcome::Changed(result)),
                 EvidenceRefreshResult::Unchanged { state } => Ok(CoreOutcome::Unchanged { state }),
             },
+            context,
         )
     }
 
@@ -280,10 +296,24 @@ impl PlanningStore {
         request_hash: &str,
         command: AuditCommand,
     ) -> Result<StoredOutcome, StoreError> {
+        self.apply_audit_with_context(command_id, request_hash, command, EventContext::default())
+    }
+
+    pub(crate) fn apply_audit_with_context(
+        &mut self,
+        command_id: &str,
+        request_hash: &str,
+        command: AuditCommand,
+        context: EventContext,
+    ) -> Result<StoredOutcome, StoreError> {
         let session_id = command.session_id.clone();
-        self.execute(command_id, request_hash, &session_id, move |core| {
-            core.apply_audit(command).map(CoreOutcome::Changed)
-        })
+        self.execute_with_context(
+            command_id,
+            request_hash,
+            &session_id,
+            move |core| core.apply_audit(command).map(CoreOutcome::Changed),
+            context,
+        )
     }
 
     pub fn generate_spec(

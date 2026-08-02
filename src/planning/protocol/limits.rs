@@ -25,13 +25,17 @@ pub fn decode_jsonl_frame(frame: &[u8]) -> Result<LogicalRequest, ProtocolError>
             "request must be a JSON object".to_string(),
         ));
     }
-    let mut operation_count = 0;
-    validate_wire_limits(&raw, 0, None, &mut operation_count)?;
+    validate_wire_value(&raw)?;
     validate_raw_wire_shape(raw.as_object().expect("request object checked above"))?;
     let request: LogicalRequest = serde_json::from_value(raw)
         .map_err(|error| ProtocolError::InvalidJson(error.to_string()))?;
     request.validate()?;
     Ok(request)
+}
+
+pub(crate) fn validate_wire_value(value: &Value) -> Result<(), ProtocolError> {
+    let mut operation_count = 0;
+    validate_wire_limits(value, 0, None, &mut operation_count)
 }
 
 pub fn encode_jsonl<T: Serialize>(value: &T) -> Result<String, ProtocolError> {
@@ -60,7 +64,7 @@ pub(crate) fn validate_wire_limits(
         Value::Array(values) => {
             if matches!(
                 key,
-                Some("entity_ops" | "edge_ops" | "blocker_ops" | "operations")
+                Some("entity_ops" | "edge_ops" | "blocker_ops" | "operations" | "citations")
             ) {
                 *operation_count = operation_count.saturating_add(values.len());
                 if *operation_count > 10_000 {

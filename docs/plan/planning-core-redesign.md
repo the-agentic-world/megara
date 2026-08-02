@@ -774,6 +774,8 @@ pub enum ModelActionKind {
     "initial_request": "...",
     "latest_answer": {},
     "current_entities": [],
+    "stale_entities": [],
+    "current_edges": [],
     "blockers": [],
     "repo_snapshot": {},
     "question_authoring": {
@@ -792,7 +794,7 @@ pub enum ModelActionKind {
 }
 ~~~
 
-work_item_id는 session, action kind, base revisions, input hash, schema version으로 계산한다.
+DeltaAudit context는 latest answer, current/stale entity revisions, current non-retired edges, blockers와 repo snapshot을 포함하고, FullAudit context는 ordered transcript 전체와 같은 graph/evidence context를 포함한다. `current_edges`는 stable edge ID 순서로 정렬하며 stale recovery가 필요한 entity와 validity causes를 숨기지 않는다. `input_hash`는 이 semantic context만 canonical hash한 값이고, `work_item_id`는 여기에 session, action kind, base revisions와 output schema/version을 별도로 결박한 session-bound identity다.
 
 question_authoring은 next_question을 만들 수 있는 DeltaAudit와 FullAudit work item에 필수다. rules는 위 ID와 순서를 고정하고 빈 문자열을 허용하지 않는다. version과 rules 전체는 input_hash에 포함하므로 계약이 바뀌면 기존 proposal을 적용할 수 없다. 이 배열이 모델에 전달되는 정적 prompt contract이며 adapter가 별도 문구로 치환하지 않는다.
 

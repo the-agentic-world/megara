@@ -92,7 +92,7 @@ pub struct AuditCommand {
     pub entity_ops: Vec<EntityOp>,
     pub edge_ops: Vec<EdgeOp>,
     pub blocker_ops: Vec<BlockerOp>,
-    pub counterexample_review_performed: bool,
+    pub counterexample_review: Option<CounterexampleReview>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -105,38 +105,40 @@ pub enum EntityOp {
     },
     Revise {
         entity_id: EntityId,
-        base_revision: u64,
+        base_entity_revision: u64,
         body: EntityBody,
         source_refs: Vec<SourceRef>,
     },
     Reject {
         entity_id: EntityId,
-        base_revision: u64,
+        base_entity_revision: u64,
         reason: String,
         source_refs: Vec<SourceRef>,
     },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum AuditEndpoint {
-    TempRef(String),
-    Entity(EntityRef),
+    TempRef { temp_ref: String },
+    Entity { entity_id: EntityId, revision: u64 },
     Source(SourceRef),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct EdgeOp {
-    pub kind: EdgeKind,
-    pub from: AuditEndpoint,
-    pub to: AuditEndpoint,
-    pub source_refs: Vec<SourceRef>,
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EdgeOp {
+    Add {
+        kind: EdgeKind,
+        from: AuditEndpoint,
+        to: AuditEndpoint,
+        source_refs: Vec<SourceRef>,
+    },
+    Retire {
+        edge_id: EdgeId,
+        base_edge_revision: u64,
+        reason: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -151,7 +153,7 @@ pub enum BlockerOp {
     },
     Resolve {
         blocker_id: BlockerId,
-        base_revision: u64,
+        base_blocker_revision: u64,
         resolution: String,
         source_refs: Vec<SourceRef>,
     },

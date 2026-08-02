@@ -1,0 +1,14 @@
+{
+  "schema": "megara.question-authoring-rubric-review/v1",
+  "rules": [
+    {"id":"audience","fixture":"gold-v1.json","decision":"yes","evidence":"초심자에게 구현 기술을 전제로 하지 않는 설명"},
+    {"id":"context","fixture":"gold-v1.json","decision":"yes","evidence":"배경과 지금 결정할 이유를 두 문장으로 설명"},
+    {"id":"one-decision","fixture":"gold-v1.json","decision":"yes","evidence":"근거 확인 여부 하나만 질문"},
+    {"id":"terms","fixture":"gold-v1.json","decision":"yes","evidence":"근거의 뜻과 이 문맥에서의 확인 역할을 설명"},
+    {"id":"choices","fixture":"gold-v1.json","decision":"yes","evidence":"두 선택지의 방향·장점·감수할 점이 서로 다름"},
+    {"id":"impact","fixture":"gold-v1.json","decision":"yes","evidence":"답에 따라 다음 검토 범위가 달라짐을 설명"},
+    {"id":"recommendation","fixture":"gold-v1.json","decision":"yes","evidence":"initial_request source와 연결된 추천 이유"},
+    {"id":"terms","fixture":"anti-jargon.json","decision":"no","evidence":"MPC-QST-015: 약어 확장만 있고 역할·영향 없음"},
+    {"id":"choices","fixture":"anti-label-repeat.json","decision":"no","evidence":"MPC-QST-004: duplicate choice ID와 반복 label"}
+  ]
+}

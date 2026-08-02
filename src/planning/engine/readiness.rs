@@ -22,6 +22,53 @@ pub(crate) fn validate_work_item(
     Ok(())
 }
 
+pub(crate) fn validate_audit_shape(command: &AuditCommand) -> Result<(), CoreError> {
+    let has_ops = !command.entity_ops.is_empty()
+        || !command.edge_ops.is_empty()
+        || !command.blocker_ops.is_empty();
+    match command.mode {
+        AuditMode::Delta => match command.readiness {
+            AuditReadiness::Ready => Err(CoreError::ProposalSchemaInvalid(
+                "delta audit cannot declare ready".to_string(),
+            )),
+            AuditReadiness::RequestFullAudit if command.next_question.is_some() => {
+                Err(CoreError::ProposalSchemaInvalid(
+                    "request_full_audit cannot include next_question".to_string(),
+                ))
+            }
+            AuditReadiness::Continue if command.next_question.is_none() => {
+                Err(CoreError::ProposalSchemaInvalid(
+                    "delta continue requires next_question".to_string(),
+                ))
+            }
+            _ => Ok(()),
+        },
+        AuditMode::Full => {
+            if command.readiness == AuditReadiness::RequestFullAudit {
+                return Err(CoreError::ProposalSchemaInvalid(
+                    "full audit cannot request another full audit".to_string(),
+                ));
+            }
+            if command.readiness == AuditReadiness::Ready
+                && (has_ops || command.next_question.is_some())
+            {
+                return Err(CoreError::ProposalSchemaInvalid(
+                    "full ready cannot include operations or next_question".to_string(),
+                ));
+            }
+            if command.readiness == AuditReadiness::Continue
+                && (has_ops != command.next_question.is_none())
+            {
+                return Err(CoreError::ProposalSchemaInvalid(
+                    "full continue question must be null exactly when operations are present"
+                        .to_string(),
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
 pub(crate) fn require_model_action(
     state: &PlanningState,
     expected: ModelActionKind,
@@ -39,7 +86,7 @@ pub(crate) fn require_model_action(
 pub(crate) fn compute_readiness_gate(
     state: &PlanningState,
     input_hash: &str,
-    counterexample_review_performed: bool,
+    counterexample_review: Option<&CounterexampleReview>,
 ) -> ReadinessGate {
     let requirements = state.entities.current_requirements();
     let acceptance_criteria = !requirements.is_empty()
@@ -73,6 +120,6 @@ pub(crate) fn compute_readiness_gate(
             .required_model_action
             .as_ref()
             .is_some_and(|work_item| work_item.input_hash == input_hash),
-        counterexample_review: counterexample_review_performed,
+        counterexample_review: counterexample_review.is_some_and(|review| review.performed),
     }
 }

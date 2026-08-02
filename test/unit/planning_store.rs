@@ -71,7 +71,7 @@ fn question_answer_entity_blocker_ids_survive_restart_replay_and_hash_normalizat
                 entity_ops: Vec::new(),
                 edge_ops: Vec::new(),
                 blocker_ops: Vec::new(),
-                counterexample_review_performed: false,
+                counterexample_review: None,
             },
         )
         .unwrap();
@@ -123,7 +123,7 @@ fn question_answer_entity_blocker_ids_survive_restart_replay_and_hash_normalizat
                     statement: "추가 근거가 필요하다.".to_string(),
                     source_refs,
                 }],
-                counterexample_review_performed: false,
+                counterexample_review: None,
             },
         )
         .unwrap();
@@ -355,6 +355,6 @@ fn recomputed_payload_hash_does_not_bypass_reducer_semantic_checks() {
 
 fn semantic_hash(payload: &serde_json::Value) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(crate::planning::store::canonical_json_bytes(payload));
+    hasher.update(crate::planning::canonical::canonical_json_bytes(payload));
     format!("sha256:{:x}", hasher.finalize())
 }

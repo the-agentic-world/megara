@@ -136,7 +136,7 @@ fn transition_matrix_lists_allowed_phases_and_rejects_each_illegal_phase_atomica
                         entity_ops: Vec::new(),
                         edge_ops: Vec::new(),
                         blocker_ops: Vec::new(),
-                        counterexample_review_performed: true,
+                        counterexample_review: Some(CounterexampleReview::performed()),
                     })
                     .map(|_| ()),
                 Operation::Answer => core

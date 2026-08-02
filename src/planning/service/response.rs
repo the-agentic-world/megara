@@ -1,7 +1,10 @@
 use serde_json::{json, Value};
 
 use super::super::domain::PlanningState;
-use super::super::protocol::{LogicalRequest, ProtocolError, PROTOCOL_VERSION, RESULT_SCHEMA};
+use super::super::protocol::state::project_state;
+use super::super::protocol::{
+    project_question, LogicalRequest, ProtocolError, PROTOCOL_VERSION, RESULT_SCHEMA,
+};
 use super::super::store::{StoreError, StoredOutcome};
 use super::error::ServiceError;
 
@@ -14,7 +17,7 @@ pub(crate) fn mutation_response(
     let mut result = serde_json::Map::new();
     result.insert("schema".to_string(), json!(RESULT_SCHEMA));
     result.insert("operation".to_string(), json!(request.operation));
-    result.insert("state".to_string(), json!(state));
+    result.insert("state".to_string(), project_state(&state));
     result.insert("next_action".to_string(), next_action(&state));
     if let Value::Object(fields) = extra {
         result.extend(fields);
@@ -28,11 +31,15 @@ pub(crate) fn mutation_response(
         "revision": state.revision,
         "replayed": outcome.replayed,
         "result": Value::Object(result),
-        "observed": observed(&state),
+        "observed": observed(&state, None),
     })
 }
 
-pub(crate) fn query_response(request: &LogicalRequest, state: PlanningState) -> Value {
+pub(crate) fn query_response_with_health(
+    request: &LogicalRequest,
+    state: PlanningState,
+    evidence_current: Option<bool>,
+) -> Value {
     json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": request.request_id,
@@ -43,15 +50,17 @@ pub(crate) fn query_response(request: &LogicalRequest, state: PlanningState) -> 
         "result": {
             "schema": RESULT_SCHEMA,
             "operation": request.operation,
-            "state": state,
+            "state": project_state(&state),
         },
-        "observed": observed(&state),
+        "observed": observed(&state, evidence_current),
     })
 }
 
 fn next_action(state: &PlanningState) -> Value {
     if let Some(question) = state.pending_question.as_ref() {
-        json!({"kind":"question", "question":question})
+        let projection = project_question(&question.proposal)
+            .expect("pending questions are validated before entering authoritative state");
+        json!({"kind":"question", "question":question, "projection":projection})
     } else if let Some(work_item) = state.required_model_action.as_ref() {
         json!({"kind":"model", "work_item":work_item})
     } else {
@@ -59,11 +68,12 @@ fn next_action(state: &PlanningState) -> Value {
     }
 }
 
-fn observed(state: &PlanningState) -> Value {
+fn observed(state: &PlanningState, evidence_current: Option<bool>) -> Value {
+    let evidence_current = evidence_current.unwrap_or(state.repo_snapshot.is_some());
     json!({
         "projection_status":"unchanged",
-        "evidence_current": state.repo_snapshot.is_some(),
-        "warnings": [],
+        "evidence_current": evidence_current,
+        "warnings": if !evidence_current && state.repo_snapshot.is_some() { json!(["EVIDENCE_STALE"]) } else { json!([]) },
     })
 }
 

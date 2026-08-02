@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::readiness_validation::*;
 use super::*;
@@ -18,6 +18,7 @@ pub(crate) fn apply_audit_ops(
 
     let event_seq = state.revision + 1;
     let mut temp_refs = BTreeMap::<String, EntityRef>::new();
+    let mut all_temp_refs = BTreeSet::new();
     let mut entity_ordinal = 0_u32;
     for operation in &command.entity_ops {
         match operation {
@@ -26,7 +27,7 @@ pub(crate) fn apply_audit_ops(
                 body,
                 source_refs,
             } => {
-                if temp_ref.trim().is_empty() || temp_refs.contains_key(temp_ref) {
+                if temp_ref.trim().is_empty() || !all_temp_refs.insert(temp_ref.clone()) {
                     return Err(CoreError::ProposalSchemaInvalid(
                         "entity temp_ref must be unique and non-empty".to_string(),
                     ));
@@ -34,6 +35,7 @@ pub(crate) fn apply_audit_ops(
                 let kind = body_kind(body);
                 validate_entity_body(body)?;
                 validate_entity_sources(state, kind, source_refs)?;
+                validate_fact_evidence_refs(state, body, source_refs)?;
                 let entity_id = next_entity_id(&state.entities, kind);
                 let internal_uuid = Uuid::now_v7().to_string();
                 let entity_ref = EntityRef {
@@ -65,7 +67,7 @@ pub(crate) fn apply_audit_ops(
             }
             EntityOp::Revise {
                 entity_id,
-                base_revision,
+                base_entity_revision,
                 body,
                 source_refs,
             } => {
@@ -85,20 +87,21 @@ pub(crate) fn apply_audit_ops(
                         "only the latest current entity revision can be revised".to_string(),
                     ));
                 }
-                if previous.revision != *base_revision || body_kind(body) != previous.kind {
+                if previous.revision != *base_entity_revision || body_kind(body) != previous.kind {
                     return Err(CoreError::ProposalBaseMismatch);
                 }
                 validate_entity_body(body)?;
                 validate_entity_sources(state, previous.kind, source_refs)?;
+                validate_fact_evidence_refs(state, body, source_refs)?;
                 if let Some(records) = state.entities.revisions.get_mut(entity_id) {
                     if let Some(previous) = records
                         .iter_mut()
-                        .find(|record| record.revision == *base_revision)
+                        .find(|record| record.revision == *base_entity_revision)
                     {
                         previous.disposition = EntityDisposition::Superseded;
                     }
                 }
-                let next_revision = base_revision + 1;
+                let next_revision = *base_entity_revision + 1;
                 let internal_uuid = Uuid::now_v7().to_string();
                 state
                     .entities
@@ -125,7 +128,7 @@ pub(crate) fn apply_audit_ops(
                     .add_edge(supersedes_edge(
                         entity_id,
                         next_revision,
-                        *base_revision,
+                        *base_entity_revision,
                         source_refs.clone(),
                         event_seq,
                     ))
@@ -137,7 +140,7 @@ pub(crate) fn apply_audit_ops(
             }
             EntityOp::Reject {
                 entity_id,
-                base_revision,
+                base_entity_revision,
                 reason,
                 source_refs,
             } => {
@@ -149,19 +152,19 @@ pub(crate) fn apply_audit_ops(
                 let current = state.entities.current(entity_id).cloned().ok_or_else(|| {
                     CoreError::ProposalSchemaInvalid("rejected entity must be current".to_string())
                 })?;
-                if current.revision != *base_revision {
+                if current.revision != *base_entity_revision {
                     return Err(CoreError::ProposalBaseMismatch);
                 }
                 validate_entity_sources(state, current.kind, source_refs)?;
                 if let Some(records) = state.entities.revisions.get_mut(entity_id) {
                     if let Some(previous) = records
                         .iter_mut()
-                        .find(|record| record.revision == *base_revision)
+                        .find(|record| record.revision == *base_entity_revision)
                     {
                         previous.disposition = EntityDisposition::Superseded;
                     }
                 }
-                let next_revision = base_revision + 1;
+                let next_revision = *base_entity_revision + 1;
                 let internal_uuid = Uuid::now_v7().to_string();
                 state
                     .entities
@@ -192,25 +195,67 @@ pub(crate) fn apply_audit_ops(
     }
 
     for (edge_ordinal, operation) in command.edge_ops.iter().enumerate() {
-        validate_source_refs_exist(state, &operation.source_refs)?;
-        let from = resolve_entity_endpoint(&operation.from, &temp_refs)?;
-        let to = match resolve_endpoint(&operation.to, &temp_refs)? {
-            AuditEndpoint::Entity(reference) => EdgeTarget::Entity(reference),
-            AuditEndpoint::Source(source) => EdgeTarget::Source(source),
-            AuditEndpoint::TempRef(_) => unreachable!(),
-        };
-        state
-            .entities
-            .add_edge(Edge {
-                edge_id: format!("edge_{event_seq}_{edge_ordinal}"),
-                revision: 1,
-                kind: operation.kind,
+        match operation {
+            EdgeOp::Add {
+                kind,
                 from,
                 to,
-                source_refs: operation.source_refs.clone(),
-                retired: false,
-            })
-            .map_err(CoreError::ProposalSchemaInvalid)?;
+                source_refs,
+            } => {
+                validate_source_refs_exist(state, source_refs)?;
+                let from = resolve_entity_endpoint(from, &temp_refs)?;
+                let to = match resolve_endpoint(to, &temp_refs)? {
+                    AuditEndpoint::Entity {
+                        entity_id,
+                        revision,
+                    } => EdgeTarget::Entity(EntityRef {
+                        id: entity_id,
+                        revision,
+                    }),
+                    AuditEndpoint::Source(source_ref) => {
+                        validate_source_refs_exist(state, std::slice::from_ref(&source_ref))?;
+                        EdgeTarget::Source(source_ref)
+                    }
+                    AuditEndpoint::TempRef { .. } => unreachable!(),
+                };
+                state
+                    .entities
+                    .add_edge(Edge {
+                        edge_id: format!("edge_{event_seq}_{edge_ordinal}"),
+                        revision: 1,
+                        kind: *kind,
+                        from,
+                        to,
+                        source_refs: source_refs.clone(),
+                        retired: false,
+                    })
+                    .map_err(CoreError::ProposalSchemaInvalid)?;
+            }
+            EdgeOp::Retire {
+                edge_id,
+                base_edge_revision,
+                reason,
+            } => {
+                if edge_id.trim().is_empty() || reason.trim().is_empty() {
+                    return Err(CoreError::ProposalSchemaInvalid(
+                        "edge retirement requires edge_id and reason".to_string(),
+                    ));
+                }
+                let edge = state
+                    .entities
+                    .edges
+                    .iter_mut()
+                    .find(|edge| edge.edge_id == *edge_id)
+                    .ok_or_else(|| {
+                        CoreError::ProposalSchemaInvalid("edge to retire was not found".to_string())
+                    })?;
+                if edge.retired || edge.revision != *base_edge_revision {
+                    return Err(CoreError::ProposalBaseMismatch);
+                }
+                edge.retired = true;
+                edge.revision += 1;
+            }
+        }
     }
 
     for (blocker_ordinal, operation) in command.blocker_ops.iter().enumerate() {
@@ -225,6 +270,7 @@ pub(crate) fn apply_audit_ops(
                 if temp_ref.trim().is_empty()
                     || statement.trim().is_empty()
                     || source_refs.is_empty()
+                    || !all_temp_refs.insert(temp_ref.clone())
                 {
                     return Err(CoreError::ProposalSchemaInvalid(
                         "blocker fields must not be blank".to_string(),
@@ -250,7 +296,7 @@ pub(crate) fn apply_audit_ops(
             }
             BlockerOp::Resolve {
                 blocker_id,
-                base_revision,
+                base_blocker_revision,
                 resolution,
                 source_refs,
             } => {
@@ -263,7 +309,9 @@ pub(crate) fn apply_audit_ops(
                 let blocker = state.blockers.get_mut(blocker_id).ok_or_else(|| {
                     CoreError::ProposalSchemaInvalid("blocker not found".to_string())
                 })?;
-                if blocker.revision != *base_revision || blocker.resolved_at_revision.is_some() {
+                if blocker.revision != *base_blocker_revision
+                    || blocker.resolved_at_revision.is_some()
+                {
                     return Err(CoreError::ProposalBaseMismatch);
                 }
                 blocker.revision += 1;

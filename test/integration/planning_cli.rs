@@ -44,8 +44,19 @@ fn snapshot(hash: &str) -> RepoEvidenceSnapshot {
     RepoEvidenceSnapshot {
         evidence_hash: hash.to_string(),
         head_oid: None,
+        head_ref: None,
+        dirty: false,
         status_hash: format!("{hash}-status"),
         cited_files_hash: format!("{hash}-files"),
+        evidence: vec![crate::planning::domain::EvidenceRecord {
+            evidence_id: "EVID-001".to_string(),
+            path: "src/main.rs".to_string(),
+            ranges: Vec::new(),
+            size: 1,
+            sha256: "sha256:evidence-file".to_string(),
+            tracked: true,
+            captured_at: "unix-nanos:1".to_string(),
+        }],
     }
 }
 
@@ -106,7 +117,7 @@ fn prepare_pending(project: &Path) -> (String, String, u64) {
                 entity_ops: Vec::new(),
                 edge_ops: Vec::new(),
                 blocker_ops: Vec::new(),
-                counterexample_review_performed: false,
+                counterexample_review: None,
             },
         )
         .unwrap();

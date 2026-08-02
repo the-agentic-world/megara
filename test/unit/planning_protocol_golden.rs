@@ -2,7 +2,6 @@ use crate::planning::protocol::{LogicalRequest, PROTOCOL_VERSION};
 use crate::planning::service::PlanningService;
 use crate::planning::{
     domain::{AnswerMode, QuestionProposal, SourceRef},
-    engine::{AuditCommand, AuditMode, AuditReadiness, EvidenceRefreshCommand},
     store::PlanningStore,
 };
 use serde_json::{json, Value};
@@ -90,53 +89,51 @@ fn protocol_fixture_is_complete_and_slice_two_responses_conform() {
     });
     assert_success_result(&fixture, &list);
 
-    let mut store = PlanningStore::open_project(directory.path()).unwrap();
-    let state = store.current(&session_id).unwrap();
-    store
-        .refresh_evidence(
-            "cmd-golden-evidence",
-            "sha256:golden-evidence",
-            EvidenceRefreshCommand {
-                session_id: session_id.clone(),
-                expected_revision: state.revision,
-                snapshot: crate::planning_store_support::snapshot("sha256:golden-evidence"),
-            },
-        )
-        .unwrap();
+    let evidence = service.handle_user_request(LogicalRequest {
+        protocol_version: PROTOCOL_VERSION,
+        request_id: "req-golden-evidence".to_string(),
+        operation: "planning.evidence.refresh".to_string(),
+        command_id: Some("cmd-golden-evidence".to_string()),
+        session_id: Some(session_id.clone()),
+        expected_revision: Some(1),
+        params: Some(json!({"citations":[]})),
+    });
+    assert_success_result(&fixture, &evidence);
+    let store = PlanningStore::open_project(directory.path()).unwrap();
     let state = store.current(&session_id).unwrap();
     let work_item = state.required_model_action.clone().unwrap();
-    store
-        .apply_audit(
-            "cmd-golden-audit",
-            "sha256:golden-audit",
-            AuditCommand {
-                session_id: session_id.clone(),
-                expected_revision: state.revision,
-                work_item_id: work_item.work_item_id,
-                mode: AuditMode::Delta,
-                base_revision: work_item.base_revision,
-                base_domain_revision: work_item.base_domain_revision,
-                input_hash: work_item.input_hash,
-                readiness: AuditReadiness::Continue,
-                next_question: Some(QuestionProposal {
-                    context: "배경".to_string(),
-                    question: "무엇을 원하시나요?".to_string(),
-                    why_it_matters: "답에 따라 계획이 달라집니다.".to_string(),
-                    technical_terms: Vec::new(),
-                    source_refs: vec![SourceRef::InitialRequest {
-                        id: "request".to_string(),
-                    }],
-                    answer: AnswerMode::Freeform {
-                        freeform_hint: "답을 적어 주세요.".to_string(),
-                    },
-                }),
-                entity_ops: Vec::new(),
-                edge_ops: Vec::new(),
-                blocker_ops: Vec::new(),
-                counterexample_review_performed: false,
-            },
-        )
-        .unwrap();
+    drop(store);
+    let proposal = QuestionProposal {
+        context: "배경".to_string(),
+        question: "무엇을 원하시나요?".to_string(),
+        why_it_matters: "답에 따라 계획이 달라집니다.".to_string(),
+        technical_terms: Vec::new(),
+        source_refs: vec![SourceRef::InitialRequest {
+            id: "request".to_string(),
+        }],
+        answer: AnswerMode::Freeform {
+            freeform_hint: "답을 적어 주세요.".to_string(),
+        },
+    };
+    let audit = service.handle_user_request(LogicalRequest {
+        protocol_version: PROTOCOL_VERSION,
+        request_id: "req-golden-audit".to_string(),
+        operation: "planning.audit.apply".to_string(),
+        command_id: Some("cmd-golden-audit".to_string()),
+        session_id: Some(session_id.clone()),
+        expected_revision: Some(2),
+        params: Some(json!({"mode":"delta","proposal":{
+            "schema":"megara.audit-proposal/v1","mode":"delta",
+            "work_item_id":work_item.work_item_id,
+            "base_revision":work_item.base_revision,
+            "base_domain_revision":work_item.base_domain_revision,
+            "input_hash":work_item.input_hash,
+            "readiness":"continue","next_question":proposal,
+            "entity_ops":[],"edge_ops":[],"blocker_ops":[],"counterexample_review":null
+        }})),
+    });
+    assert_success_result(&fixture, &audit);
+    let store = PlanningStore::open_project(directory.path()).unwrap();
     let pending = store
         .current(&session_id)
         .unwrap()
@@ -148,7 +145,7 @@ fn protocol_fixture_is_complete_and_slice_two_responses_conform() {
         operation: "planning.answer".to_string(),
         command_id: Some("cmd-golden-answer".to_string()),
         session_id: Some(session_id.clone()),
-        expected_revision: Some(pending.created_event_seq),
+        expected_revision: Some(pending.based_on_revision),
         params: Some(json!({"question_id":pending.question_id, "text":"답"})),
     });
     assert_success_result(&fixture, &answer);
@@ -216,6 +213,24 @@ fn implemented_request_descriptors_drive_required_forbidden_and_type_negative_ma
             session_id: None,
             expected_revision: None,
             params: Some(json!({"phase":"interview"})),
+        },
+        LogicalRequest {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "req-evidence".to_string(),
+            operation: "planning.evidence.refresh".to_string(),
+            command_id: Some("cmd-evidence".to_string()),
+            session_id: Some("pln-1".to_string()),
+            expected_revision: Some(1),
+            params: Some(json!({"citations":[]})),
+        },
+        LogicalRequest {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "req-audit".to_string(),
+            operation: "planning.audit.apply".to_string(),
+            command_id: Some("cmd-audit".to_string()),
+            session_id: Some("pln-1".to_string()),
+            expected_revision: Some(1),
+            params: Some(json!({"mode":"delta", "proposal":{}})),
         },
         LogicalRequest {
             protocol_version: PROTOCOL_VERSION,
@@ -306,27 +321,52 @@ fn assert_descriptor(descriptor: &Value, vocabulary: &[&str]) {
         assert!(descriptor[group].is_array(), "missing {group} descriptor");
     }
     let mut fields = std::collections::BTreeSet::new();
-    for group in ["required", "optional"] {
+    for group in ["required", "optional", "forbidden"] {
         for field in descriptor[group].as_array().unwrap() {
-            assert!(fields.insert(field.as_str().unwrap()), "duplicate field");
+            assert!(
+                fields.insert(field.as_str().unwrap()),
+                "duplicate or overlapping field: {field}"
+            );
         }
     }
-    let types = descriptor
+    let typed_fields = descriptor
         .get("types")
         .or_else(|| descriptor.get("param_types"))
         .unwrap()
         .as_object()
         .unwrap();
-    if descriptor.get("types").is_some() {
-        assert_eq!(fields.len(), types.len());
-    } else {
-        assert!(types.keys().all(|field| field.starts_with("params.")));
+    let described_fields = descriptor["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(descriptor["optional"].as_array().unwrap())
+        .map(|field| field.as_str().unwrap())
+        .filter(|field| {
+            descriptor
+                .get("param_types")
+                .is_none_or(|_| field.starts_with("params."))
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let typed_names = typed_fields
+        .keys()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(described_fields, typed_names, "descriptor types drift");
+    assert!(descriptor["forbidden"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|field| !typed_names.contains(field.as_str().unwrap())));
+    if descriptor.get("param_types").is_some() {
+        assert!(typed_fields
+            .keys()
+            .all(|field| field.starts_with("params.")));
     }
-    for field in types.keys() {
+    for field in typed_fields.keys() {
         assert!(
-            vocabulary.contains(&types[field].as_str().unwrap()),
+            vocabulary.contains(&typed_fields[field].as_str().unwrap()),
             "unknown type {} for {}",
-            types[field],
+            typed_fields[field],
             field
         );
     }

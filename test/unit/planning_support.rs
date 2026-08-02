@@ -17,8 +17,30 @@ pub(crate) fn snapshot(evidence_hash: &str) -> RepoEvidenceSnapshot {
     RepoEvidenceSnapshot {
         evidence_hash: evidence_hash.to_string(),
         head_oid: None,
+        head_ref: None,
+        dirty: false,
         status_hash: format!("{evidence_hash}-status"),
         cited_files_hash: format!("{evidence_hash}-files"),
+        evidence: vec![
+            EvidenceRecord {
+                evidence_id: "EVID-001".to_string(),
+                path: "src/lib.rs".to_string(),
+                ranges: Vec::new(),
+                size: 1,
+                sha256: "sha256:evidence-file-1".to_string(),
+                tracked: true,
+                captured_at: "unix-nanos:1".to_string(),
+            },
+            EvidenceRecord {
+                evidence_id: "EVID-002".to_string(),
+                path: "src/main.rs".to_string(),
+                ranges: Vec::new(),
+                size: 1,
+                sha256: "sha256:evidence-file-2".to_string(),
+                tracked: true,
+                captured_at: "unix-nanos:1".to_string(),
+            },
+        ],
     }
 }
 
@@ -90,10 +112,14 @@ pub(crate) fn required_entity_ops() -> (Vec<EntityOp>, Vec<EdgeOp>) {
             source_refs: source(),
         },
     ];
-    let edges = vec![EdgeOp {
+    let edges = vec![EdgeOp::Add {
         kind: EdgeKind::HasAcceptanceCriterion,
-        from: AuditEndpoint::TempRef("requirement".to_string()),
-        to: AuditEndpoint::TempRef("criterion".to_string()),
+        from: AuditEndpoint::TempRef {
+            temp_ref: "requirement".to_string(),
+        },
+        to: AuditEndpoint::TempRef {
+            temp_ref: "criterion".to_string(),
+        },
         source_refs: source(),
     }];
     (entities, edges)
@@ -128,7 +154,7 @@ pub(crate) fn generated_spec_core() -> (InMemoryPlanningCore, PlanningState) {
             entity_ops,
             edge_ops,
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     let full_work = audit.state.required_model_action.clone().unwrap();
@@ -146,7 +172,7 @@ pub(crate) fn generated_spec_core() -> (InMemoryPlanningCore, PlanningState) {
             entity_ops: Vec::new(),
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: true,
+            counterexample_review: Some(CounterexampleReview::performed()),
         })
         .unwrap();
     let generated = core

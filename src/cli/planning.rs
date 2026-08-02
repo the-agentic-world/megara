@@ -7,9 +7,14 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::planning::protocol::{
-    decode_jsonl_frame, LogicalRequest, ProtocolError, MAX_JSONL_FRAME_BYTES, PROTOCOL_VERSION,
+    decode_jsonl_frame, EvidenceCitationRequest, LogicalRequest, ProtocolError,
+    EVIDENCE_CITATIONS_SCHEMA, MAX_JSONL_FRAME_BYTES, PROTOCOL_VERSION,
 };
 use crate::planning::service::{protocol_error_response, store_error_response, PlanningService};
+
+#[path = "planning_input.rs"]
+mod input;
+use input::{read_json_input, read_text_input};
 
 #[derive(Debug, Args)]
 pub struct PlanningArgs {
@@ -26,6 +31,14 @@ pub enum PlanningCommands {
     Status(PlanningSessionArgs),
     Current(PlanningSessionArgs),
     List(PlanningListArgs),
+    Evidence {
+        #[command(subcommand)]
+        command: PlanningEvidenceCommands,
+    },
+    Audit {
+        #[command(subcommand)]
+        command: PlanningAuditCommands,
+    },
     Purge(PlanningPurgeArgs),
 }
 
@@ -131,6 +144,65 @@ pub struct PlanningPurgeArgs {
     pub json: bool,
 }
 
+#[derive(Debug, Args)]
+pub struct PlanningEvidenceRefreshArgs {
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+    #[arg(long)]
+    pub session: String,
+    #[arg(long)]
+    pub expected_revision: u64,
+    #[arg(long)]
+    pub citations: String,
+    #[arg(long)]
+    pub command_id: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum PlanningAuditModeArg {
+    Delta,
+    Full,
+}
+
+impl PlanningAuditModeArg {
+    fn as_wire(&self) -> &'static str {
+        match self {
+            Self::Delta => "delta",
+            Self::Full => "full",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct PlanningAuditApplyArgs {
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+    #[arg(long)]
+    pub session: String,
+    #[arg(long)]
+    pub expected_revision: u64,
+    #[arg(long)]
+    pub mode: PlanningAuditModeArg,
+    #[arg(long)]
+    pub proposal: String,
+    #[arg(long)]
+    pub command_id: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PlanningEvidenceCommands {
+    Refresh(PlanningEvidenceRefreshArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PlanningAuditCommands {
+    Apply(PlanningAuditApplyArgs),
+}
+
 pub fn run(args: PlanningArgs) -> Result<()> {
     match args.command {
         PlanningCommands::Rpc(args) => run_rpc(args),
@@ -139,6 +211,12 @@ pub fn run(args: PlanningArgs) -> Result<()> {
         PlanningCommands::Status(args) => run_session("planning.status", args),
         PlanningCommands::Current(args) => run_session("planning.current", args),
         PlanningCommands::List(args) => run_list(args),
+        PlanningCommands::Evidence { command } => match command {
+            PlanningEvidenceCommands::Refresh(args) => run_evidence_refresh(args),
+        },
+        PlanningCommands::Audit { command } => match command {
+            PlanningAuditCommands::Apply(args) => run_audit_apply(args),
+        },
         PlanningCommands::Purge(args) => run_purge(args),
     }
 }
@@ -176,21 +254,15 @@ fn run_start(args: PlanningStartArgs) -> Result<()> {
 
 fn run_answer(args: PlanningAnswerArgs) -> Result<()> {
     let text = if args.read_stdin {
-        let mut text = String::new();
-        io::stdin()
-            .take((64 * 1024 + 1) as u64)
-            .read_to_string(&mut text)?;
-        if text.len() > 64 * 1024 {
-            return finish_response(
-                protocol_error_response(
-                    None,
-                    Some("planning.answer"),
-                    ProtocolError::InvalidRequest("answer exceeds 64 KiB".to_string()),
-                ),
-                true,
-            );
+        match read_text_input("-", 64 * 1024) {
+            Ok(text) => text,
+            Err(error) => {
+                return finish_response(
+                    protocol_error_response(None, Some("planning.answer"), error),
+                    true,
+                )
+            }
         }
-        text
     } else if let Some(text) = args.text {
         text
     } else {
@@ -269,6 +341,87 @@ fn run_purge(args: PlanningPurgeArgs) -> Result<()> {
     )
 }
 
+fn run_evidence_refresh(args: PlanningEvidenceRefreshArgs) -> Result<()> {
+    let citation_request =
+        match read_json_input(&args.citations, MAX_JSONL_FRAME_BYTES).and_then(|value| {
+            serde_json::from_value::<EvidenceCitationRequest>(value).map_err(|error| {
+                ProtocolError::InvalidRequest(format!("evidence citations: {error}"))
+            })
+        }) {
+            Ok(request) => request,
+            Err(error) => {
+                return finish_response(
+                    protocol_error_response(None, Some("planning.evidence.refresh"), error),
+                    true,
+                )
+            }
+        };
+    if citation_request.schema != EVIDENCE_CITATIONS_SCHEMA
+        || citation_request.base_revision != args.expected_revision
+    {
+        return finish_response(
+            protocol_error_response(
+                None,
+                Some("planning.evidence.refresh"),
+                ProtocolError::InvalidRequest(
+                    "citation schema/base_revision does not match the command".to_string(),
+                ),
+            ),
+            true,
+        );
+    }
+    run_request(
+        &args.project,
+        LogicalRequest {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: new_id("req"),
+            operation: "planning.evidence.refresh".to_string(),
+            command_id: Some(args.command_id.unwrap_or_else(|| new_id("cmd"))),
+            session_id: Some(args.session),
+            expected_revision: Some(args.expected_revision),
+            params: Some(json!({"citations": citation_request.citations})),
+        },
+        true,
+        args.json,
+    )
+}
+
+fn run_audit_apply(args: PlanningAuditApplyArgs) -> Result<()> {
+    let proposal = match read_json_input(&args.proposal, MAX_JSONL_FRAME_BYTES) {
+        Ok(Value::Object(object)) => Value::Object(object),
+        Ok(_) => {
+            return finish_response(
+                protocol_error_response(
+                    None,
+                    Some("planning.audit.apply"),
+                    ProtocolError::InvalidRequest("proposal must be a JSON object".to_string()),
+                ),
+                true,
+            )
+        }
+        Err(error) => {
+            return finish_response(
+                protocol_error_response(None, Some("planning.audit.apply"), error),
+                true,
+            )
+        }
+    };
+    run_request(
+        &args.project,
+        LogicalRequest {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: new_id("req"),
+            operation: "planning.audit.apply".to_string(),
+            command_id: Some(args.command_id.unwrap_or_else(|| new_id("cmd"))),
+            session_id: Some(args.session),
+            expected_revision: Some(args.expected_revision),
+            params: Some(json!({"mode": args.mode.as_wire(), "proposal": proposal})),
+        },
+        true,
+        args.json,
+    )
+}
+
 fn run_request(
     project: &std::path::Path,
     request: LogicalRequest,
@@ -314,7 +467,10 @@ fn finish_response(response: Value, json_output: bool) -> Result<()> {
             | "COMMAND_ID_RETIRED"
             | "BLOCKERS_PRESENT"
             | "QUESTION_MISMATCH"
-            | "SESSION_PURGED" => 3,
+            | "SESSION_PURGED"
+            | "EVIDENCE_STALE"
+            | "MODEL_ACTION_MISMATCH"
+            | "PROPOSAL_BASE_MISMATCH" => 3,
             "DB_BUSY"
             | "DB_CORRUPT"
             | "PROJECTION_DIVERGED"

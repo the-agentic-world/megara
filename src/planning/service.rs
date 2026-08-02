@@ -2,18 +2,22 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::domain::{LifecyclePhase, PlanningState};
-use super::engine::{AnswerCommand, StartCommand};
-use super::protocol::{LogicalRequest, PROTOCOL_VERSION, RESULT_SCHEMA};
+use super::engine::{AnswerCommand, AuditMode, StartCommand};
+use super::evidence::{capture_snapshot_with_previous, snapshot_is_current, EvidenceCitation};
+use super::protocol::{state::project_state, LogicalRequest, PROTOCOL_VERSION, RESULT_SCHEMA};
 use super::store::{EventActor, EventAdapter, EventContext, PlanningStore, StoreError};
 
+#[path = "service/audit_wire.rs"]
+mod audit_wire;
 #[path = "service/error.rs"]
 mod error;
 #[path = "service/response.rs"]
 mod response;
 
+use audit_wire::AuditApplyParams;
 use error::ServiceError;
 pub(crate) use response::{error_response, protocol_error_response, store_error_response};
-use response::{mutation_response, observed_list, query_response};
+use response::{mutation_response, observed_list};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceAuthority {
@@ -66,6 +70,12 @@ struct PurgeParams {
     confirm: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceRefreshParams {
+    citations: Vec<EvidenceCitation>,
+}
+
 pub struct PlanningService {
     store: PlanningStore,
 }
@@ -93,9 +103,37 @@ impl PlanningService {
         let request_id = request.request_id.clone();
         let operation = request.operation.clone();
         match self.dispatch(request, authority) {
-            Ok(response) => response,
+            Ok(mut response) => {
+                self.refresh_observed(&mut response);
+                response
+            }
             Err(error) => error_response(Some(&request_id), Some(&operation), error),
         }
+    }
+
+    fn refresh_observed(&self, response: &mut Value) {
+        if response.get("ok").and_then(Value::as_bool) != Some(true) {
+            return;
+        }
+        let Some(session_id) = response.get("session_id").and_then(Value::as_str) else {
+            return;
+        };
+        let current = match self.store.current(session_id) {
+            Ok(state) => state,
+            Err(_) => return,
+        };
+        let health = current
+            .repo_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot_is_current(self.store.project_root(), snapshot));
+        let (evidence_current, warnings) = match health {
+            None => (false, json!([])),
+            Some(Ok(true)) => (true, json!([])),
+            Some(Ok(false)) => (false, json!(["EVIDENCE_STALE"])),
+            Some(Err(_)) => (false, json!(["EVIDENCE_HEALTH_IO"])),
+        };
+        response["observed"]["evidence_current"] = json!(evidence_current);
+        response["observed"]["warnings"] = warnings;
     }
 
     fn dispatch(
@@ -109,6 +147,8 @@ impl PlanningService {
             "planning.answer" => self.answer(request, authority),
             "planning.status" | "planning.current" => self.status(request),
             "planning.list" => self.list(request),
+            "planning.evidence.refresh" => self.refresh_evidence(request, authority),
+            "planning.audit.apply" => self.apply_audit(request, authority),
             "planning.purge" if authority == ServiceAuthority::UserCli => self.purge(request),
             "planning.purge" => Err(ServiceError::with_code(
                 "USER_ENTRYPOINT_REQUIRED",
@@ -189,12 +229,129 @@ impl PlanningService {
 
     fn status(&self, request: LogicalRequest) -> Result<Value, ServiceError> {
         let state = self.read_session(request.session_id.as_deref())?;
-        Ok(query_response(&request, state))
+        Ok(response::query_response_with_health(&request, state, None))
+    }
+
+    fn refresh_evidence(
+        &mut self,
+        request: LogicalRequest,
+        authority: ServiceAuthority,
+    ) -> Result<Value, ServiceError> {
+        let session_id = required_session(&request)?;
+        let params = decode_params::<EvidenceRefreshParams>(&request)?;
+        let request_hash = request
+            .canonical_request_hash(self.store.project_id())
+            .map_err(ServiceError::protocol)?;
+        if let Some(outcome) = self.store.cached_command(
+            request.command_id.as_deref().unwrap_or_default(),
+            &request_hash,
+        )? {
+            return Ok(mutation_response(&request, outcome, json!({})));
+        }
+        let current = self.store.current(session_id)?;
+        if current.revision != request.expected_revision.unwrap_or_default() {
+            return Err(ServiceError::revision_conflict(
+                request.expected_revision.unwrap_or_default(),
+                current.revision,
+            ));
+        }
+        let snapshot = capture_snapshot_with_previous(
+            self.store.project_root(),
+            &params.citations,
+            current.repo_snapshot.as_ref(),
+        )
+        .map_err(ServiceError::evidence)?;
+        let outcome = self.store.refresh_evidence_with_context(
+            request.command_id.as_deref().unwrap_or_default(),
+            &request_hash,
+            super::engine::EvidenceRefreshCommand {
+                session_id: session_id.to_string(),
+                expected_revision: request.expected_revision.unwrap_or_default(),
+                snapshot,
+            },
+            authority.event_context(&request.request_id),
+        )?;
+        Ok(mutation_response(&request, outcome, json!({})))
+    }
+
+    fn apply_audit(
+        &mut self,
+        request: LogicalRequest,
+        authority: ServiceAuthority,
+    ) -> Result<Value, ServiceError> {
+        let session_id = required_session(&request)?;
+        let request_hash = request
+            .canonical_request_hash(self.store.project_id())
+            .map_err(ServiceError::protocol)?;
+        if let Some(outcome) = self.store.cached_command(
+            request.command_id.as_deref().unwrap_or_default(),
+            &request_hash,
+        )? {
+            return Ok(mutation_response(&request, outcome, json!({})));
+        }
+        let current = self.store.current(session_id)?;
+        if current.revision != request.expected_revision.unwrap_or_default() {
+            return Err(ServiceError::revision_conflict(
+                request.expected_revision.unwrap_or_default(),
+                current.revision,
+            ));
+        }
+        if current.phase != LifecyclePhase::Interview {
+            return Err(ServiceError::with_code(
+                "INVALID_PHASE",
+                "audit apply requires Interview",
+            ));
+        }
+        let mode = request
+            .params
+            .as_ref()
+            .and_then(|params| params.get("mode"))
+            .cloned()
+            .map(|mode| {
+                serde_json::from_value::<AuditMode>(mode)
+                    .map_err(|error| ServiceError::proposal_schema(error.to_string()))
+            })
+            .transpose()?
+            .ok_or_else(|| ServiceError::proposal_schema("audit mode is required"))?;
+        if mode == AuditMode::Full {
+            let evidence_current = current
+                .repo_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot_is_current(self.store.project_root(), snapshot))
+                .transpose()
+                .map_err(ServiceError::evidence)?;
+            if evidence_current != Some(true) {
+                return Err(ServiceError::with_code(
+                    "EVIDENCE_STALE",
+                    "full audit requires current repository evidence",
+                ));
+            }
+        }
+        let params = decode_audit_params(&request)?;
+        params.proposal.validate_binding(&current, params.mode)?;
+        let command = params.proposal.into_command(
+            session_id,
+            request.expected_revision.unwrap_or_default(),
+            params.mode,
+            &current,
+        )?;
+        let outcome = self.store.apply_audit_with_context(
+            request.command_id.as_deref().unwrap_or_default(),
+            &request_hash,
+            command,
+            authority.event_context(&request.request_id),
+        )?;
+        Ok(mutation_response(&request, outcome, json!({})))
     }
 
     fn list(&self, request: LogicalRequest) -> Result<Value, ServiceError> {
         let params = decode_params_or_default::<ListParams>(&request)?;
-        let sessions = self.store.list(params.phase)?;
+        let sessions = self
+            .store
+            .list(params.phase)?
+            .iter()
+            .map(project_state)
+            .collect::<Vec<_>>();
         Ok(json!({
             "protocol_version": PROTOCOL_VERSION,
             "request_id": request.request_id,
@@ -258,6 +415,16 @@ impl PlanningService {
             _ => Err(ServiceError::session_ambiguous()),
         }
     }
+}
+
+fn decode_audit_params(request: &LogicalRequest) -> Result<AuditApplyParams, ServiceError> {
+    serde_json::from_value(
+        request
+            .params
+            .clone()
+            .ok_or_else(|| ServiceError::proposal_schema("audit params are required"))?,
+    )
+    .map_err(|error| ServiceError::proposal_schema(error.to_string()))
 }
 
 fn decode_params<T: for<'de> Deserialize<'de>>(

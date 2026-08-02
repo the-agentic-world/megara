@@ -34,13 +34,65 @@ pub struct TranscriptIndex {
     pub answers: Vec<AnswerRecord>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceRange {
+    pub start_line: u64,
+    pub end_line: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceRecord {
+    pub evidence_id: String,
+    pub path: String,
+    pub ranges: Vec<EvidenceRange>,
+    pub size: u64,
+    pub sha256: String,
+    pub tracked: bool,
+    pub captured_at: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RepoEvidenceSnapshot {
     pub evidence_hash: String,
     pub head_oid: Option<String>,
+    pub head_ref: Option<String>,
+    pub dirty: bool,
     pub status_hash: String,
     pub cited_files_hash: String,
+    pub evidence: Vec<EvidenceRecord>,
+}
+
+impl RepoEvidenceSnapshot {
+    pub fn has_evidence(&self, evidence_id: &str) -> bool {
+        self.evidence
+            .iter()
+            .any(|record| record.evidence_id == evidence_id)
+    }
+
+    pub fn semantic_eq(&self, other: &Self) -> bool {
+        self.evidence_hash == other.evidence_hash
+            && self.head_oid == other.head_oid
+            && self.head_ref == other.head_ref
+            && self.dirty == other.dirty
+            && self.status_hash == other.status_hash
+            && self.cited_files_hash == other.cited_files_hash
+            && self
+                .evidence
+                .iter()
+                .zip(&other.evidence)
+                .all(|(left, right)| {
+                    left.evidence_id == right.evidence_id
+                        && left.path == right.path
+                        && left.ranges == right.ranges
+                        && left.size == right.size
+                        && left.sha256 == right.sha256
+                        && left.tracked == right.tracked
+                })
+            && self.evidence.len() == other.evidence.len()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -48,7 +100,7 @@ pub struct RepoEvidenceSnapshot {
 pub struct FullAuditRef {
     pub input_hash: String,
     pub base_domain_revision: u64,
-    pub counterexample_review_performed: bool,
+    pub counterexample_review: CounterexampleReview,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -115,7 +167,6 @@ pub struct ModelWorkItem {
     pub input_hash: String,
     pub output_schema: String,
     pub context: Value,
-    pub question_authoring: Option<QuestionAuthoring>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use super::super::engine::CoreError;
+use super::super::evidence::EvidenceError;
 use super::super::protocol::ProtocolError;
 use super::super::store::StoreError;
 
@@ -26,6 +27,10 @@ impl ServiceError {
         Self::with_code("INVALID_REQUEST", message)
     }
 
+    pub(crate) fn proposal_schema(message: impl Into<String>) -> Self {
+        Self::with_code("PROPOSAL_SCHEMA_INVALID", message)
+    }
+
     pub(crate) fn session_ambiguous() -> Self {
         Self::with_code("SESSION_AMBIGUOUS", "a session must be selected explicitly")
     }
@@ -41,8 +46,31 @@ impl ServiceError {
             ProtocolError::InvalidUtf8 => ("INVALID_REQUEST", "request is not UTF-8".into()),
             ProtocolError::InvalidJson(message) => ("INVALID_REQUEST", message),
             ProtocolError::InvalidRequest(message) => ("INVALID_REQUEST", message),
+            ProtocolError::Io(message) => ("IO_ERROR", message),
         };
         Self::with_code(code, message)
+    }
+
+    pub(crate) fn revision_conflict(expected: u64, actual: u64) -> Self {
+        Self {
+            code: "REVISION_CONFLICT",
+            message: format!("expected revision {expected}, current revision is {actual}"),
+            details: json!({"expected_revision":expected, "actual_revision":actual}),
+            retryable: false,
+        }
+    }
+
+    pub(crate) fn evidence(error: EvidenceError) -> Self {
+        let code = match error {
+            EvidenceError::Git(_) | EvidenceError::Io(_) => "IO_ERROR",
+            EvidenceError::InvalidRequest(_)
+            | EvidenceError::PathOutsideRoot(_)
+            | EvidenceError::SensitivePath(_)
+            | EvidenceError::IgnoredPath(_)
+            | EvidenceError::MissingFile(_)
+            | EvidenceError::InvalidRange(_) => "INVALID_REQUEST",
+        };
+        Self::with_code(code, error.to_string())
     }
 }
 

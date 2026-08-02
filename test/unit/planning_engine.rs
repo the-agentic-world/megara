@@ -42,7 +42,7 @@ fn stale_answer_has_no_event_or_state_change() {
         entity_ops: Vec::new(),
         edge_ops: Vec::new(),
         blocker_ops: Vec::new(),
-        counterexample_review_performed: false,
+        counterexample_review: None,
     };
     let result = core.apply_audit(audit).unwrap();
     let before = result.state.clone();
@@ -80,7 +80,7 @@ fn pending_question_and_model_action_never_coexist() {
             entity_ops: Vec::new(),
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     assert!(result.state.pending_question.is_some());
@@ -106,7 +106,7 @@ fn core_does_not_enter_specification_from_self_attested_empty_gate() {
             entity_ops: Vec::new(),
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     let before = requested.state.clone();
@@ -126,7 +126,7 @@ fn core_does_not_enter_specification_from_self_attested_empty_gate() {
             entity_ops: Vec::new(),
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: true,
+            counterexample_review: Some(CounterexampleReview::performed()),
         })
         .unwrap_err();
     assert!(matches!(error, CoreError::ProposalSchemaInvalid(_)));
@@ -163,7 +163,7 @@ fn source_rule_and_illegal_phase_failures_preserve_state() {
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap_err();
     assert!(matches!(error, CoreError::InvalidRequest(_)));
@@ -217,7 +217,7 @@ fn requirement_cannot_use_historical_decision_source() {
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     let full_work = created.state.required_model_action.unwrap();
@@ -234,7 +234,7 @@ fn requirement_cannot_use_historical_decision_source() {
             next_question: None,
             entity_ops: vec![EntityOp::Revise {
                 entity_id: "DEC-001".to_string(),
-                base_revision: 1,
+                base_entity_revision: 1,
                 body: EntityBody::Decision {
                     statement: "결정을 다시 기록한다.".to_string(),
                     selected_option: "새 선택".to_string(),
@@ -245,7 +245,7 @@ fn requirement_cannot_use_historical_decision_source() {
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: true,
+            counterexample_review: Some(CounterexampleReview::performed()),
         })
         .unwrap();
     let delta_work = revised.state.required_model_action.clone().unwrap();
@@ -275,7 +275,7 @@ fn requirement_cannot_use_historical_decision_source() {
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap_err();
     assert!(matches!(error, CoreError::InvalidRequest(_)));

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use super::limits::validate_wire_limits;
+use super::limits::validate_wire_value;
 use super::params::normalize_typed_params;
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -43,6 +43,7 @@ pub enum ProtocolError {
     FrameTooLarge,
     InvalidUtf8,
     InvalidJson(String),
+    Io(String),
 }
 
 impl fmt::Display for ProtocolError {
@@ -56,6 +57,7 @@ impl fmt::Display for ProtocolError {
             Self::FrameTooLarge => write!(f, "JSONL frame exceeds 4 MiB"),
             Self::InvalidUtf8 => write!(f, "request is not UTF-8"),
             Self::InvalidJson(message) => write!(f, "invalid JSON: {message}"),
+            Self::Io(message) => write!(f, "I/O error: {message}"),
         }
     }
 }
@@ -111,8 +113,7 @@ impl LogicalRequest {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         let wire = serde_json::to_value(self)
             .map_err(|error| ProtocolError::InvalidRequest(error.to_string()))?;
-        let mut operation_count = 0;
-        validate_wire_limits(&wire, 0, None, &mut operation_count)?;
+        validate_wire_value(&wire)?;
         if self.protocol_version != PROTOCOL_VERSION {
             return Err(ProtocolError::UnsupportedVersion(self.protocol_version));
         }
@@ -212,7 +213,7 @@ impl LogicalRequest {
             "params": Value::Object(params),
         });
         let mut hasher = Sha256::new();
-        hasher.update(super::super::store::canonical_json_bytes(&canonical));
+        hasher.update(super::super::canonical::canonical_json_bytes(&canonical));
         Ok(format!("sha256:{:x}", hasher.finalize()))
     }
 }

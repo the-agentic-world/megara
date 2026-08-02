@@ -136,10 +136,10 @@ fn evidence_dependency_core() -> (InMemoryPlanningCore, PlanningState) {
                     temp_ref: "fact".to_string(),
                     body: EntityBody::Fact {
                         statement: "저장소 사실".to_string(),
-                        evidence_refs: vec!["citation-1".to_string()],
+                        evidence_refs: vec!["EVID-001".to_string()],
                     },
                     source_refs: vec![SourceRef::Evidence {
-                        id: "citation-1".to_string(),
+                        id: "EVID-001".to_string(),
                     }],
                 },
                 EntityOp::Create {
@@ -167,21 +167,29 @@ fn evidence_dependency_core() -> (InMemoryPlanningCore, PlanningState) {
                 },
             ],
             edge_ops: vec![
-                EdgeOp {
+                EdgeOp::Add {
                     kind: EdgeKind::DependsOn,
-                    from: AuditEndpoint::TempRef("constraint".to_string()),
-                    to: AuditEndpoint::TempRef("fact".to_string()),
+                    from: AuditEndpoint::TempRef {
+                        temp_ref: "constraint".to_string(),
+                    },
+                    to: AuditEndpoint::TempRef {
+                        temp_ref: "fact".to_string(),
+                    },
                     source_refs: source(),
                 },
-                EdgeOp {
+                EdgeOp::Add {
                     kind: EdgeKind::DependsOn,
-                    from: AuditEndpoint::TempRef("risk".to_string()),
-                    to: AuditEndpoint::TempRef("constraint".to_string()),
+                    from: AuditEndpoint::TempRef {
+                        temp_ref: "risk".to_string(),
+                    },
+                    to: AuditEndpoint::TempRef {
+                        temp_ref: "constraint".to_string(),
+                    },
                     source_refs: source(),
                 },
             ],
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     (core, audit.state)
@@ -249,7 +257,7 @@ fn changed_evidence_cancels_pending_question_and_invalidates_complete_artifacts(
             entity_ops: Vec::new(),
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     let changed = core
@@ -324,18 +332,18 @@ fn stale_entity_recovery_supersedes_stale_revision_with_new_valid_revision() {
             next_question: None,
             entity_ops: vec![EntityOp::Revise {
                 entity_id: "FACT-001".to_string(),
-                base_revision: 1,
+                base_entity_revision: 1,
                 body: EntityBody::Fact {
                     statement: "갱신된 저장소 사실".to_string(),
-                    evidence_refs: vec!["citation-2".to_string()],
+                    evidence_refs: vec!["EVID-002".to_string()],
                 },
                 source_refs: vec![SourceRef::Evidence {
-                    id: "citation-2".to_string(),
+                    id: "EVID-002".to_string(),
                 }],
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     let old_after = recovered.state.entities.at_revision("FACT-001", 1).unwrap();
@@ -373,7 +381,7 @@ fn rejected_latest_entity_cannot_be_revised_and_failure_is_atomic() {
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap();
     let full_work = created.state.required_model_action.clone().unwrap();
@@ -390,7 +398,7 @@ fn rejected_latest_entity_cannot_be_revised_and_failure_is_atomic() {
             next_question: None,
             entity_ops: vec![EntityOp::Reject {
                 entity_id: "PROB-001".to_string(),
-                base_revision: 1,
+                base_entity_revision: 1,
                 reason: "근거 부족".to_string(),
                 source_refs: vec![SourceRef::InitialRequest {
                     id: "request".to_string(),
@@ -398,7 +406,7 @@ fn rejected_latest_entity_cannot_be_revised_and_failure_is_atomic() {
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: true,
+            counterexample_review: Some(CounterexampleReview::performed()),
         })
         .unwrap();
     let before = rejected.state.clone();
@@ -417,7 +425,7 @@ fn rejected_latest_entity_cannot_be_revised_and_failure_is_atomic() {
             next_question: None,
             entity_ops: vec![EntityOp::Revise {
                 entity_id: "PROB-001".to_string(),
-                base_revision: 2,
+                base_entity_revision: 2,
                 body: EntityBody::Problem {
                     statement: "되살리면 안 된다".to_string(),
                 },
@@ -427,7 +435,7 @@ fn rejected_latest_entity_cannot_be_revised_and_failure_is_atomic() {
             }],
             edge_ops: Vec::new(),
             blocker_ops: Vec::new(),
-            counterexample_review_performed: false,
+            counterexample_review: None,
         })
         .unwrap_err();
     assert!(matches!(error, CoreError::ProposalSchemaInvalid(_)));

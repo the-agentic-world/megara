@@ -1,5 +1,8 @@
 // Proposal and question contracts.
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+
+use serde::{de::Deserializer, Deserialize, Serialize};
+use unicode_normalization::UnicodeNormalization;
 
 pub type SessionId = String;
 pub type ProjectId = String;
@@ -38,6 +41,7 @@ pub struct AuthoringRule {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct QuestionAuthoring {
     pub version: String,
     pub rules: Vec<AuthoringRule>,
@@ -117,12 +121,21 @@ pub struct Recommendation {
 pub enum AnswerMode {
     Choice {
         choices: Vec<Choice>,
+        #[serde(deserialize_with = "deserialize_required_nullable")]
         recommendation: Option<Recommendation>,
         freeform_hint: String,
     },
     Freeform {
         freeform_hint: String,
     },
+}
+
+fn deserialize_required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -134,6 +147,111 @@ pub struct QuestionProposal {
     pub technical_terms: Vec<TechnicalTerm>,
     pub source_refs: Vec<SourceRef>,
     pub answer: AnswerMode,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CounterexampleResult {
+    Resolved,
+    Blocking,
+    Advisory,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CounterexampleFinding {
+    pub statement: String,
+    pub result: CounterexampleResult,
+    pub source_refs: Vec<SourceRef>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CounterexampleReview {
+    pub performed: bool,
+    pub challenged_entity_ids: Vec<EntityId>,
+    pub findings: Vec<CounterexampleFinding>,
+}
+
+impl CounterexampleReview {
+    pub fn performed() -> Self {
+        Self {
+            performed: true,
+            challenged_entity_ids: Vec::new(),
+            findings: Vec::new(),
+        }
+    }
+}
+
+impl QuestionProposal {
+    pub fn validate_shape(&self) -> Result<(), String> {
+        let non_empty = |value: &str| !value.trim().is_empty();
+        if !non_empty(&self.context)
+            || !non_empty(&self.question)
+            || !non_empty(&self.why_it_matters)
+        {
+            return Err("context, question, and why_it_matters must not be blank".to_string());
+        }
+        if self.source_refs.is_empty() {
+            return Err("question source_refs must not be empty".to_string());
+        }
+        let mut terms = BTreeSet::new();
+        for term in &self.technical_terms {
+            if !non_empty(&term.term) || !non_empty(&term.plain_explanation) {
+                return Err("technical terms require a term and plain explanation".to_string());
+            }
+            let normalized = term.term.trim().nfc().collect::<String>();
+            if !terms.insert(normalized) {
+                return Err("technical terms must be unique after NFC normalization".to_string());
+            }
+        }
+        match &self.answer {
+            AnswerMode::Freeform { freeform_hint } => {
+                if !non_empty(freeform_hint) {
+                    return Err("freeform_hint must not be blank".to_string());
+                }
+            }
+            AnswerMode::Choice {
+                choices,
+                recommendation,
+                freeform_hint,
+            } => {
+                if choices.len() < 2 || !non_empty(freeform_hint) {
+                    return Err(
+                        "choice mode requires at least two choices and a freeform hint".to_string(),
+                    );
+                }
+                let mut choice_ids = BTreeSet::new();
+                for choice in choices {
+                    if !non_empty(&choice.id)
+                        || !non_empty(&choice.label)
+                        || !non_empty(&choice.direction)
+                        || choice.benefits.is_empty()
+                        || choice.tradeoffs.is_empty()
+                        || choice.benefits.iter().any(|item| !non_empty(item))
+                        || choice.tradeoffs.iter().any(|item| !non_empty(item))
+                        || !choice_ids.insert(choice.id.clone())
+                    {
+                        return Err(
+                            "choices must have unique IDs and complete explanations".to_string()
+                        );
+                    }
+                }
+                if let Some(recommendation) = recommendation {
+                    if !choice_ids.contains(&recommendation.choice_id)
+                        || !non_empty(&recommendation.reason)
+                        || recommendation.source_refs.is_empty()
+                    {
+                        return Err(
+                            "recommendation must reference a choice with reason and sources"
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

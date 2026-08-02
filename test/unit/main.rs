@@ -60,22 +60,54 @@ mod hook_tests;
 mod pi_tests;
 #[path = "planning_approval.rs"]
 mod planning_approval;
+#[path = "planning_audit_combinations.rs"]
+mod planning_audit_combinations;
+#[path = "planning_audit_readiness.rs"]
+mod planning_audit_readiness;
+#[path = "planning_audit_support.rs"]
+mod planning_audit_support;
 #[path = "planning_domain.rs"]
 mod planning_domain;
+#[path = "planning_edge_wire.rs"]
+mod planning_edge_wire;
 #[path = "planning_engine.rs"]
 mod planning_engine;
+#[path = "planning_evidence.rs"]
+mod planning_evidence;
+#[path = "planning_evidence_security.rs"]
+mod planning_evidence_security;
 #[path = "planning_invalidation.rs"]
 mod planning_invalidation;
+#[path = "planning_invalidation_derived.rs"]
+mod planning_invalidation_derived;
 #[path = "planning_protocol.rs"]
 mod planning_protocol;
 #[path = "planning_protocol_golden.rs"]
 mod planning_protocol_golden;
+#[path = "planning_question.rs"]
+mod planning_question;
+#[path = "planning_question_contract.rs"]
+mod planning_question_contract;
+#[path = "planning_question_transition.rs"]
+mod planning_question_transition;
 #[path = "planning_service.rs"]
 mod planning_service;
+#[path = "planning_service_health.rs"]
+mod planning_service_health;
+#[path = "planning_service_support.rs"]
+mod planning_service_support;
+#[path = "planning_service_wire.rs"]
+mod planning_service_wire;
+#[path = "planning_service_wire_invalid.rs"]
+mod planning_service_wire_invalid;
+#[path = "planning_service_wire_support.rs"]
+mod planning_service_wire_support;
 #[path = "planning_store.rs"]
 mod planning_store;
 #[path = "planning_store_concurrency.rs"]
 mod planning_store_concurrency;
+#[path = "planning_store_evidence_scan.rs"]
+mod planning_store_evidence_scan;
 #[path = "planning_store_hash.rs"]
 mod planning_store_hash;
 #[path = "planning_store_purge.rs"]
@@ -88,6 +120,8 @@ mod planning_store_support;
 mod planning_support;
 #[path = "planning_transitions.rs"]
 mod planning_transitions;
+#[path = "planning_work_items.rs"]
+mod planning_work_items;
 #[path = "team.rs"]
 mod team_tests;
 #[path = "tui.rs"]

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::super::domain::*;
+use std::collections::BTreeSet;
+
 use super::*;
 
 pub(crate) fn body_kind(body: &EntityBody) -> EntityKind {
@@ -76,6 +78,40 @@ pub(crate) fn validate_entity_body(body: &EntityBody) -> Result<(), CoreError> {
     })
 }
 
+pub(crate) fn validate_fact_evidence_refs(
+    state: &PlanningState,
+    body: &EntityBody,
+    source_refs: &[SourceRef],
+) -> Result<(), CoreError> {
+    let EntityBody::Fact { evidence_refs, .. } = body else {
+        return Ok(());
+    };
+    let mut body_ids = BTreeSet::new();
+    let mut source_ids = BTreeSet::new();
+    for evidence_id in evidence_refs {
+        if !body_ids.insert(evidence_id)
+            || !evidence_id.starts_with("EVID-")
+            || !state
+                .repo_snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.has_evidence(evidence_id))
+        {
+            return Err(CoreError::InvalidSourceReference);
+        }
+    }
+    for source in source_refs {
+        if let SourceRef::Evidence { id } = source {
+            if !source_ids.insert(id) {
+                return Err(CoreError::InvalidSourceReference);
+            }
+        }
+    }
+    if body_ids != source_ids {
+        return Err(CoreError::InvalidSourceReference);
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_entity_sources(
     state: &PlanningState,
     kind: EntityKind,
@@ -132,6 +168,70 @@ pub(crate) fn validate_entity_sources(
     Ok(())
 }
 
+pub(crate) fn validate_question_proposal(
+    state: &PlanningState,
+    proposal: &QuestionProposal,
+) -> Result<(), CoreError> {
+    proposal
+        .validate_shape()
+        .map_err(CoreError::ProposalSchemaInvalid)?;
+    validate_source_refs_exist(state, &proposal.source_refs)?;
+    if let AnswerMode::Choice {
+        recommendation: Some(recommendation),
+        ..
+    } = &proposal.answer
+    {
+        validate_source_refs_exist(state, &recommendation.source_refs)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_counterexample_review(
+    state: &PlanningState,
+    review: &CounterexampleReview,
+    blocker_ops: &[BlockerOp],
+) -> Result<(), CoreError> {
+    if !review.performed {
+        return Err(CoreError::ProposalSchemaInvalid(
+            "counterexample review must be performed".to_string(),
+        ));
+    }
+    let mut challenged = BTreeSet::new();
+    for entity_id in &review.challenged_entity_ids {
+        if !challenged.insert(entity_id) || state.entities.current(entity_id).is_none() {
+            return Err(CoreError::ProposalSchemaInvalid(
+                "challenged_entity_ids must be unique current entities".to_string(),
+            ));
+        }
+    }
+    for finding in &review.findings {
+        if finding.statement.trim().is_empty() {
+            return Err(CoreError::ProposalSchemaInvalid(
+                "counterexample finding statement must not be blank".to_string(),
+            ));
+        }
+        validate_source_refs_exist(state, &finding.source_refs)?;
+        if finding.result == CounterexampleResult::Blocking
+            && !blocker_ops.iter().any(|operation| {
+                matches!(
+                    operation,
+                    BlockerOp::Create {
+                        severity: BlockerSeverity::Blocking,
+                        statement,
+                        source_refs,
+                        ..
+                    } if statement == &finding.statement && source_refs == &finding.source_refs
+                )
+            })
+        {
+            return Err(CoreError::ProposalSchemaInvalid(
+                "blocking counterexample finding requires a matching blocking blocker".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_source_refs_exist(
     state: &PlanningState,
     source_refs: &[SourceRef],
@@ -154,7 +254,12 @@ pub(crate) fn validate_source_refs_exist(
                     return Err(CoreError::InvalidSourceReference);
                 }
             }
-            SourceRef::Evidence { .. } if state.repo_snapshot.is_none() => {
+            SourceRef::Evidence { id }
+                if !state
+                    .repo_snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.has_evidence(id)) =>
+            {
                 return Err(CoreError::InvalidSourceReference)
             }
             SourceRef::Entity { id, revision } => {
@@ -174,10 +279,13 @@ pub(crate) fn resolve_endpoint(
     temp_refs: &BTreeMap<String, EntityRef>,
 ) -> Result<AuditEndpoint, CoreError> {
     match endpoint {
-        AuditEndpoint::TempRef(temp_ref) => temp_refs
+        AuditEndpoint::TempRef { temp_ref } => temp_refs
             .get(temp_ref)
             .cloned()
-            .map(AuditEndpoint::Entity)
+            .map(|reference| AuditEndpoint::Entity {
+                entity_id: reference.id,
+                revision: reference.revision,
+            })
             .ok_or(CoreError::InvalidSourceReference),
         other => Ok(other.clone()),
     }
@@ -188,7 +296,13 @@ pub(crate) fn resolve_entity_endpoint(
     temp_refs: &BTreeMap<String, EntityRef>,
 ) -> Result<EntityRef, CoreError> {
     match resolve_endpoint(endpoint, temp_refs)? {
-        AuditEndpoint::Entity(reference) => Ok(reference),
+        AuditEndpoint::Entity {
+            entity_id,
+            revision,
+        } => Ok(EntityRef {
+            id: entity_id,
+            revision,
+        }),
         _ => Err(CoreError::ProposalSchemaInvalid(
             "edge from endpoint must be an entity".to_string(),
         )),

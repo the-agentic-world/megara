@@ -1,7 +1,11 @@
+#[path = "planning/canonical.rs"]
+pub(crate) mod canonical;
 #[path = "planning/domain.rs"]
 pub mod domain;
 #[path = "planning/engine.rs"]
 pub mod engine;
+#[path = "planning/evidence.rs"]
+pub mod evidence;
 #[path = "planning/protocol.rs"]
 pub mod protocol;
 #[path = "planning/service.rs"]

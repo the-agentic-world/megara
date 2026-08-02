@@ -1,0 +1,18 @@
+{
+  "schema": "megara.question-authoring-anti/v1",
+  "failure_rule_ids": ["terms", "MPC-QST-015"],
+  "question": {
+    "context": "저장된 내용을 먼저 확인한 뒤 한 가지 방향을 정합니다. 지금은 파일 기록을 어떻게 다룰지 정해야 합니다.",
+    "question": "WAL을 선택할까요?",
+    "why_it_matters": "이 선택에 따라 기록을 다시 확인하는 방법이 달라집니다.",
+    "technical_terms": [
+      {"term": "WAL", "plain_explanation": "write-ahead log"}
+    ],
+    "source_refs": [{"kind":"initial_request","id":"request"}],
+    "answer": {
+      "mode": "freeform",
+      "freeform_hint": "다른 의견을 적어 주세요."
+    }
+  },
+  "review_note": "약어를 풀어 썼지만 이 문맥에서 어떤 역할과 영향이 있는지 설명하지 않아 초심자 review에서 실패한다."
+}

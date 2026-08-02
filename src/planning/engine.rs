@@ -14,10 +14,14 @@ mod commands;
 mod core;
 #[path = "engine/error.rs"]
 mod error;
+#[path = "engine/evidence_ops.rs"]
+mod evidence_ops;
 #[path = "engine/readiness.rs"]
 mod readiness;
 #[path = "engine/readiness_validation.rs"]
 mod readiness_validation;
+#[path = "engine/work_items.rs"]
+mod work_items;
 
 pub use commands::{
     AnswerCommand, ApprovalCommand, AuditCommand, AuditEndpoint, AuditMode, AuditReadiness,
@@ -36,5 +40,10 @@ pub struct InMemoryPlanningCore {
 
 pub(crate) use artifacts::{invalidate_artifacts, invalidate_evidence_entities};
 pub(crate) use audit_ops::apply_audit_ops;
-pub(crate) use core::{command_value, hash_text, work_item};
-pub(crate) use readiness::{compute_readiness_gate, require_model_action, validate_work_item};
+pub(crate) use core::command_value;
+pub(crate) use evidence_ops::{evidence_changes, validate_snapshot};
+pub(crate) use readiness::{
+    compute_readiness_gate, require_model_action, validate_audit_shape, validate_work_item,
+};
+pub(crate) use readiness_validation::{validate_counterexample_review, validate_question_proposal};
+pub(crate) use work_items::work_item;

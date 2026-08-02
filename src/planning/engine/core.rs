@@ -1,6 +1,5 @@
 use serde::Serialize;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::*;
@@ -40,11 +39,8 @@ impl InMemoryPlanningCore {
         let mut state = PlanningState::new(session_id.clone(), command.project_id, command.request);
         state.title = command.title.clone();
         state.domain_revision = 1;
-        state.required_model_action = Some(work_item(
-            &state,
-            ModelActionKind::DeltaAudit,
-            hash_text(&state.transcript.initial_request),
-        ));
+        let next_work_item = work_item(&state, ModelActionKind::DeltaAudit);
+        state.required_model_action = Some(next_work_item.clone());
         state.revision = 1;
         let event_command = StartCommand {
             session_id: Some(session_id.clone()),
@@ -110,8 +106,8 @@ impl InMemoryPlanningCore {
                 });
                 effects.push(EventEffect::AnswerSubmitted { answer_id });
                 invalidate_artifacts(state, effects);
-                let next = work_item(state, ModelActionKind::DeltaAudit, hash_text(&command.text));
-                state.required_model_action = Some(next);
+                let next = work_item(state, ModelActionKind::DeltaAudit);
+                state.required_model_action = Some(next.clone());
                 effects.push(EventEffect::ModelActionRequested {
                     kind: ModelActionKind::DeltaAudit,
                 });
@@ -124,6 +120,7 @@ impl InMemoryPlanningCore {
         &mut self,
         command: EvidenceRefreshCommand,
     ) -> Result<EvidenceRefreshResult, CoreError> {
+        validate_snapshot(&command.snapshot)?;
         let current = self
             .sessions
             .get(&command.session_id)
@@ -135,9 +132,15 @@ impl InMemoryPlanningCore {
                 actual: current.revision,
             });
         }
-        if current.repo_snapshot.as_ref() == Some(&command.snapshot) {
+        if current
+            .repo_snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.semantic_eq(&command.snapshot))
+        {
             return Ok(EvidenceRefreshResult::Unchanged { state: current });
         }
+        let (changed_evidence_ids, broad_invalidation) =
+            evidence_changes(current.repo_snapshot.as_ref(), &command.snapshot);
         self.mutate(
             &command.session_id,
             command.expected_revision,
@@ -149,9 +152,8 @@ impl InMemoryPlanningCore {
                 invalidate_evidence_entities(
                     state,
                     effects,
-                    SourceRef::Evidence {
-                        id: command.snapshot.evidence_hash.clone(),
-                    },
+                    &changed_evidence_ids,
+                    broad_invalidation,
                 );
                 if state.phase != LifecyclePhase::Interview {
                     state.phase = LifecyclePhase::Interview;
@@ -162,11 +164,8 @@ impl InMemoryPlanningCore {
                 state.pending_question = None;
                 state.full_audit = None;
                 invalidate_artifacts(state, effects);
-                state.required_model_action = Some(work_item(
-                    state,
-                    ModelActionKind::DeltaAudit,
-                    command.snapshot.evidence_hash.clone(),
-                ));
+                let next_work_item = work_item(state, ModelActionKind::DeltaAudit);
+                state.required_model_action = Some(next_work_item.clone());
                 effects.push(EventEffect::ModelActionRequested {
                     kind: ModelActionKind::DeltaAudit,
                 });
@@ -249,53 +248,10 @@ pub struct MutationResult {
     pub state: PlanningState,
     pub event: AggregateEvent,
 }
-pub(crate) fn work_item(
-    state: &PlanningState,
-    kind: ModelActionKind,
-    input_hash: String,
-) -> ModelWorkItem {
-    let output_schema = match kind {
-        ModelActionKind::DeltaAudit | ModelActionKind::FullAudit => "megara.audit-proposal/v1",
-        ModelActionKind::GenerateSpec => "megara.spec-proposal/v1",
-        ModelActionKind::GeneratePlan => "megara.plan-proposal/v1",
-    };
-    ModelWorkItem {
-        kind,
-        work_item_id: format!(
-            "wrk_{:?}_{}_{}_{}",
-            kind,
-            state.revision + 1,
-            state.domain_revision,
-            state.plan_revision
-        )
-        .to_lowercase(),
-        created_event_seq: state.revision + 1,
-        created_ordinal: 0,
-        session_id: state.session_id.clone(),
-        base_revision: state.revision + 1,
-        base_domain_revision: state.domain_revision,
-        base_plan_revision: state.plan_revision,
-        input_hash,
-        output_schema: output_schema.to_string(),
-        context: json!({"initial_request": state.transcript.initial_request}),
-        question_authoring: matches!(
-            kind,
-            ModelActionKind::DeltaAudit | ModelActionKind::FullAudit
-        )
-        .then(QuestionAuthoring::v1),
-    }
-}
-
 pub(crate) fn command_value<T: Serialize>(command: &T) -> Value {
     serde_json::to_value(command).expect("planning command serialization is infallible")
 }
 
 fn event_primary(primary: Value) -> Value {
     json!({"command": primary})
-}
-
-pub(crate) fn hash_text(text: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(text.as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
 }

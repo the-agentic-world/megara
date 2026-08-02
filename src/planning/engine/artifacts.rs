@@ -76,11 +76,8 @@ impl InMemoryPlanningCore {
                 });
                 state.phase = LifecyclePhase::Planning;
                 state.plan_revision += 1;
-                state.required_model_action = Some(work_item(
-                    state,
-                    ModelActionKind::GeneratePlan,
-                    candidate.semantic_hash.clone(),
-                ));
+                let next_work_item = work_item(state, ModelActionKind::GeneratePlan);
+                state.required_model_action = Some(next_work_item.clone());
                 effects.push(EventEffect::PhaseChanged {
                     phase: LifecyclePhase::Planning,
                 });
@@ -129,11 +126,8 @@ impl InMemoryPlanningCore {
                 state.pending_question = None;
                 state.full_audit = None;
                 invalidate_artifacts(state, effects);
-                state.required_model_action = Some(work_item(
-                    state,
-                    ModelActionKind::DeltaAudit,
-                    hash_text(&command.text),
-                ));
+                let next_work_item = work_item(state, ModelActionKind::DeltaAudit);
+                state.required_model_action = Some(next_work_item.clone());
                 effects.push(EventEffect::PhaseChanged {
                     phase: LifecyclePhase::Interview,
                 });
@@ -261,11 +255,8 @@ impl InMemoryPlanningCore {
                     candidate.stale = true;
                 }
                 state.plan.approval = None;
-                state.required_model_action = Some(work_item(
-                    state,
-                    ModelActionKind::GeneratePlan,
-                    hash_text(&command.text),
-                ));
+                let next_work_item = work_item(state, ModelActionKind::GeneratePlan);
+                state.required_model_action = Some(next_work_item.clone());
                 effects.push(EventEffect::ArtifactInvalidated {
                     artifact: "plan".to_string(),
                 });
@@ -333,21 +324,43 @@ pub(crate) fn invalidate_artifacts(state: &mut PlanningState, effects: &mut Vec<
 pub(crate) fn invalidate_evidence_entities(
     state: &mut PlanningState,
     effects: &mut Vec<EventEffect>,
-    cause: SourceRef,
+    changed_evidence_ids: &BTreeSet<String>,
+    broad: bool,
 ) {
     let stale_since = state.domain_revision;
-    let mut impacted = BTreeSet::<(EntityId, u64)>::new();
+    let mut impacted = BTreeMap::<(EntityId, u64), Vec<SourceRef>>::new();
     for records in state.entities.revisions.values() {
         if let Some(entity) = records.iter().find(|entity| {
             entity.is_current()
                 && entity.kind == EntityKind::Fact
-                && entity
-                    .source_refs
-                    .iter()
-                    .any(|source| matches!(source, SourceRef::Evidence { .. }))
+                && evidence_causes(&entity.source_refs, changed_evidence_ids, broad).is_some()
         }) {
-            impacted.insert((entity.entity_id.clone(), entity.revision));
+            let causes = evidence_causes(&entity.source_refs, changed_evidence_ids, broad)
+                .expect("fact selected by evidence causes");
+            impacted.insert((entity.entity_id.clone(), entity.revision), causes);
         }
+    }
+    for edge in &state.entities.edges {
+        if edge.retired || edge.kind != EdgeKind::DerivedFrom {
+            continue;
+        }
+        let EdgeTarget::Source(SourceRef::Evidence { id }) = &edge.to else {
+            continue;
+        };
+        if !broad && !changed_evidence_ids.contains(id) {
+            continue;
+        }
+        let Some(entity) = state
+            .entities
+            .at_revision(&edge.from.id, edge.from.revision)
+            .filter(|entity| entity.is_current())
+        else {
+            continue;
+        };
+        let entry = impacted
+            .entry((entity.entity_id.clone(), entity.revision))
+            .or_default();
+        append_unique_evidence_causes(entry, &[SourceRef::Evidence { id: id.clone() }]);
     }
 
     let mut expanded = true;
@@ -360,24 +373,30 @@ pub(crate) fn invalidate_evidence_entities(
             let EdgeTarget::Entity(target) = &edge.to else {
                 continue;
             };
-            if !impacted.contains(&(target.id.clone(), target.revision)) {
+            let Some(target_causes) = impacted.get(&(target.id.clone(), target.revision)).cloned()
+            else {
                 continue;
-            }
+            };
             let Some(dependent) = state
                 .entities
                 .at_revision(&edge.from.id, edge.from.revision)
             else {
                 continue;
             };
-            if dependent.is_current()
-                && impacted.insert((dependent.entity_id.clone(), dependent.revision))
-            {
-                expanded = true;
+            if dependent.is_current() {
+                let entry = impacted
+                    .entry((dependent.entity_id.clone(), dependent.revision))
+                    .or_default();
+                let before = entry.len();
+                append_unique_evidence_causes(entry, &target_causes);
+                if entry.len() != before {
+                    expanded = true;
+                }
             }
         }
     }
 
-    for (entity_id, revision) in impacted {
+    for ((entity_id, revision), causes) in impacted {
         let Some(records) = state.entities.revisions.get_mut(&entity_id) else {
             continue;
         };
@@ -389,8 +408,32 @@ pub(crate) fn invalidate_evidence_entities(
         };
         entity.validity = EntityValidity::Stale {
             since_domain_revision: stale_since,
-            causes: vec![cause.clone()],
+            causes,
         };
         effects.push(EventEffect::EntityInvalidated { entity_id });
+    }
+}
+
+fn evidence_causes(
+    source_refs: &[SourceRef],
+    changed_evidence_ids: &BTreeSet<String>,
+    broad: bool,
+) -> Option<Vec<SourceRef>> {
+    let mut causes = Vec::new();
+    for source in source_refs {
+        if let SourceRef::Evidence { id } = source {
+            if broad || changed_evidence_ids.contains(id) {
+                append_unique_evidence_causes(&mut causes, std::slice::from_ref(source));
+            }
+        }
+    }
+    (!causes.is_empty()).then_some(causes)
+}
+
+fn append_unique_evidence_causes(target: &mut Vec<SourceRef>, causes: &[SourceRef]) {
+    for cause in causes {
+        if !target.iter().any(|existing| existing == cause) {
+            target.push(cause.clone());
+        }
     }
 }

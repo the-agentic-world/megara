@@ -24,6 +24,8 @@ mod hash;
 mod persistence;
 #[path = "store/purge.rs"]
 mod purge;
+#[path = "store/reconcile.rs"]
+mod reconcile;
 #[path = "store/replay.rs"]
 mod replay;
 #[path = "store/schema.rs"]
@@ -31,7 +33,6 @@ mod schema;
 #[path = "store/transaction.rs"]
 mod transaction;
 
-pub(crate) use hash::canonical_json_bytes;
 pub use hash::normalized_state_hash;
 pub use purge::PurgeReceipt;
 pub use replay::{
@@ -170,5 +171,13 @@ impl PlanningStore {
 
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    pub fn project_root(&self) -> &Path {
+        self.database_path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."))
     }
 }

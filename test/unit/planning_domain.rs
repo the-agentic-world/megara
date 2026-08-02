@@ -286,7 +286,6 @@ fn derived_state_table_keeps_phase_waiting_blocker_approval_and_stale_orthogonal
         input_hash: "sha256:input".to_string(),
         output_schema: "megara.audit-proposal/v1".to_string(),
         context: serde_json::json!({}),
-        question_authoring: None,
     };
 
     for phase in phases {

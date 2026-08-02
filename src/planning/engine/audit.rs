@@ -22,11 +22,19 @@ impl InMemoryPlanningCore {
                         "delta audit cannot declare ready".to_string(),
                     ));
                 }
-                if command.mode == AuditMode::Full && !command.counterexample_review_performed {
+                if command.mode == AuditMode::Full {
+                    let review = command.counterexample_review.as_ref().ok_or_else(|| {
+                        CoreError::ProposalSchemaInvalid(
+                            "full audit requires counterexample review".to_string(),
+                        )
+                    })?;
+                    validate_counterexample_review(state, review, &command.blocker_ops)?;
+                } else if command.counterexample_review.is_some() {
                     return Err(CoreError::ProposalSchemaInvalid(
-                        "full audit requires counterexample review".to_string(),
+                        "delta audit cannot include counterexample review".to_string(),
                     ));
                 }
+                validate_audit_shape(&command)?;
                 let domain_changed = apply_audit_ops(state, &command, effects)?;
                 if command.mode == AuditMode::Delta {
                     match command.readiness {
@@ -36,6 +44,7 @@ impl InMemoryPlanningCore {
                                     "delta continue requires one question".to_string(),
                                 )
                             })?;
+                            validate_question_proposal(state, &question)?;
                             state.required_model_action = None;
                             let question_id = format!("qst_{}", Uuid::now_v7());
                             state.pending_question = Some(PendingQuestion {
@@ -53,11 +62,8 @@ impl InMemoryPlanningCore {
                                     "full audit request cannot include a question".to_string(),
                                 ));
                             }
-                            state.required_model_action = Some(work_item(
-                                state,
-                                ModelActionKind::FullAudit,
-                                command.input_hash.clone(),
-                            ));
+                            let next_work_item = work_item(state, ModelActionKind::FullAudit);
+                            state.required_model_action = Some(next_work_item.clone());
                             effects.push(EventEffect::ModelActionRequested {
                                 kind: ModelActionKind::FullAudit,
                             });
@@ -70,7 +76,7 @@ impl InMemoryPlanningCore {
                 let readiness_gate = compute_readiness_gate(
                     state,
                     &command.input_hash,
-                    command.counterexample_review_performed,
+                    command.counterexample_review.as_ref(),
                 );
                 if command.readiness == AuditReadiness::Ready && !readiness_gate.is_ready() {
                     return Err(CoreError::ProposalSchemaInvalid(
@@ -85,11 +91,8 @@ impl InMemoryPlanningCore {
                         state.domain_revision += 1;
                     }
                     invalidate_artifacts(state, effects);
-                    state.required_model_action = Some(work_item(
-                        state,
-                        ModelActionKind::DeltaAudit,
-                        command.input_hash.clone(),
-                    ));
+                    let next_work_item = work_item(state, ModelActionKind::DeltaAudit);
+                    state.required_model_action = Some(next_work_item.clone());
                     effects.push(EventEffect::PhaseChanged {
                         phase: LifecyclePhase::Interview,
                     });
@@ -99,15 +102,15 @@ impl InMemoryPlanningCore {
                 } else if command.readiness == AuditReadiness::Ready {
                     state.phase = LifecyclePhase::Specification;
                     state.pending_question = None;
-                    state.required_model_action = Some(work_item(
-                        state,
-                        ModelActionKind::GenerateSpec,
-                        command.input_hash.clone(),
-                    ));
+                    let next_work_item = work_item(state, ModelActionKind::GenerateSpec);
+                    state.required_model_action = Some(next_work_item.clone());
                     state.full_audit = Some(FullAuditRef {
                         input_hash: command.input_hash.clone(),
                         base_domain_revision: state.domain_revision,
-                        counterexample_review_performed: true,
+                        counterexample_review: command
+                            .counterexample_review
+                            .clone()
+                            .expect("full audit review validated above"),
                     });
                     effects.push(EventEffect::PhaseChanged {
                         phase: LifecyclePhase::Specification,
@@ -121,6 +124,7 @@ impl InMemoryPlanningCore {
                             "full continue without changes requires one question".to_string(),
                         )
                     })?;
+                    validate_question_proposal(state, &question)?;
                     state.required_model_action = None;
                     let question_id = format!("qst_{}", Uuid::now_v7());
                     state.pending_question = Some(PendingQuestion {

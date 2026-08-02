@@ -1,82 +1,11 @@
-use crate::planning::domain::{AnswerMode, QuestionProposal, SourceRef};
-use crate::planning::engine::{AuditCommand, AuditMode, AuditReadiness, EvidenceRefreshCommand};
+use crate::planning::engine::EvidenceRefreshCommand;
 use crate::planning::protocol::{LogicalRequest, PROTOCOL_VERSION};
 use crate::planning::service::PlanningService;
 use crate::planning::store::{EventActor, EventAdapter, PlanningStore};
+use crate::planning_service_support::{prepare_pending_question, question, start_request};
 use crate::planning_store_support::snapshot;
 use serde_json::json;
 use tempfile::tempdir;
-
-fn start_request(command_id: &str, request_id: &str, title: Option<&str>) -> LogicalRequest {
-    LogicalRequest {
-        protocol_version: PROTOCOL_VERSION,
-        request_id: request_id.to_string(),
-        operation: "planning.start".to_string(),
-        command_id: Some(command_id.to_string()),
-        session_id: None,
-        expected_revision: None,
-        params: Some(json!({"request":"서비스 계약을 검증한다.", "title":title})),
-    }
-}
-
-fn question() -> QuestionProposal {
-    QuestionProposal {
-        context: "결정 배경입니다.".to_string(),
-        question: "어떤 결과를 원하시나요?".to_string(),
-        why_it_matters: "답에 따라 계획이 달라집니다.".to_string(),
-        technical_terms: Vec::new(),
-        source_refs: vec![SourceRef::InitialRequest {
-            id: "request".to_string(),
-        }],
-        answer: AnswerMode::Freeform {
-            freeform_hint: "원하는 결과를 적어 주세요.".to_string(),
-        },
-    }
-}
-
-fn prepare_pending_question(store: &mut PlanningStore, session_id: &str) -> String {
-    let state = store.current(session_id).unwrap();
-    store
-        .refresh_evidence(
-            "cmd-evidence",
-            "sha256:evidence",
-            EvidenceRefreshCommand {
-                session_id: session_id.to_string(),
-                expected_revision: state.revision,
-                snapshot: snapshot("sha256:evidence"),
-            },
-        )
-        .unwrap();
-    let state = store.current(session_id).unwrap();
-    let work_item = state.required_model_action.clone().unwrap();
-    store
-        .apply_audit(
-            "cmd-audit",
-            "sha256:audit",
-            AuditCommand {
-                session_id: session_id.to_string(),
-                expected_revision: state.revision,
-                work_item_id: work_item.work_item_id,
-                mode: AuditMode::Delta,
-                base_revision: work_item.base_revision,
-                base_domain_revision: work_item.base_domain_revision,
-                input_hash: work_item.input_hash,
-                readiness: AuditReadiness::Continue,
-                next_question: Some(question()),
-                entity_ops: Vec::new(),
-                edge_ops: Vec::new(),
-                blocker_ops: Vec::new(),
-                counterexample_review_performed: false,
-            },
-        )
-        .unwrap();
-    store
-        .current(session_id)
-        .unwrap()
-        .pending_question
-        .unwrap()
-        .question_id
-}
 
 #[test]
 fn service_preserves_start_title_and_entrypoint_event_metadata() {
@@ -202,6 +131,81 @@ fn answer_success_replays_after_pending_question_is_consumed_and_restart() {
     let store = PlanningStore::open_project(directory.path()).unwrap();
     assert_eq!(store.event_count(&session_id).unwrap(), event_count);
     assert_eq!(store.current(&session_id).unwrap().revision, event_count);
+}
+
+#[test]
+fn invalid_audit_proposal_can_retry_with_same_work_item_and_new_command_id() {
+    let directory = tempdir().unwrap();
+    let mut service = PlanningService::open_project(directory.path()).unwrap();
+    let started = service.handle_user_request(start_request(
+        "cmd-start-qst-retry",
+        "req-start-qst-retry",
+        None,
+    ));
+    let session_id = started["session_id"].as_str().unwrap().to_string();
+    let mut store = PlanningStore::open_project(directory.path()).unwrap();
+    let current = store.current(&session_id).unwrap();
+    store
+        .refresh_evidence(
+            "cmd-evidence-qst-retry",
+            "sha256:evidence-qst-retry",
+            EvidenceRefreshCommand {
+                session_id: session_id.clone(),
+                expected_revision: current.revision,
+                snapshot: snapshot("sha256:evidence-qst-retry"),
+            },
+        )
+        .unwrap();
+    let current = store.current(&session_id).unwrap();
+    let work = current.required_model_action.clone().unwrap();
+    let mut proposal = json!({
+        "schema":"megara.audit-proposal/v1", "mode":"delta",
+        "work_item_id":work.work_item_id, "base_revision":work.base_revision,
+        "base_domain_revision":work.base_domain_revision, "input_hash":work.input_hash,
+        "readiness":"continue", "next_question":serde_json::to_value(question()).unwrap(),
+        "entity_ops":[], "edge_ops":[], "blocker_ops":[], "counterexample_review":null
+    });
+    let original_work = current.required_model_action.clone();
+    let event_count = store.event_count(&session_id).unwrap();
+    drop(store);
+
+    proposal.as_object_mut().unwrap().remove("next_question");
+    let invalid = service.handle_user_request(LogicalRequest {
+        protocol_version: PROTOCOL_VERSION,
+        request_id: "req-qst-invalid".to_string(),
+        operation: "planning.audit.apply".to_string(),
+        command_id: Some("cmd-qst-invalid".to_string()),
+        session_id: Some(session_id.clone()),
+        expected_revision: Some(2),
+        params: Some(json!({"mode":"delta","proposal":proposal.clone()})),
+    });
+    assert_eq!(invalid["error"]["code"], "PROPOSAL_SCHEMA_INVALID");
+    let store = PlanningStore::open_project(directory.path()).unwrap();
+    assert_eq!(store.event_count(&session_id).unwrap(), event_count);
+    assert_eq!(
+        store.current(&session_id).unwrap().required_model_action,
+        original_work
+    );
+    drop(store);
+
+    proposal["next_question"] = serde_json::to_value(question()).unwrap();
+    let corrected = service.handle_user_request(LogicalRequest {
+        protocol_version: PROTOCOL_VERSION,
+        request_id: "req-qst-corrected".to_string(),
+        operation: "planning.audit.apply".to_string(),
+        command_id: Some("cmd-qst-corrected".to_string()),
+        session_id: Some(session_id.clone()),
+        expected_revision: Some(2),
+        params: Some(json!({"mode":"delta","proposal":proposal})),
+    });
+    assert_eq!(corrected["ok"], true, "{corrected}");
+    assert_eq!(corrected["replayed"], false);
+    assert_eq!(
+        corrected["result"]["state"]["pending_question"]["proposal"]["question"],
+        "어떤 결과를 원하시나요?"
+    );
+    let store = PlanningStore::open_project(directory.path()).unwrap();
+    assert_eq!(store.event_count(&session_id).unwrap(), event_count + 1);
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use crate::planning::{
-    domain::RepoEvidenceSnapshot,
+    domain::{EvidenceRecord, RepoEvidenceSnapshot},
     engine::StartCommand,
     store::{PlanningStore, ProjectIdentity, StoredOutcome},
 };
@@ -36,7 +36,18 @@ pub(crate) fn snapshot(evidence_hash: &str) -> RepoEvidenceSnapshot {
     RepoEvidenceSnapshot {
         evidence_hash: evidence_hash.to_string(),
         head_oid: None,
+        head_ref: None,
+        dirty: false,
         status_hash: format!("{evidence_hash}-status"),
         cited_files_hash: format!("{evidence_hash}-files"),
+        evidence: vec![EvidenceRecord {
+            evidence_id: "EVID-001".to_string(),
+            path: "src/lib.rs".to_string(),
+            ranges: Vec::new(),
+            size: 1,
+            sha256: "sha256:evidence-file".to_string(),
+            tracked: true,
+            captured_at: "unix-nanos:1".to_string(),
+        }],
     }
 }
