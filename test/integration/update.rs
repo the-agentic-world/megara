@@ -95,3 +95,75 @@ fn update_refreshes_project_harness_and_removes_legacy_codex_skills() {
     assert!(wrapper.contains("state/tools/insane-search"));
     assert!(wrapper.contains("pip install -r"));
 }
+
+#[cfg(unix)]
+#[test]
+fn update_refreshes_pi_process_helper_from_ssot() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let home = tempdir().unwrap();
+    let fake_bin = tempdir().unwrap();
+    let install = megara()
+        .args([
+            "install",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--no-interactive",
+        ])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(install.status.success());
+
+    let projected_helper = dir.path().join(".pi/extensions/megara_process.ts");
+    let original_helper = fs::read_to_string(&projected_helper).unwrap();
+    fs::write(
+        &projected_helper,
+        format!("{original_helper}\n// PI HELPER UPDATE DRIFT\n"),
+    )
+    .unwrap();
+
+    let curl = fake_bin.path().join("curl");
+    fs::write(
+        &curl,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' '{{\"tag_name\":\"v{}\"}}'\n",
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&curl, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        fake_bin.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let update = megara()
+        .args([
+            "update",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--no-interactive",
+        ])
+        .env("HOME", home.path())
+        .env("PATH", path)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        update.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&update.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(projected_helper).unwrap(),
+        original_helper
+    );
+    assert!(String::from_utf8_lossy(&update.stdout)
+        .contains("Refreshing harness: scope=project, target=pi"));
+}

@@ -101,7 +101,9 @@ fn sync_without_target_detects_pi_when_it_is_the_only_runtime() {
         String::from_utf8_lossy(&install.stderr)
     );
     let extension = dir.path().join(".pi/extensions/megara.ts");
+    let process_helper = dir.path().join(".pi/extensions/megara_process.ts");
     fs::remove_file(&extension).unwrap();
+    fs::remove_file(&process_helper).unwrap();
 
     let sync = megara()
         .arg("sync")
@@ -118,7 +120,79 @@ fn sync_without_target_detects_pi_when_it_is_the_only_runtime() {
     assert!(stdout.contains("target=pi"));
     assert!(!stdout.contains("target=codex"));
     assert!(extension.exists());
+    assert!(process_helper.exists());
     assert!(!dir.path().join(".codex/AGENTS.md").exists());
+}
+
+#[test]
+fn sync_repairs_drifted_pi_process_helper_from_ssot() {
+    let dir = tempdir().unwrap();
+    let install = megara()
+        .args([
+            "install",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--no-interactive",
+        ])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(install.status.success());
+
+    let ssot_helper = dir.path().join(".agents/pi/extensions/megara_process.ts");
+    let projected_helper = dir.path().join(".pi/extensions/megara_process.ts");
+    let mut ssot = fs::read_to_string(&ssot_helper).unwrap();
+    ssot.push_str("\n// PI HELPER SSOT UPDATE\n");
+    fs::write(&ssot_helper, &ssot).unwrap();
+
+    let sync = megara()
+        .args(["sync", "--scope", "project", "--target", "pi"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        sync.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+    assert!(fs::read_to_string(&projected_helper)
+        .unwrap()
+        .contains("PI HELPER SSOT UPDATE"));
+
+    let mut drifted = fs::read_to_string(&projected_helper).unwrap();
+    drifted.push_str("// PI HELPER DRIFT\n");
+    fs::write(&projected_helper, drifted).unwrap();
+    let doctor = megara()
+        .args([
+            "doctor",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--json",
+            "--no-interactive",
+        ])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    assert!(report["stale"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path.as_str().unwrap().ends_with("megara_process.ts")));
+
+    let repair = megara()
+        .args(["sync", "--scope", "project", "--target", "pi"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(repair.status.success());
+    let repaired = fs::read_to_string(projected_helper).unwrap();
+    assert!(repaired.contains("PI HELPER SSOT UPDATE"));
+    assert!(!repaired.contains("PI HELPER DRIFT"));
 }
 
 fn update_executor_ssot(ssot_agent: &Path) {
