@@ -22,7 +22,14 @@ pub(crate) fn canonical_hash_with_aliases<T: serde::Serialize>(
 }
 
 pub(crate) fn canonical_json_bytes(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(&canonical_value(value, None, None))
+    canonical_json_bytes_with_aliases(value, None)
+}
+
+pub(crate) fn canonical_json_bytes_with_aliases(
+    value: &Value,
+    aliases: Option<&BTreeMap<String, String>>,
+) -> Vec<u8> {
+    serde_json::to_vec(&canonical_value(value, None, aliases))
         .expect("canonical JSON serialization is infallible")
 }
 

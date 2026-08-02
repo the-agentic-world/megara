@@ -10,8 +10,9 @@ use super::super::{
     decode_params, decode_params_or_default, required_session, PlanningService, ServiceAuthority,
 };
 use super::{
-    artifact_query_response, check_revision, require_current_evidence, require_user,
-    required_work_item, CandidateGenerateParams, CandidateReviseParams, CandidateShowParams,
+    artifact_query_response, check_revision, require_current_evidence, require_revision_or_export,
+    require_user, required_work_item, CandidateGenerateParams, CandidateReviseParams,
+    CandidateShowParams,
 };
 use crate::planning::protocol::LogicalRequest;
 
@@ -175,7 +176,7 @@ impl PlanningService {
         let request_hash = request
             .canonical_request_hash(self.store.project_id())
             .map_err(ServiceError::protocol)?;
-        require_user(authority, "plan revision")?;
+        require_revision_or_export(authority, "plan revision")?;
         if let Some(outcome) = self.store.cached_command(
             request.command_id.as_deref().unwrap_or_default(),
             &request_hash,

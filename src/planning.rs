@@ -6,6 +6,8 @@ pub mod domain;
 pub mod engine;
 #[path = "planning/evidence.rs"]
 pub mod evidence;
+#[path = "planning/mcp.rs"]
+pub mod mcp;
 #[path = "planning/protocol.rs"]
 pub mod protocol;
 #[path = "planning/service.rs"]

@@ -399,6 +399,14 @@ impl PlanningStore {
         self.current(session_id)
     }
 
+    pub fn diagnostic_semantic_event_sequence(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<String>, StoreError> {
+        let events = self.event_envelopes(session_id)?;
+        super::replay::normalized_semantic_event_sequence(&events)
+    }
+
     pub fn list(&self, phase: Option<LifecyclePhase>) -> Result<Vec<PlanningState>, StoreError> {
         let mut statement = self
             .conn

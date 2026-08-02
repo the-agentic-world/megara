@@ -1,6 +1,7 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use super::super::domain::AggregateEvent;
@@ -115,7 +116,24 @@ pub struct EventEnvelope {
 }
 
 pub fn replay_events(events: &[EventEnvelope]) -> Result<InMemoryPlanningCore, StoreError> {
+    replay_events_internal(events, false).map(|(core, _)| core)
+}
+
+pub(crate) fn normalized_semantic_event_sequence(
+    events: &[EventEnvelope],
+) -> Result<Vec<String>, StoreError> {
+    replay_events_internal(events, true).map(|(_, sequence)| {
+        sequence.expect("semantic sequence is collected for diagnostic replay")
+    })
+}
+
+fn replay_events_internal(
+    events: &[EventEnvelope],
+    collect_semantics: bool,
+) -> Result<(InMemoryPlanningCore, Option<Vec<String>>), StoreError> {
     let mut core = InMemoryPlanningCore::default();
+    let mut aliases = BTreeMap::new();
+    let mut semantic_sequence = collect_semantics.then(Vec::new);
     for envelope in events {
         if envelope.schema_version != EVENT_ENVELOPE_SCHEMA_VERSION
             || Uuid::parse_str(&envelope.event_id)
@@ -171,6 +189,27 @@ pub fn replay_events(events: &[EventEnvelope]) -> Result<InMemoryPlanningCore, S
                 event.seq
             )));
         }
+        if let Some(sequence) = semantic_sequence.as_mut() {
+            aliases.extend(super::hash::generated_aliases(state));
+            let semantic = json!({
+                "schema": event.schema,
+                "session_id": event.session_id,
+                "seq": event.seq,
+                "revision_after": event.revision_after,
+                "domain_revision_after": event.domain_revision_after,
+                "plan_revision_after": event.plan_revision_after,
+                "operation": event.operation,
+                "primary": event.primary,
+                "effects": normalized_effects(&event.effects)?,
+            });
+            sequence.push(
+                String::from_utf8(super::super::canonical::canonical_json_bytes_with_aliases(
+                    &semantic,
+                    Some(&aliases),
+                ))
+                .expect("canonical JSON is UTF-8"),
+            );
+        }
         if let Some(previous) = before {
             if event.revision_after != previous.revision + 1 {
                 return Err(StoreError::DbCorrupt(format!(
@@ -184,7 +223,7 @@ pub fn replay_events(events: &[EventEnvelope]) -> Result<InMemoryPlanningCore, S
             ));
         }
     }
-    Ok(core)
+    Ok((core, semantic_sequence))
 }
 
 fn reduce_event(

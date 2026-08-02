@@ -58,6 +58,8 @@ mod docs_tests;
 mod hook_tests;
 #[path = "pi.rs"]
 mod pi_tests;
+#[path = "planning_adapter_equivalence.rs"]
+mod planning_adapter_equivalence;
 #[path = "planning_approval.rs"]
 mod planning_approval;
 #[path = "planning_artifact_evidence.rs"]
@@ -72,6 +74,8 @@ mod planning_audit_combinations;
 mod planning_audit_readiness;
 #[path = "planning_audit_support.rs"]
 mod planning_audit_support;
+#[path = "planning_authority.rs"]
+mod planning_authority;
 #[path = "planning_domain.rs"]
 mod planning_domain;
 #[path = "planning_edge_wire.rs"]
@@ -88,6 +92,8 @@ mod planning_export;
 mod planning_invalidation;
 #[path = "planning_invalidation_derived.rs"]
 mod planning_invalidation_derived;
+#[path = "planning_managed_edit.rs"]
+mod planning_managed_edit;
 #[path = "planning_projection.rs"]
 mod planning_projection;
 #[path = "planning_protocol.rs"]

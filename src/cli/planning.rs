@@ -27,6 +27,7 @@ use input::{read_json_input, read_text_input};
 pub fn run(args: PlanningArgs) -> Result<()> {
     match args.command {
         PlanningCommands::Rpc(args) => run_rpc(args),
+        PlanningCommands::Mcp(args) => crate::planning::mcp::run(&args.project),
         PlanningCommands::Start(args) => run_start(args),
         PlanningCommands::Answer(args) => run_answer(args),
         PlanningCommands::Status(args) => run_session("planning.status", args),

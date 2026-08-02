@@ -111,10 +111,23 @@ pub(super) fn require_user(
     authority: ServiceAuthority,
     operation: &str,
 ) -> Result<(), ServiceError> {
-    if authority != ServiceAuthority::UserCli {
+    if !authority.is_user() {
         return Err(ServiceError::with_code(
             "USER_ENTRYPOINT_REQUIRED",
             format!("{operation} requires an explicit user entrypoint"),
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn require_revision_or_export(
+    authority: ServiceAuthority,
+    operation: &str,
+) -> Result<(), ServiceError> {
+    if !authority.allows_model_revision_or_export() {
+        return Err(ServiceError::with_code(
+            "USER_ENTRYPOINT_REQUIRED",
+            format!("{operation} requires a user entrypoint on this adapter"),
         ));
     }
     Ok(())

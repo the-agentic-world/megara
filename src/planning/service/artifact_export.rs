@@ -12,6 +12,7 @@ use super::super::engine::{
 use super::super::protocol::state::project_state;
 use super::super::protocol::{LogicalRequest, PROTOCOL_VERSION, RESULT_SCHEMA};
 use super::super::store::PlanningStore;
+use super::artifact_commands::require_revision_or_export;
 use super::artifact_projection::{atomic_export_write, render_export_markdown};
 use super::error::ServiceError;
 use super::response::observed_list;
@@ -52,12 +53,7 @@ impl PlanningService {
         request: LogicalRequest,
         authority: ServiceAuthority,
     ) -> Result<serde_json::Value, ServiceError> {
-        if authority != ServiceAuthority::UserCli {
-            return Err(ServiceError::with_code(
-                "USER_ENTRYPOINT_REQUIRED",
-                "export requires an explicit user entrypoint",
-            ));
-        }
+        require_revision_or_export(authority, "export")?;
         let params = decode_params::<ExportParams>(&request)?;
         let request_hash = request
             .canonical_request_hash(self.store.project_id())

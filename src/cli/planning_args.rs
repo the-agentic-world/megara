@@ -12,6 +12,8 @@ pub struct PlanningArgs {
 pub enum PlanningCommands {
     /// Read one JSONL request and write one JSONL response.
     Rpc(PlanningRpcArgs),
+    /// Run the Codex MCP stdio server.
+    Mcp(PlanningMcpArgs),
     Start(PlanningStartArgs),
     Answer(PlanningAnswerArgs),
     Status(PlanningSessionArgs),
@@ -43,6 +45,12 @@ pub struct PlanningRpcArgs {
     pub project: PathBuf,
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PlanningMcpArgs {
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
 }
 
 #[derive(Debug, Args)]

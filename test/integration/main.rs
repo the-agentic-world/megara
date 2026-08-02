@@ -113,12 +113,14 @@ mod pi;
 #[allow(dead_code, unused_imports)]
 #[path = "../../src/planning.rs"]
 mod planning;
+mod planning_adapter_equivalence;
 mod planning_cli;
 mod planning_cli_aliases;
 mod planning_cli_artifact_support;
 mod planning_cli_artifacts;
 mod planning_cli_evidence;
 mod planning_install;
+mod planning_mcp;
 mod ultragoal;
 mod ultragoal_support;
 mod uninstall;

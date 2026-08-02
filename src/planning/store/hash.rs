@@ -7,7 +7,7 @@ pub fn normalized_state_hash(state: &PlanningState) -> String {
     super::super::canonical::canonical_hash_with_aliases(state, Some(&aliases))
 }
 
-fn generated_aliases(state: &PlanningState) -> BTreeMap<String, String> {
+pub(crate) fn generated_aliases(state: &PlanningState) -> BTreeMap<String, String> {
     let mut aliases = BTreeMap::new();
     aliases.insert(state.session_id.clone(), "SESSION@1:0".to_string());
     if let Some(work_item) = &state.required_model_action {

@@ -33,6 +33,8 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 unicode-normalization = "0.1"
 uuid = { version = "1.20", features = ["v7", "serde"] }
 toml_edit = "0.22"
+rmcp = { version = "3.1", default-features = false, features = ["server", "transport-io"] }
+tokio = { version = "1.53", features = ["rt"] }
 
 [dev-dependencies]
 rusqlite = { version = "0.37", features = ["bundled", "hooks"] }

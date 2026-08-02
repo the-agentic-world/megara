@@ -31,7 +31,9 @@ pub(crate) use response::{error_response, protocol_error_response, store_error_r
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceAuthority {
     ModelPi,
+    ModelCodex,
     UserCli,
+    UserCodexMcp,
 }
 
 impl ServiceAuthority {
@@ -42,12 +44,30 @@ impl ServiceAuthority {
                 adapter: EventAdapter::Pi,
                 request_id: Some(request_id.to_string()),
             },
+            Self::ModelCodex => EventContext {
+                actor: EventActor::Model,
+                adapter: EventAdapter::CodexMcp,
+                request_id: Some(request_id.to_string()),
+            },
             Self::UserCli => EventContext {
                 actor: EventActor::User,
                 adapter: EventAdapter::Cli,
                 request_id: Some(request_id.to_string()),
             },
+            Self::UserCodexMcp => EventContext {
+                actor: EventActor::User,
+                adapter: EventAdapter::CodexMcp,
+                request_id: Some(request_id.to_string()),
+            },
         }
+    }
+
+    pub(crate) fn is_user(self) -> bool {
+        matches!(self, Self::UserCli | Self::UserCodexMcp)
+    }
+
+    pub(crate) fn allows_model_revision_or_export(self) -> bool {
+        matches!(self, Self::ModelCodex | Self::UserCli | Self::UserCodexMcp)
     }
 }
 
@@ -82,8 +102,16 @@ impl PlanningService {
         self.handle(request, ServiceAuthority::ModelPi)
     }
 
+    pub fn handle_codex_request(&mut self, request: LogicalRequest) -> Value {
+        self.handle(request, ServiceAuthority::ModelCodex)
+    }
+
     pub fn handle_user_request(&mut self, request: LogicalRequest) -> Value {
         self.handle(request, ServiceAuthority::UserCli)
+    }
+
+    pub fn handle_codex_user_request(&mut self, request: LogicalRequest) -> Value {
+        self.handle(request, ServiceAuthority::UserCodexMcp)
     }
 
     fn handle(&mut self, request: LogicalRequest, authority: ServiceAuthority) -> Value {
@@ -154,7 +182,7 @@ impl PlanningService {
             "planning.plan.approve" => self.plan_approve(request, authority),
             "planning.plan.revise" => self.plan_revise(request, authority),
             "planning.export" => self.export(request, authority),
-            "planning.purge" if authority == ServiceAuthority::UserCli => self.purge(request),
+            "planning.purge" if authority.is_user() => self.purge(request),
             "planning.purge" => Err(ServiceError::with_code(
                 "USER_ENTRYPOINT_REQUIRED",
                 "purge requires an explicit user entrypoint",
