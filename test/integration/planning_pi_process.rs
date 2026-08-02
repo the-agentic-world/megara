@@ -18,18 +18,20 @@ fn write_node_fixture(path: &Path, body: &str) {
     }
 }
 
-fn run_process_fixture(project: &Path, fake: &Path, body: &str) -> Value {
-    let _ = fs::remove_file(project.join("child.pid"));
+fn run_process_fixture(project: &Path, fake: &Path, label: &str, body: &str) -> Value {
+    let pid_path = project.join(format!("child-{label}.pid"));
+    let _ = fs::remove_file(&pid_path);
     let helper =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("harness/pi/extensions/megara_process.ts");
     let extension = project.join("process-extension.ts");
     fs::copy(&helper, project.join("megara_process.ts")).unwrap();
     let source = format!(
-        "import {{ runProcess, runProcessWithPolicy }} from \"./megara_process.js\";\n\nexport default function (pi) {{\n  pi.registerCommand(\"test-process\", {{\n    description: \"Pi process fixture\",\n    handler: async (_args, ctx) => {{\n      try {{\n        {body}\n      }} catch (error) {{\n        ctx.ui.notify(JSON.stringify({{ ok: false, error: String(error) }}), \"error\");\n      }}\n    }},\n  }});\n}}\n"
+        "import {{ existsSync }} from \"node:fs\";\nimport {{ runProcess, runProcessWithPolicy }} from \"./megara_process.js\";\n\nexport default function (pi) {{\n  pi.registerCommand(\"test-process\", {{\n    description: \"Pi process fixture\",\n    handler: async (_args, ctx) => {{\n      try {{\n        {body}\n      }} catch (error) {{\n        ctx.ui.notify(JSON.stringify({{ ok: false, error: String(error) }}), \"error\");\n      }}\n    }},\n  }});\n}}\n"
     );
     fs::write(&extension, source).unwrap();
     let agent_dir = tempdir().unwrap();
-    let mut pi = PiRpc::start_with_extension(project, fake, agent_dir.path(), &extension);
+    let mut pi =
+        PiRpc::start_with_extension_and_pid(project, fake, agent_dir.path(), &extension, &pid_path);
     let responses = pi.slash("process", "/test-process", None, true);
     let notification = responses
         .iter()
@@ -84,8 +86,8 @@ fn failing_megara(project: &Path) -> PathBuf {
     path
 }
 
-fn assert_reaped(project: &Path) {
-    let pid_path = project.join("child.pid");
+fn assert_reaped(project: &Path, label: &str) {
+    let pid_path = project.join(format!("child-{label}.pid"));
     assert!(pid_path.is_file(), "child did not write its PID marker");
     let pid = fs::read_to_string(pid_path).unwrap();
     assert!(!Command::new("kill")
@@ -110,6 +112,7 @@ setTimeout(() => process.stdout.write(bytes.subarray(10)), 10);"#,
     let utf8 = run_process_fixture(
         project.path(),
         &utf8_fake,
+        "utf8",
         r#"const result = await runProcess(process.cwd(), ["planning", "rpc"], "x", undefined);
 ctx.ui.notify(JSON.stringify({ok:true, result}), "info");"#,
     );
@@ -125,6 +128,7 @@ process.stdout.write(Buffer.alloc(4 * 1024 * 1024 + 1, 65));"#,
     let overflow = run_process_fixture(
         project.path(),
         &overflow_fake,
+        "stdout-overflow",
         r#"await runProcess(process.cwd(), ["planning", "rpc"], "x", undefined);
 ctx.ui.notify(JSON.stringify({ok:true}), "info");"#,
     );
@@ -133,7 +137,7 @@ ctx.ui.notify(JSON.stringify({ok:true}), "info");"#,
         .as_str()
         .unwrap()
         .contains("exceeded 4 MiB"));
-    assert_reaped(project.path());
+    assert_reaped(project.path(), "stdout-overflow");
 
     let stderr_fake = project.path().join("stderr-child");
     write_node_fixture(
@@ -144,6 +148,7 @@ process.stderr.write(Buffer.alloc(4 * 1024 * 1024 + 1, 66));"#,
     let stderr = run_process_fixture(
         project.path(),
         &stderr_fake,
+        "stderr-overflow",
         r#"await runProcess(process.cwd(), ["planning", "rpc"], "x", undefined);
 ctx.ui.notify(JSON.stringify({ok:true}), "info");"#,
     );
@@ -152,7 +157,7 @@ ctx.ui.notify(JSON.stringify({ok:true}), "info");"#,
         .as_str()
         .unwrap()
         .contains("stderr exceeded 4 MiB"));
-    assert_reaped(project.path());
+    assert_reaped(project.path(), "stderr-overflow");
 
     let timeout_fake = project.path().join("timeout-child");
     write_node_fixture(
@@ -164,12 +169,13 @@ setInterval(() => {}, 1000);"#,
     let timeout = run_process_fixture(
         project.path(),
         &timeout_fake,
-        r#"await runProcessWithPolicy(process.cwd(), ["planning", "rpc"], "x", undefined, {timeoutMs: 50, terminationGraceMs: 50});
+        "timeout",
+        r#"await runProcessWithPolicy(process.cwd(), ["planning", "rpc"], "x", undefined, {timeoutMs: 5_000, terminationGraceMs: 50});
 ctx.ui.notify(JSON.stringify({ok:true}), "info");"#,
     );
     assert_eq!(timeout["ok"], false);
     assert!(timeout["error"].as_str().unwrap().contains("timed out"));
-    assert_reaped(project.path());
+    assert_reaped(project.path(), "timeout");
 
     let abort_fake = project.path().join("abort-child");
     write_node_fixture(
@@ -181,14 +187,24 @@ setInterval(() => {}, 1000);"#,
     let aborted = run_process_fixture(
         project.path(),
         &abort_fake,
+        "abort",
         r#"const controller = new AbortController();
-setTimeout(() => controller.abort(), 100);
-await runProcessWithPolicy(process.cwd(), ["planning", "rpc"], "x", controller.signal, {timeoutMs: 120_000, terminationGraceMs: 50});
+const pending = runProcessWithPolicy(process.cwd(), ["planning", "rpc"], "x", controller.signal, {timeoutMs: 120_000, terminationGraceMs: 50});
+const pidFile = process.env.PI_CHILD_PID!;
+const deadline = Date.now() + 5_000;
+while (!existsSync(pidFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+if (!existsSync(pidFile)) {
+  controller.abort();
+  await pending.catch(() => undefined);
+  throw new Error("child did not become ready");
+}
+controller.abort();
+await pending;
 ctx.ui.notify(JSON.stringify({ok:true}), "info");"#,
     );
     assert_eq!(aborted["ok"], false);
     assert!(aborted["error"].as_str().unwrap().contains("was aborted"));
-    assert_reaped(project.path());
+    assert_reaped(project.path(), "abort");
 
     let epipe_fake = project.path().join("epipe-child");
     write_node_fixture(
@@ -200,12 +216,13 @@ setTimeout(() => process.exit(0), 1000);"#,
     let epipe = run_process_fixture(
         project.path(),
         &epipe_fake,
+        "epipe",
         r#"await runProcess(process.cwd(), ["planning", "rpc"], "x".repeat(8 * 1024 * 1024), undefined);
 ctx.ui.notify(JSON.stringify({ok:true}), "info");"#,
     );
     assert_eq!(epipe["ok"], false);
     assert!(epipe["error"].as_str().unwrap().contains("IO_ERROR"));
-    assert_reaped(project.path());
+    assert_reaped(project.path(), "epipe");
 }
 
 #[cfg(unix)]

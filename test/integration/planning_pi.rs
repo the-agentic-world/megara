@@ -27,6 +27,17 @@ impl PiRpc {
         agent_dir: &Path,
         extension: &Path,
     ) -> Self {
+        let pid_path = project.join("child.pid");
+        Self::start_with_extension_and_pid(project, fake_megara, agent_dir, extension, &pid_path)
+    }
+
+    fn start_with_extension_and_pid(
+        project: &Path,
+        fake_megara: &Path,
+        agent_dir: &Path,
+        extension: &Path,
+        pid_path: &Path,
+    ) -> Self {
         let mut child = Command::new(std::env::var("PI_BIN").unwrap_or_else(|_| "pi".to_string()))
             .args([
                 "--mode",
@@ -44,7 +55,7 @@ impl PiRpc {
             .current_dir(project)
             .env("MEGARA_BIN", fake_megara)
             .env("PI_FAKE_LOG", project.join("fake.log"))
-            .env("PI_CHILD_PID", project.join("child.pid"))
+            .env("PI_CHILD_PID", pid_path)
             .env("PI_CODING_AGENT_DIR", agent_dir)
             .env("PI_OFFLINE", "1")
             .env("PI_TELEMETRY", "0")
@@ -144,6 +155,7 @@ printf 'CALL\n' >> "$PI_FAKE_LOG"
 for arg do printf '%s\n' "$arg" >> "$PI_FAKE_LOG"; done
 printf 'END\n' >> "$PI_FAKE_LOG"
 if [ "${1-}" = "planning" ] && [ "${2-}" = "rpc" ]; then
+  IFS= read -r request || exit 64
   printf '%s\n' '{"protocol_version":1,"request_id":"fake","operation":"planning.status","ok":true,"session_id":"pln-test","revision":7,"replayed":false,"result":{"schema":"megara.result/v1","operation":"planning.status","state":{"spec":{"current_candidate":{"candidate_id":"spec-candidate","semantic_hash":"sha256:spec","base_domain_revision":1}}}},"observed":{"projection_status":"unchanged","evidence_current":true,"warnings":[]}}'
 else
   printf '%s\n' '{"protocol_version":1,"request_id":"fake","ok":true,"replayed":false}'
