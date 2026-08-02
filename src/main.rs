@@ -6,6 +6,7 @@ mod hook;
 mod installer;
 mod paths;
 mod pi;
+pub mod planning;
 mod targets;
 mod team;
 mod templates;

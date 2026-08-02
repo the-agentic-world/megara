@@ -14,6 +14,8 @@ mod hook;
 mod installer;
 #[path = "../../src/paths.rs"]
 mod paths;
+#[path = "../../src/planning.rs"]
+mod planning;
 #[path = "../../src/targets.rs"]
 mod targets;
 #[path = "../../src/team.rs"]
@@ -56,6 +58,10 @@ mod docs_tests;
 mod hook_tests;
 #[path = "pi.rs"]
 mod pi_tests;
+#[path = "planning_domain.rs"]
+mod planning_domain;
+#[path = "planning_engine.rs"]
+mod planning_engine;
 #[path = "team.rs"]
 mod team_tests;
 #[path = "tui.rs"]
