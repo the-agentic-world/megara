@@ -60,6 +60,12 @@ mod hook_tests;
 mod pi_tests;
 #[path = "planning_approval.rs"]
 mod planning_approval;
+#[path = "planning_artifact_evidence.rs"]
+mod planning_artifact_evidence;
+#[path = "planning_artifact_support.rs"]
+mod planning_artifact_support;
+#[path = "planning_artifacts.rs"]
+mod planning_artifacts;
 #[path = "planning_audit_combinations.rs"]
 mod planning_audit_combinations;
 #[path = "planning_audit_readiness.rs"]
@@ -76,10 +82,14 @@ mod planning_engine;
 mod planning_evidence;
 #[path = "planning_evidence_security.rs"]
 mod planning_evidence_security;
+#[path = "planning_export.rs"]
+mod planning_export;
 #[path = "planning_invalidation.rs"]
 mod planning_invalidation;
 #[path = "planning_invalidation_derived.rs"]
 mod planning_invalidation_derived;
+#[path = "planning_projection.rs"]
+mod planning_projection;
 #[path = "planning_protocol.rs"]
 mod planning_protocol;
 #[path = "planning_protocol_golden.rs"]
