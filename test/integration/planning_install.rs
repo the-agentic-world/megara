@@ -40,6 +40,41 @@ fn project_install_merges_existing_codex_config_without_whole_file_marker() {
         parsed["mcp_servers"]["other"]["command"].as_str(),
         Some("other")
     );
+    let planning = &parsed["mcp_servers"]["megara_planning"];
+    assert_eq!(
+        planning["command"].as_str(),
+        Some(
+            fs::canonicalize(env!("CARGO_BIN_EXE_megara"))
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+    );
+    assert_eq!(
+        planning["args"].as_array().unwrap(),
+        &[
+            toml::Value::String("planning".to_string()),
+            toml::Value::String("mcp".to_string()),
+            toml::Value::String("--project".to_string()),
+            toml::Value::String(project.path().canonicalize().unwrap().display().to_string()),
+        ]
+    );
+    assert_eq!(
+        planning["cwd"].as_str(),
+        Some(project.path().canonicalize().unwrap().to_str().unwrap())
+    );
+    assert_eq!(planning["enabled"].as_bool(), Some(true));
+    assert_eq!(planning["startup_timeout_sec"].as_integer(), Some(10));
+    assert_eq!(planning["tool_timeout_sec"].as_integer(), Some(120));
+    let tool_table = planning["tools"].as_table().unwrap();
+    assert_eq!(tool_table.len(), 3);
+    for name in [
+        "planning_spec_approve",
+        "planning_plan_approve",
+        "planning_purge",
+    ] {
+        assert_eq!(tool_table[name]["approval_mode"].as_str(), Some("prompt"));
+    }
 }
 
 #[test]
@@ -101,6 +136,43 @@ fn force_updates_inline_mcp_table_with_exact_assignment_backup() {
     let updated = fs::read_to_string(&config).unwrap();
     assert!(updated.contains("command = \"other\""));
     assert!(updated.contains("[mcp_servers.megara_planning]"));
+}
+
+#[test]
+fn force_updates_quoted_and_dotted_mcp_tables_with_exact_backups() {
+    let cases = [
+        (
+            "[mcp_servers]\n\"megara_planning\" = { command = \"old\" }\nother = { command = \"other\" }\n",
+            b"\"megara_planning\" = { command = \"old\" }\n".as_slice(),
+        ),
+        (
+            "mcp_servers.\"megara_planning\".command = \"old\"\nmcp_servers.\"megara_planning\".other = 1\nother = 2\n",
+            b"mcp_servers.\"megara_planning\".command = \"old\"\nmcp_servers.\"megara_planning\".other = 1\n".as_slice(),
+        ),
+        (
+            "mcp_servers.megara_planning.command = \"old\"\nmcp_servers.megara_planning.other = 1\nother = 2\n",
+            b"mcp_servers.megara_planning.command = \"old\"\nmcp_servers.megara_planning.other = 1\n".as_slice(),
+        ),
+    ];
+
+    for (original, expected_backup) in cases {
+        let project = tempdir().unwrap();
+        let codex_home = tempdir().unwrap();
+        let config = project.path().join(".codex/config.toml");
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        fs::write(&config, original).unwrap();
+
+        let output = install(project.path(), codex_home.path(), &["--force"]);
+        assert!(
+            output.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            fs::read(config.with_file_name("config.toml.megara.mcp.bak")).unwrap(),
+            expected_backup
+        );
+    }
 }
 
 #[test]

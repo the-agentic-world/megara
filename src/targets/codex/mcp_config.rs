@@ -1,12 +1,13 @@
 use std::{
     fs,
+    ops::Range,
     path::{Path, PathBuf},
 };
 
 use crate::installer::ManagedTomlEdit;
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
-use toml_edit::{value, Array, DocumentMut, Item, Table, Value as EditValue};
+use toml_edit::{value, Array, DocumentMut, ImDocument, Item, Table, Value as EditValue};
 
 const MCP_HASH_PREFIX: &str = "# MEGARA:MCP-SHA256=";
 
@@ -166,59 +167,89 @@ fn item_hash(item: &Item) -> Result<String> {
 }
 
 fn table_backup(content: &str) -> Result<Vec<u8>> {
-    let header = "[mcp_servers.megara_planning]";
-    let mut start = None;
-    let mut end = None;
-    let mut offset = 0;
-    for segment in content.split_inclusive('\n') {
-        let line = segment.trim_end_matches('\n').trim_end_matches('\r');
-        let trimmed = line.trim();
-        if start.is_none() {
-            if trimmed == header {
-                start = Some(offset);
-            }
-        } else if (trimmed.starts_with('[')
-            && !trimmed.starts_with("[mcp_servers.megara_planning."))
-            || trimmed.starts_with(MCP_HASH_PREFIX)
-        {
-            end = Some(offset);
-            break;
-        }
-        offset += segment.len();
-    }
-    let Some(start) = start else {
-        return inline_or_dotted_table_backup(content);
+    let document: ImDocument<&str> =
+        ImDocument::parse(content).context("failed to parse Codex config TOML for table backup")?;
+    let Some(servers) = document.get("mcp_servers").and_then(Item::as_table) else {
+        bail!("cannot isolate managed megara_planning TOML table for backup")
     };
-    let end = end.unwrap_or(content.len());
-    Ok(content.as_bytes()[start..end].to_vec())
+    let Some(target) = servers.get("megara_planning") else {
+        bail!("cannot isolate managed megara_planning TOML table for backup")
+    };
+
+    let mut spans = Vec::new();
+    if let Some(span) = servers.key("megara_planning").and_then(|key| key.span()) {
+        spans.push(span);
+    }
+    collect_spans(target, &mut spans);
+    let ranges = source_line_ranges(content, spans);
+    if ranges.is_empty() {
+        bail!("cannot isolate managed megara_planning TOML table for backup")
+    }
+    let mut backup = Vec::new();
+    for range in ranges {
+        backup.extend_from_slice(content.as_bytes().get(range).context(
+            "toml_edit returned an invalid span for managed megara_planning TOML table",
+        )?);
+    }
+    Ok(backup)
 }
 
-fn inline_or_dotted_table_backup(content: &str) -> Result<Vec<u8>> {
-    let mut in_mcp_servers = false;
-    let mut dotted = Vec::new();
-    for segment in content.split_inclusive('\n') {
-        let line = segment.trim_end_matches('\n').trim_end_matches('\r');
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            in_mcp_servers = trimmed == "[mcp_servers]";
-            continue;
-        }
-        if in_mcp_servers {
-            let key = trimmed.split_once('=').map(|(key, _)| key.trim());
-            if key == Some("megara_planning") {
-                return Ok(segment.as_bytes().to_vec());
-            }
-            if key.is_some_and(|key| key.starts_with("megara_planning.")) {
-                dotted.extend_from_slice(segment.as_bytes());
-            }
-        } else if trimmed.starts_with("mcp_servers.megara_planning.") {
-            dotted.extend_from_slice(segment.as_bytes());
-        }
+fn collect_spans(item: &Item, spans: &mut Vec<Range<usize>>) {
+    if let Some(span) = item.span() {
+        spans.push(span);
     }
-    if !dotted.is_empty() {
-        return Ok(dotted);
+    match item {
+        Item::Table(table) => {
+            for (key, value) in table.iter() {
+                if let Some(span) = table.key(key).and_then(|key| key.span()) {
+                    spans.push(span);
+                }
+                collect_spans(value, spans);
+            }
+        }
+        Item::Value(value) => {
+            if let Some(table) = value.as_inline_table() {
+                for (key, value) in table.iter() {
+                    if let Some(span) = table.key(key).and_then(|key| key.span()) {
+                        spans.push(span);
+                    }
+                    if let Some(span) = value.span() {
+                        spans.push(span);
+                    }
+                }
+            }
+        }
+        Item::None | Item::ArrayOfTables(_) => {}
     }
-    bail!("cannot isolate managed megara_planning TOML table for backup")
+}
+
+fn source_line_ranges(source: &str, spans: Vec<Range<usize>>) -> Vec<Range<usize>> {
+    let mut ranges = spans
+        .into_iter()
+        .filter(|span| span.start <= span.end && span.end <= source.len())
+        .map(|span| {
+            let start = source[..span.start]
+                .rfind('\n')
+                .map_or(0, |offset| offset + 1);
+            let end = source[span.end..]
+                .find('\n')
+                .map_or(source.len(), |offset| span.end + offset + 1);
+            start..end
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_by_key(|range| (range.start, range.end));
+
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for range in ranges {
+        if let Some(last) = merged.last_mut() {
+            if range.start <= last.end {
+                last.end = last.end.max(range.end);
+                continue;
+            }
+        }
+        merged.push(range);
+    }
+    merged
 }
 
 fn backup_path(path: &Path) -> PathBuf {

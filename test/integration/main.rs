@@ -118,6 +118,7 @@ mod planning_cli_aliases;
 mod planning_cli_artifact_support;
 mod planning_cli_artifacts;
 mod planning_cli_evidence;
+mod planning_install;
 mod ultragoal;
 mod ultragoal_support;
 mod uninstall;
