@@ -105,7 +105,7 @@ fn managed_projection_exists(scope: InstallScope, target: TargetRuntime) -> Resu
     let marker_paths = match target {
         TargetRuntime::Codex => vec![
             paths.target_root.join("AGENTS.md"),
-            paths.target_root.join("config.toml"),
+            paths.target_root.join("hooks.json"),
         ],
         TargetRuntime::Pi => vec![
             paths.target_root.join("extensions/megara.ts"),
@@ -185,6 +185,7 @@ pub struct InstallPlan {
     pub runtime_root: PathBuf,
     pub target_root: PathBuf,
     pub files: Vec<PlannedFile>,
+    pub managed_toml_edits: Vec<super::managed_edit::ManagedTomlEdit>,
     pub obsolete_files: Vec<PathBuf>,
 }
 

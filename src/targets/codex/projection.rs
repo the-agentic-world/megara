@@ -4,27 +4,37 @@ use anyhow::{Context, Result};
 
 use crate::{
     agents,
-    installer::PlannedFile,
+    installer::{ManagedTomlEdit, PlannedFile},
     paths::{InstallScope, TargetRuntime},
     templates::TemplateRegistry,
 };
 
 use super::{agent::agent_toml, agents_md::codex_agents_md, hooks::*};
 
-pub(super) fn projection_files(
+pub(super) fn projection_plan(
     root: PathBuf,
     scope: InstallScope,
     registry: &TemplateRegistry,
-) -> Result<Vec<PlannedFile>> {
+    force: bool,
+    include_managed_edit: bool,
+) -> Result<(Vec<PlannedFile>, Option<ManagedTomlEdit>)> {
     let megara_bin = env::current_exe().context("failed to resolve current megara executable")?;
+    let managed_config = if include_managed_edit && scope == InstallScope::Project {
+        Some(super::mcp_config::plan(&root, &megara_bin, force)?)
+    } else {
+        None
+    };
     let mut files = vec![
         PlannedFile::new(root.join("AGENTS.md"), codex_agents_md(registry)?),
-        PlannedFile::new(root.join("config.toml"), codex_config()),
         PlannedFile::new(
             root.join("hooks.json"),
             codex_hooks_json(scope, &root, &megara_bin, registry)?,
         ),
     ];
+
+    if scope == InstallScope::Global {
+        files.push(PlannedFile::new(root.join("config.toml"), codex_config()));
+    }
 
     if scope == InstallScope::Global {
         for skill in registry.workflows().into_iter().chain(registry.skills()) {
@@ -55,7 +65,7 @@ pub(super) fn projection_files(
         ));
     }
 
-    Ok(files)
+    Ok((files, managed_config))
 }
 
 pub(super) fn obsolete_projection_files(

@@ -11,5 +11,7 @@ pub struct UninstallArgs {
     #[arg(long)]
     pub dry_run: bool,
     #[arg(long)]
+    pub force: bool,
+    #[arg(long)]
     pub json: bool,
 }

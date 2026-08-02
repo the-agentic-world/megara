@@ -1,3 +1,5 @@
+#[path = "installer/managed_edit.rs"]
+mod managed_edit;
 #[path = "installer/marker.rs"]
 mod marker;
 #[path = "installer/migration.rs"]
@@ -9,6 +11,7 @@ mod planner;
 #[path = "installer/print.rs"]
 mod print;
 
+pub(crate) use managed_edit::ManagedTomlEdit;
 pub use marker::{strip_managed_marker, MANAGED_MARKER};
 #[allow(unused_imports)]
 pub use model::{

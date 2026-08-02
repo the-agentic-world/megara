@@ -39,7 +39,12 @@ pub fn run(args: UninstallArgs, registry: &TemplateRegistry) -> Result<()> {
             json: args.json,
         },
     )
-    .plan()?;
+    .plan_without_managed_edits()?;
+    let managed_config = if target == TargetRuntime::Codex && scope == InstallScope::Project {
+        codex::plan_remove_mcp_config(&plan.target_root, args.force)?
+    } else {
+        None
+    };
     let keep_shared_files = other_managed_projection_exists(scope, target, registry)?;
     let paths = if keep_shared_files {
         plan.files
@@ -56,23 +61,41 @@ pub fn run(args: UninstallArgs, registry: &TemplateRegistry) -> Result<()> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let removed_hook_trust = if target == TargetRuntime::Codex {
-        codex::remove_hook_trust(&plan.target_root.join("hooks.json"), args.dry_run)?
+    let planned_removed = remove_managed_files(&paths, true)?;
+    let planned_hook_trust = if target == TargetRuntime::Codex {
+        codex::remove_hook_trust(&plan.target_root.join("hooks.json"), true)?
     } else {
         0
     };
-    let removed = remove_managed_files(&paths, args.dry_run)?;
+    let mut removed = if args.dry_run {
+        planned_removed
+    } else {
+        if let Some(edit) = &managed_config {
+            edit.apply(false)?;
+        }
+        let removed = remove_managed_files(&paths, false)?;
+        if target == TargetRuntime::Codex {
+            codex::remove_hook_trust(&plan.target_root.join("hooks.json"), false)?;
+        }
+        removed
+    };
+    if let Some(edit) = &managed_config {
+        if edit.changed {
+            removed.push(edit.path.clone());
+        }
+    }
     let runtime_paths = InstallPaths::resolve(scope, target)?;
     let retained_runtime_data = runtime_paths.runtime_root.join("state").exists()
         || runtime_paths.runtime_root.join("artifacts").exists()
-        || runtime_paths.runtime_root.join("cache").exists();
+        || runtime_paths.runtime_root.join("cache").exists()
+        || runtime_paths.runtime_root.join("planning").exists();
     let result = UninstallResult {
         scope,
         target,
         dry_run: args.dry_run,
         removed,
         retained_runtime_data,
-        removed_hook_trust,
+        removed_hook_trust: planned_hook_trust,
     };
     print(&result, keep_shared_files, args.json)
 }
