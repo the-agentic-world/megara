@@ -1,0 +1,51 @@
+{
+  "schema": "megara.planning-legacy-inventory/v1",
+  "captured_from_commit": "9dfa8efb2e67d0d6ca68f2fad6700c0bc6b0cad2",
+  "categories": {
+    "harness_workflow_skills": [
+      "harness/skills/deep-interview/SKILL.md",
+      "harness/skills/ralplan/SKILL.md",
+      "harness/skills/team/SKILL.md",
+      "harness/skills/ultragoal/SKILL.md"
+    ],
+    "harness_workflow_fragments": [
+      "harness/skill-fragments/deep-interview/auto-answer-uncertain.md",
+      "harness/skill-fragments/deep-interview/auto-research-greenfield.md",
+      "harness/skill-fragments/deep-interview/lateral-review-panel.md",
+      "harness/skill-fragments/ultragoal/ai-slop-cleaner.md"
+    ],
+    "harness_runtime": [
+      "harness/pi/extensions/megara.ts",
+      "harness/rules/planning.md"
+    ],
+    "rust_workflow_modules": [
+      "src/hook.rs",
+      "src/hook/",
+      "src/pi.rs",
+      "src/pi/",
+      "src/team.rs",
+      "src/team/",
+      "src/ultragoal.rs",
+      "src/ultragoal/",
+      "src/cli/pi.rs",
+      "src/cli/team.rs",
+      "src/cli/ultragoal.rs",
+      "src/targets/pi.rs"
+    ],
+    "test_targets": [
+      "test/unit/hook.rs",
+      "test/unit/pi.rs",
+      "test/unit/team.rs",
+      "test/unit/ultragoal.rs",
+      "test/integration/hook_deep_interview.rs",
+      "test/integration/hook_git_guard.rs",
+      "test/integration/hook_ralplan_approval.rs",
+      "test/integration/hook_team.rs",
+      "test/integration/hook_workflow_pipeline.rs",
+      "test/integration/pi.rs",
+      "test/integration/ultragoal.rs"
+    ]
+  },
+  "selection_rule": "The complete tracked path list is regenerated with rg --files harness src test and compared against these categories; directory entries denote all descendants captured by the command.",
+  "planning_import_policy": "Legacy content is imported as opaque context only; no candidate, entity, approval, execution receipt, or QuestionProposal is synthesized."
+}

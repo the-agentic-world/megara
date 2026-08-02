@@ -1,0 +1,26 @@
+{
+  "schema": "megara.planning-evidence/v1",
+  "slice": 0,
+  "captured_at": "2026-08-02",
+  "base_commit": "9dfa8efb2e67d0d6ca68f2fad6700c0bc6b0cad2",
+  "cargo_lock_sha256": "075a3fe4ef20ed68703d7a4fd24306411620e802613ad9fe622938193dc6c7dc",
+  "toolchain": {
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14) (Homebrew)",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+    "host": "aarch64-apple-darwin"
+  },
+  "commands": [
+    {"command": "cargo fmt --check", "exit_code": 0},
+    {"command": "cargo clippy --all-targets -- -D warnings", "exit_code": 0},
+    {"command": "cargo test --all-targets", "exit_code": 0, "tests": 207, "failed": 0, "ignored": 0, "filtered": 0},
+    {"command": "cargo run --quiet -- docs check --root docs", "exit_code": 0, "documents_checked": 6}
+  ],
+  "dirty_baseline": {
+    "preserved_paths": ["docs/index.md", "docs/plan/"],
+    "source_change_policy": "These paths were present before Slice 0 implementation and are preserved; unrelated edits are not staged by the Slice 0 commit."
+  },
+  "legacy_inventory": "test/fixtures/planning/legacy/inventory.json",
+  "projection_snapshot": "test/fixtures/planning/legacy/projection-snapshot.json",
+  "baseline_status": "PASS",
+  "release_status": "PENDING"
+}
