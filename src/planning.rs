@@ -2,3 +2,9 @@
 pub mod domain;
 #[path = "planning/engine.rs"]
 pub mod engine;
+#[path = "planning/protocol.rs"]
+pub mod protocol;
+#[path = "planning/service.rs"]
+pub mod service;
+#[path = "planning/store.rs"]
+pub mod store;

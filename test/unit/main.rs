@@ -66,6 +66,24 @@ mod planning_domain;
 mod planning_engine;
 #[path = "planning_invalidation.rs"]
 mod planning_invalidation;
+#[path = "planning_protocol.rs"]
+mod planning_protocol;
+#[path = "planning_protocol_golden.rs"]
+mod planning_protocol_golden;
+#[path = "planning_service.rs"]
+mod planning_service;
+#[path = "planning_store.rs"]
+mod planning_store;
+#[path = "planning_store_concurrency.rs"]
+mod planning_store_concurrency;
+#[path = "planning_store_hash.rs"]
+mod planning_store_hash;
+#[path = "planning_store_purge.rs"]
+mod planning_store_purge;
+#[path = "planning_store_schema.rs"]
+mod planning_store_schema;
+#[path = "planning_store_support.rs"]
+mod planning_store_support;
 #[path = "planning_support.rs"]
 mod planning_support;
 #[path = "planning_transitions.rs"]

@@ -110,6 +110,10 @@ mod install_listing;
 mod install_sync;
 mod install_trust;
 mod pi;
+#[allow(dead_code, unused_imports)]
+#[path = "../../src/planning.rs"]
+mod planning;
+mod planning_cli;
 mod ultragoal;
 mod ultragoal_support;
 mod uninstall;

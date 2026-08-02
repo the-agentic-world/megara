@@ -94,6 +94,7 @@ fn main() -> Result<()> {
         Commands::Pi(args) => match args.command {
             PiCommands::Event(args) => pi::run_event(args, &registry)?,
         },
+        Commands::Planning(args) => cli::run_planning(args)?,
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {
                 let list = registry.template_names();
