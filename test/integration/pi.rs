@@ -45,17 +45,57 @@ fn pi_project_install_projects_agents_and_requires_explicit_trust() {
         .path()
         .join(".agents/pi/extensions/megara.ts")
         .exists());
+    assert!(project
+        .path()
+        .join(".agents/pi/extensions/megara_process.ts")
+        .exists());
     assert!(project.path().join(".pi/extensions/megara.ts").exists());
+    assert!(project
+        .path()
+        .join(".pi/extensions/megara_process.ts")
+        .exists());
     assert!(project.path().join(".pi/agents/executor.md").exists());
     assert!(project.path().join(".pi/settings.json").exists());
     let extension = fs::read_to_string(project.path().join(".pi/extensions/megara.ts")).unwrap();
-    assert!(extension.contains("--append-system-prompt"));
-    assert!(extension.contains("\"--approve\""));
-    assert!(!extension.contains("--agent"));
-    assert!(extension.contains("event.text.match(WORKFLOW_PATTERN)"));
-    assert!(!extension.contains("event.input.match(WORKFLOW_PATTERN)"));
-    assert!(extension.contains("${event.systemPrompt}"));
-    assert!(extension.contains("Follow the loaded workflow skill"));
+    let process_helper =
+        fs::read_to_string(project.path().join(".pi/extensions/megara_process.ts")).unwrap();
+    assert!(extension.contains("./megara_process.js"));
+    assert!(!extension.contains("runProcessWithPolicy"));
+    assert!(process_helper.contains("MAX_RPC_OUTPUT_BYTES"));
+    assert!(extension.contains("planning rpc"));
+    assert!(extension.contains("planning_start"));
+    assert!(extension.contains("planning_answer"));
+    assert!(extension.contains("use the returned next_action and current work item"));
+    assert!(extension.contains("never infer approval or invoke user-owned actions"));
+    assert!(extension.contains("pi.registerCommand(\"megara-approve\""));
+    assert!(extension.contains("pi.registerCommand(\"megara-revise\""));
+    assert!(extension.contains("pi.registerCommand(\"megara-purge\""));
+    assert!(extension.contains("pi.exec(megaraCommand()"));
+    assert!(!extension.contains("name: \"planning_spec_approve\""));
+    assert!(!extension.contains("name: \"planning_plan_approve\""));
+    assert!(!extension.contains("name: \"planning_purge\""));
+    assert!(!extension.contains("name: \"planning_spec_revise\""));
+    assert!(!extension.contains("name: \"planning_plan_revise\""));
+    assert!(!extension.contains("name: \"planning_export\""));
+    assert!(!extension.contains("pi.on("));
+    assert!(!extension.contains("megara_subagent"));
+    assert!(!extension.contains("WORKFLOW_PATTERN"));
+    assert!(!extension.contains("--append-system-prompt"));
+    assert!(!extension.contains("--approve"));
+    assert!(extension
+        .contains("enumValue([\"interview\", \"specification\", \"planning\", \"complete\"])",));
+    assert!(extension.contains("enumValue([\"delta\", \"full\"])"));
+    assert!(extension.contains("enumValue([\"markdown\", \"json\"])"));
+    assert!(extension.contains("additionalProperties: false"));
+    assert!(extension.contains("if (lines.length === 1)"));
+    assert!(extension.contains("details: response"));
+    assert!(extension.contains("cmd_pi_${createHash(\"sha256\")"));
+    assert!(process_helper.contains("MAX_RPC_OUTPUT_BYTES = 4 * 1024 * 1024"));
+    assert!(process_helper.contains("TERMINATION_GRACE_MS = 2_000"));
+    assert!(process_helper.contains("child.kill(\"SIGTERM\")"));
+    assert!(process_helper.contains("child.kill(\"SIGKILL\")"));
+    assert!(process_helper.contains("child.on(\"close\", () => finish())"));
+    assert!(process_helper.contains("Megara planning rpc stderr exceeded 4 MiB"));
     let executor = fs::read_to_string(project.path().join(".pi/agents/executor.md")).unwrap();
     assert!(executor.contains("name: executor"));
     assert!(executor.contains("# Executor"));

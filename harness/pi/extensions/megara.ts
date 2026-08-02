@@ -1,192 +1,273 @@
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createHash, randomUUID } from "node:crypto";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import {
+  runProcess,
+  RPC_TIMEOUT_MS,
+} from "./megara_process.js";
 
-type Workflow = "deep-interview" | "ralplan" | "ultragoal" | "team";
-type ActiveWorkflow = { workflow: Workflow; eventId: string };
-type ProcessResult = { code: number; stdout: string; stderr: string };
-
-const WORKFLOW_PATTERN = /(?:\$|\/skill:)(deep-interview|ralplan|ultragoal|team)\b/;
-const MAX_OUTPUT_BYTES = 50 * 1024;
-const RETRY_DELAYS = [1_000, 2_000];
-
+type JsonObject = Record<string, unknown>;
+const PLANNING_MODEL_GUIDANCE =
+  "Planning-only: use the returned next_action and current work item; never infer approval or invoke user-owned actions.";
 function megaraCommand(): string {
   return process.env.MEGARA_BIN || "megara";
 }
 
-function projectScope(cwd: string): "project" | "global" {
-  return existsSync(join(cwd, ".pi", "extensions", "megara.ts")) ? "project" : "global";
+function newId(prefix: "req" | "cmd"): string {
+  return `${prefix}_${randomUUID()}`;
 }
 
-function agentPath(cwd: string, role: string): string {
-  const project = join(cwd, ".pi", "agents", `${role}.md`);
-  if (existsSync(project)) return project;
-  const global = join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "agents", `${role}.md`);
-  if (existsSync(global)) return global;
-  throw new Error(`Megara role agent is unavailable: ${role}`);
+export function stableCommandId(toolCallId: string): string {
+  return `cmd_pi_${createHash("sha256").update(toolCallId, "utf8").digest("hex")}`;
 }
 
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function rpcRequest(
+  operation: string,
+  values: JsonObject,
+  mutation: boolean,
+  commandId: string | undefined = undefined,
+): JsonObject {
+  const { session_id, expected_revision, ...params } = values;
+  return {
+    protocol_version: 1,
+    request_id: newId("req"),
+    operation,
+    ...(mutation ? { command_id: commandId || newId("cmd") } : {}),
+    ...(session_id === undefined ? {} : { session_id }),
+    ...(expected_revision === undefined ? {} : { expected_revision }),
+    ...(Object.keys(params).length === 0 ? {} : { params }),
+  };
 }
 
-async function runtimeEvent(cwd: string, payload: Record<string, unknown>): Promise<Record<string, any>> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(megaraCommand(), ["pi", "event", "--scope", projectScope(cwd)], {
-      cwd,
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) return reject(new Error(stderr.trim() || `Megara runtime exited with ${code}`));
-      try { resolve(JSON.parse(stdout)); } catch { reject(new Error("Megara runtime returned invalid JSON")); }
-    });
-    child.stdin.end(JSON.stringify({ protocol_version: 1, ...payload }));
+async function runPlanningRpc(
+  cwd: string,
+  request: JsonObject,
+  signal: AbortSignal | undefined,
+): Promise<JsonObject> {
+  const result = await runProcess(
+    cwd,
+    ["planning", "rpc", "--project", cwd],
+    JSON.stringify(request) + "\n",
+    signal,
+  );
+  const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length === 1) {
+    try {
+      return JSON.parse(lines[0]) as JsonObject;
+    } catch (error) {
+      if (result.code === 0) {
+        throw new Error(`IO_ERROR: invalid planning rpc response: ${String(error)}`);
+      }
+    }
+  }
+  throw new Error(`IO_ERROR: ${result.stderr.trim() || `Megara planning rpc exited with ${result.code}`}`);
+}
+
+function requireOk(response: JsonObject): JsonObject {
+  if (response.ok === false) {
+    const error = response.error as JsonObject | undefined;
+    throw new Error(`${String(error?.code || "INVALID_REQUEST")}: ${String(error?.message || "Planning request failed")}`);
+  }
+  return response;
+}
+
+export function transportErrorResponse(request: JsonObject, error: unknown): JsonObject {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    protocol_version: 1,
+    request_id: request.request_id,
+    operation: request.operation,
+    ok: false,
+    error: {
+      code: "IO_ERROR",
+      message,
+      retryable: false,
+      details: { transport: "pi", cause: message },
+    },
+  };
+}
+
+
+function responseText(response: JsonObject): string {
+  return JSON.stringify(response);
+}
+
+function projectTool(
+  pi: ExtensionAPI,
+  name: string,
+  operation: string,
+  parameters: unknown,
+  mutation: boolean,
+): void {
+  pi.registerTool({
+    name,
+    label: `Megara ${operation}`,
+    description: `Run the typed ${operation} planning operation once. ${PLANNING_MODEL_GUIDANCE}`,
+    parameters,
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const commandId = mutation
+        ? stableCommandId(String(toolCallId))
+        : undefined;
+      const request = rpcRequest(operation, params as JsonObject, mutation, commandId);
+      let response: JsonObject;
+      try {
+        response = await runPlanningRpc(ctx.cwd, request, signal);
+      } catch (error) {
+        response = transportErrorResponse(request, error);
+      }
+      return { content: [{ type: "text", text: responseText(response) }], details: response };
+    },
   });
 }
 
-function readFinalOutput(jsonl: string): string {
-  let output = "";
-  for (const line of jsonl.split("\n")) {
-    try {
-      const event = JSON.parse(line);
-      if (event.type === "message_end" && event.message?.role === "assistant") {
-        output = event.message.content?.find((part: { type: string }) => part.type === "text")?.text || output;
-      }
-    } catch { /* Ignore malformed streaming lines. */ }
-  }
-  return output.slice(0, MAX_OUTPUT_BYTES);
+function candidateDetails(state: JsonObject, kind: "spec" | "plan"): JsonObject {
+  const track = state[kind] as JsonObject | undefined;
+  const candidate = track?.current_candidate as JsonObject | undefined;
+  if (!candidate) throw new Error(`no current ${kind} candidate`);
+  return {
+    candidate_id: candidate.candidate_id,
+    semantic_hash: candidate.semantic_hash,
+    base_revision: kind === "spec" ? candidate.base_domain_revision : candidate.base_plan_revision,
+  };
 }
 
-function executionFailure(jsonl: string): string | undefined {
-  for (const line of jsonl.split("\n")) {
-    try {
-      const event = JSON.parse(line);
-      const message = event.type === "message_end" ? event.message : undefined;
-      if (message?.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")) {
-        return message.errorMessage || `Pi role stopped: ${message.stopReason}`;
-      }
-    } catch { /* Ignore malformed streaming lines. */ }
-  }
-  return undefined;
+async function currentCandidate(
+  cwd: string,
+  session: string,
+  signal: AbortSignal | undefined,
+  kind: "spec" | "plan",
+): Promise<{ revision: number; details: JsonObject }> {
+  const response = requireOk(await runPlanningRpc(
+    cwd,
+    rpcRequest("planning.status", { session_id: session }, false),
+    signal,
+  ));
+  const state = response.result && (response.result as JsonObject).state as JsonObject;
+  return {
+    revision: Number(response.revision),
+    details: candidateDetails(state, kind),
+  };
 }
 
-async function runRole(cwd: string, role: string, task: string, model: string | undefined, signal: AbortSignal | undefined): Promise<ProcessResult> {
-  const args = ["--mode", "json", "-p", "--no-session", "--approve", "--append-system-prompt", agentPath(cwd, role)];
-  if (model) args.push("--model", model);
-  args.push(`Task: ${task}`);
-  return new Promise((resolve) => {
-    const child = spawn("pi", args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    const terminate = () => {
-      child.kill("SIGTERM");
-      setTimeout(() => { if (!child.killed) child.kill("SIGKILL"); }, 5_000);
-    };
-    const timeout = setTimeout(terminate, 120_000);
-    if (signal?.aborted) terminate();
-    else signal?.addEventListener("abort", terminate, { once: true });
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", terminate);
-      resolve({ code: code ?? 1, stdout, stderr });
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", terminate);
-      resolve({ code: 1, stdout, stderr: `${stderr}${error.message}` });
-    });
-  });
+async function confirmAndExecute(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  kind: "spec" | "plan" | "purge",
+  action: "approve" | "revise" | "purge",
+  args: string,
+): Promise<void> {
+  const parts = args.trim().split(/\s+/).filter(Boolean);
+  const session = parts.shift();
+  if (!session || parts.length > 0) {
+    ctx.ui.notify(
+      `Usage: /megara-${action} ${kind} <session-id>`,
+      "warning",
+    );
+    return;
+  }
+  let revision: number;
+  let command: string[];
+  let summary: JsonObject;
+  if (kind === "purge") {
+    const status = requireOk(await runPlanningRpc(
+      ctx.cwd,
+      rpcRequest("planning.status", { session_id: session }, false),
+      undefined,
+    ));
+    revision = Number(status.revision);
+    summary = { session_id: session, revision };
+    command = [
+      "planning", "purge", "--project", ctx.cwd, "--session", session,
+      "--expected-revision", String(revision), "--confirm", session, "--json",
+    ];
+  } else {
+    const current = await currentCandidate(ctx.cwd, session, undefined, kind);
+    revision = current.revision;
+    summary = { session_id: session, revision, ...current.details };
+    const artifactKind = kind === "spec" ? "spec" : "plan";
+    if (action === "revise") {
+      if (!ctx.hasUI) throw new Error("Megara user input requires the Pi UI");
+      const text = await ctx.ui.input(
+        `Megara ${kind} revision request`,
+        "Describe the requested revision",
+      );
+      if (!text?.trim()) {
+        ctx.ui.notify("Revision cancelled.", "info");
+        return;
+      }
+      summary = { ...summary, revision_text: text };
+      command = ["planning", artifactKind, "revise", "--text", text];
+    } else {
+      command = ["planning", artifactKind, "approve"];
+    }
+    command.push(
+      "--project", ctx.cwd, "--session", session, "--expected-revision", String(revision),
+      "--candidate", String(summary.candidate_id),
+    );
+    if (action === "approve") {
+      command.push("--semantic-hash", String(summary.semantic_hash));
+      command.push(kind === "spec" ? "--base-domain-revision" : "--base-plan-revision");
+      command.push(String(summary.base_revision));
+    }
+    command.push("--json");
+  }
+  if (!ctx.hasUI) throw new Error("Megara user confirmation requires the Pi UI");
+  const exactCommand = [megaraCommand(), ...command];
+  const approved = await ctx.ui.confirm(
+    `Megara ${kind} ${action} confirmation`,
+    `${JSON.stringify(summary)}\nargv: ${JSON.stringify(exactCommand)}\nExecute the exact user command?`,
+  );
+  if (!approved) return;
+  const result = await pi.exec(megaraCommand(), command, { cwd: ctx.cwd, timeout: RPC_TIMEOUT_MS });
+  if (result.code !== 0) throw new Error(result.stderr || result.stdout || `Megara ${kind} failed`);
+  ctx.ui.notify(result.stdout.trim() || `Megara ${kind} complete.`, "info");
 }
 
 export default function (pi: ExtensionAPI) {
-  let active: ActiveWorkflow | undefined;
+  const string = Type.String();
+  const session = Type.String();
+  const revision = Type.Integer({ minimum: 0 });
+  const enumValue = (values: string[]) => Type.Union(values.map((value) => Type.Literal(value)));
+  const noCommand = (properties: Record<string, unknown>, required: string[] = []) =>
+    Type.Object(properties, { additionalProperties: false, required });
 
-  pi.on("session_start", async (_event, ctx) => {
-    for (const entry of ctx.sessionManager.getEntries()) {
-      if (entry.type === "custom" && entry.customType === "megara-pi-workflow") active = entry.data as ActiveWorkflow;
-    }
-  });
+  projectTool(pi, "planning_start", "planning.start", noCommand({ request: string, title: Type.Optional(string) }, ["request"]), true);
+  projectTool(pi, "planning_answer", "planning.answer", noCommand({ session_id: session, expected_revision: revision, question_id: string, text: string, selected_choice_ids: Type.Optional(Type.Array(string)) }, ["session_id", "expected_revision", "question_id", "text"]), true);
+  projectTool(pi, "planning_status", "planning.status", noCommand({ session_id: Type.Optional(session) }), false);
+  projectTool(pi, "planning_current", "planning.current", noCommand({ session_id: Type.Optional(session) }), false);
+  projectTool(pi, "planning_list", "planning.list", noCommand({ phase: Type.Optional(enumValue(["interview", "specification", "planning", "complete"])) }), false);
+  projectTool(pi, "planning_evidence_refresh", "planning.evidence.refresh", noCommand({ session_id: session, expected_revision: revision, citations: Type.Array(Type.Object({}, { additionalProperties: true })) }, ["session_id", "expected_revision", "citations"]), true);
+  projectTool(pi, "planning_audit_apply", "planning.audit.apply", noCommand({ session_id: session, expected_revision: revision, mode: enumValue(["delta", "full"]), proposal: Type.Object({}, { additionalProperties: true }) }, ["session_id", "expected_revision", "mode", "proposal"]), true);
+  projectTool(pi, "planning_spec_generate", "planning.spec.generate", noCommand({ session_id: session, expected_revision: revision, proposal: Type.Object({}, { additionalProperties: true }), projection_policy: Type.Optional(Type.Object({}, { additionalProperties: true })) }, ["session_id", "expected_revision", "proposal"]), true);
+  projectTool(pi, "planning_spec_show", "planning.spec.show", noCommand({ session_id: Type.Optional(session), candidate_id: Type.Optional(string), format: Type.Optional(enumValue(["markdown", "json"])) }), false);
+  projectTool(pi, "planning_plan_generate", "planning.plan.generate", noCommand({ session_id: session, expected_revision: revision, proposal: Type.Object({}, { additionalProperties: true }), projection_policy: Type.Optional(Type.Object({}, { additionalProperties: true })) }, ["session_id", "expected_revision", "proposal"]), true);
+  projectTool(pi, "planning_plan_show", "planning.plan.show", noCommand({ session_id: Type.Optional(session), candidate_id: Type.Optional(string), format: Type.Optional(enumValue(["markdown", "json"])) }), false);
 
-  pi.on("input", async (event, ctx) => {
-    const match = event.text.match(WORKFLOW_PATTERN);
-    if (!match) return;
-    const next = { workflow: match[1] as Workflow, eventId: randomUUID() };
-    const activation = await runtimeEvent(ctx.cwd, { action: "activate", event_id: next.eventId, workflow: next.workflow });
-    if (activation.status === "blocked") throw new Error(String(activation.message || "Megara blocked project role agents"));
-    active = next;
-    pi.appendEntry("megara-pi-workflow", active);
-  });
-
-  pi.on("before_agent_start", async (event, ctx) => {
-    if (!active) return;
-    const response = await runtimeEvent(ctx.cwd, { action: "next-action", event_id: active.eventId, workflow: active.workflow });
-    const roles = Array.isArray(response.required_roles) ? response.required_roles.join(", ") : "";
-    const roleInstruction = roles
-      ? ` Delegate focused work with megara_subagent and wait for each result: ${roles}.`
-      : "";
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n[MEGARA WORKFLOW]\nThe active workflow is ${active.workflow}. Follow the loaded workflow skill; do not replace it with a free-form plan.${roleInstruction}`,
-    };
-  });
-
-  pi.registerTool({
-    name: "megara_subagent",
-    label: "Megara subagent",
-    description: "Run one trusted Megara role agent in an isolated Pi process; output is capped at 50 KB.",
-    promptGuidelines: ["Use megara_subagent for each required Megara workflow role before advancing the workflow."],
-    parameters: Type.Object({ role: Type.String(), task: Type.String(), model: Type.Optional(Type.String()) }),
-    async execute(_id, params, signal, _onUpdate, ctx) {
-      if (!active) throw new Error("Megara workflow is not active");
-      let requestedModel = params.model;
-      let fallbackUsed = false;
-      for (;;) {
-        const prepared = await runtimeEvent(ctx.cwd, {
-          action: "prepare-attempt", event_id: active.eventId, workflow: active.workflow, role: params.role, model: requestedModel,
-        });
-        if (prepared.status === "completed") {
-          return { content: [{ type: "text", text: String(prepared.output || "completed") }] };
-        }
-        if (prepared.status === "blocked") throw new Error(String(prepared.message || "Megara blocked this role"));
-        const attemptId = String(prepared.attempt_id);
-        const result = await runRole(ctx.cwd, params.role, params.task, requestedModel || prepared.model, signal);
-        const failure = executionFailure(result.stdout);
-        const completed = await runtimeEvent(ctx.cwd, {
-          action: "attempt-finished", event_id: active.eventId, attempt_id: attemptId, workflow: active.workflow,
-          role: params.role, status: result.code === 0 && !failure ? "completed" : "failed", output: readFinalOutput(result.stdout),
-          error: failure || result.stderr || `Pi role exited with ${result.code}`,
-        });
-        if (completed.status === "completed") {
-          return { content: [{ type: "text", text: String(completed.output || readFinalOutput(result.stdout) || "completed") }] };
-        }
-        if (completed.status === "retry") {
-          const delay = Number(completed.retry_after_ms || RETRY_DELAYS[1]);
-          await sleep(delay);
-          continue;
-        }
-        if (completed.status === "fallback" && !fallbackUsed) {
-          fallbackUsed = true;
-          requestedModel = undefined;
-          continue;
-        }
-        throw new Error(String(completed.message || result.stderr || "Megara role failed"));
+  pi.registerCommand("megara-approve", {
+    description: "Confirm and approve the current Megara spec or plan candidate.",
+    handler: async (args, ctx) => {
+      const [kind, ...rest] = args.trim().split(/\s+/);
+      if (kind !== "spec" && kind !== "plan") {
+        ctx.ui.notify("Usage: /megara-approve spec|plan <session-id>", "warning");
+        return;
       }
+      await confirmAndExecute(pi, ctx, kind, "approve", rest.join(" "));
     },
   });
-
-  pi.on("session_shutdown", async (_event, ctx) => {
-    if (!active) return;
-    await runtimeEvent(ctx.cwd, { action: "shutdown", event_id: active.eventId, workflow: active.workflow });
+  pi.registerCommand("megara-revise", {
+    description: "Confirm and revise the current Megara spec or plan candidate.",
+    handler: async (args, ctx) => {
+      const [kind, ...rest] = args.trim().split(/\s+/);
+      if (kind !== "spec" && kind !== "plan") {
+        ctx.ui.notify("Usage: /megara-revise spec|plan <session-id>", "warning");
+        return;
+      }
+      await confirmAndExecute(pi, ctx, kind, "revise", rest.join(" "));
+    },
+  });
+  pi.registerCommand("megara-purge", {
+    description: "Confirm and purge one Megara planning session.",
+    handler: async (args, ctx) =>
+      confirmAndExecute(pi, ctx, "purge", "purge", args),
   });
 }

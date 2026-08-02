@@ -42,9 +42,16 @@ pub fn projection_files(
     let extension = registry
         .find("pi-extension")
         .context("bundled Pi extension template is missing")?;
+    let process_helper = registry
+        .find("pi-process-helper")
+        .context("bundled Pi process helper template is missing")?;
     let mut files = vec![
         PlannedFile::new(root.join("settings.json"), pi_settings()),
         PlannedFile::new(root.join("extensions/megara.ts"), extension.content.clone()),
+        PlannedFile::new(
+            root.join("extensions/megara_process.ts"),
+            process_helper.content.clone(),
+        ),
     ];
     for agent in registry.agents() {
         let role_override = registry

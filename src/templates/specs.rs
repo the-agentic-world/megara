@@ -403,4 +403,11 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         description: "Pi Coding Agent runtime extension",
         content: include_str!("../../harness/pi/extensions/megara.ts"),
     },
+    TemplateSpec {
+        name: "pi-process-helper",
+        kind: TemplateKind::ToolSupport,
+        relative_path: "pi/extensions/megara_process.ts",
+        description: "Pi Planning process transport helper",
+        content: include_str!("../../harness/pi/extensions/megara_process.ts"),
+    },
 ];

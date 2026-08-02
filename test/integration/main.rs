@@ -121,6 +121,7 @@ mod planning_cli_artifacts;
 mod planning_cli_evidence;
 mod planning_install;
 mod planning_mcp;
+mod planning_pi;
 mod ultragoal;
 mod ultragoal_support;
 mod uninstall;
