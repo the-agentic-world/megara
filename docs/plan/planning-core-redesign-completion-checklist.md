@@ -866,6 +866,7 @@ git diff --check
 
 | Check ID | 상태 | 증거 | 영향 | 담당자 |
 | --- | --- | --- | --- | --- |
+| `MPC-EVD-008` | `PARTIAL: OPEN BLOCKING` | partial: FullAudit stale blocking PASS; Delta stale bypass PASS; spec generate/approve, plan generate/approve, export pending Slice4/5/final release | Slice4/5 및 final release의 executable operation matrix가 닫힐 때까지 최종 PASS 불가 | Slice4/5/final release |
 
 BLOCKING 또는 MANUAL 항목이 한 건이라도 있으면 최종 판정은 FAIL이다.
 
