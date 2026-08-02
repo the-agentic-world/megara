@@ -187,10 +187,38 @@ fn table_backup(content: &str) -> Result<Vec<u8>> {
         offset += segment.len();
     }
     let Some(start) = start else {
-        bail!("cannot isolate managed megara_planning TOML table for backup");
+        return inline_or_dotted_table_backup(content);
     };
     let end = end.unwrap_or(content.len());
     Ok(content.as_bytes()[start..end].to_vec())
+}
+
+fn inline_or_dotted_table_backup(content: &str) -> Result<Vec<u8>> {
+    let mut in_mcp_servers = false;
+    let mut dotted = Vec::new();
+    for segment in content.split_inclusive('\n') {
+        let line = segment.trim_end_matches('\n').trim_end_matches('\r');
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_mcp_servers = trimmed == "[mcp_servers]";
+            continue;
+        }
+        if in_mcp_servers {
+            let key = trimmed.split_once('=').map(|(key, _)| key.trim());
+            if key == Some("megara_planning") {
+                return Ok(segment.as_bytes().to_vec());
+            }
+            if key.is_some_and(|key| key.starts_with("megara_planning.")) {
+                dotted.extend_from_slice(segment.as_bytes());
+            }
+        } else if trimmed.starts_with("mcp_servers.megara_planning.") {
+            dotted.extend_from_slice(segment.as_bytes());
+        }
+    }
+    if !dotted.is_empty() {
+        return Ok(dotted);
+    }
+    bail!("cannot isolate managed megara_planning TOML table for backup")
 }
 
 fn backup_path(path: &Path) -> PathBuf {

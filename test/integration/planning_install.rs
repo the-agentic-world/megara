@@ -84,6 +84,26 @@ fn force_updates_only_the_mcp_table_and_keeps_exact_table_backup() {
 }
 
 #[test]
+fn force_updates_inline_mcp_table_with_exact_assignment_backup() {
+    let project = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    let config = project.path().join(".codex/config.toml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let original = "# before\n[mcp_servers]\nmegara_planning = { command = \"old\" }\nother = { command = \"other\" }\n";
+    fs::write(&config, original).unwrap();
+
+    let output = install(project.path(), codex_home.path(), &["--force"]);
+    assert!(output.status.success(), "stderr={:?}", output.stderr);
+    assert_eq!(
+        fs::read(config.with_file_name("config.toml.megara.mcp.bak")).unwrap(),
+        b"megara_planning = { command = \"old\" }\n"
+    );
+    let updated = fs::read_to_string(&config).unwrap();
+    assert!(updated.contains("command = \"other\""));
+    assert!(updated.contains("[mcp_servers.megara_planning]"));
+}
+
+#[test]
 fn existing_backup_is_never_overwritten() {
     let project = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
