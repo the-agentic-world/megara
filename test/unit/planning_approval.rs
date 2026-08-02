@@ -166,23 +166,36 @@ fn each_spec_approval_binding_mismatch_is_atomic() {
 
 #[test]
 fn candidate_provenance_seq_and_ordinal_mismatches_are_atomic() {
-    for field in ["spec_seq", "spec_ordinal"] {
-        let (mut core, state) = full_audit_core();
-        let work = state.required_model_action.clone().unwrap();
-        let mut candidate = SpecCandidate {
+    let spec_candidate = |state: &PlanningState| {
+        let audit_input_hash = state.full_audit.as_ref().unwrap().input_hash.clone();
+        SpecCandidate {
             candidate_id: "candidate-provenance-spec".to_string(),
             created_event_seq: state.revision + 1,
             created_ordinal: 0,
             base_domain_revision: state.domain_revision,
-            audit_input_hash: work.input_hash,
+            audit_input_hash,
             semantic_hash: crate::planning::engine::spec_semantic_hash(
-                &state,
+                state,
                 &serde_json::json!({"title":"spec"}),
             ),
             entity_refs: Vec::new(),
             content: serde_json::json!({"title":"spec"}),
             stale: false,
-        };
+        }
+    };
+    for field in ["spec_seq", "spec_ordinal"] {
+        let (mut control_core, control_state) = full_audit_core();
+        let control_candidate = spec_candidate(&control_state);
+        control_core
+            .generate_spec(SpecCandidateCommand {
+                session_id: control_state.session_id.clone(),
+                expected_revision: control_state.revision,
+                candidate: control_candidate,
+            })
+            .unwrap();
+
+        let (mut core, state) = full_audit_core();
+        let mut candidate = spec_candidate(&state);
         if field.ends_with("seq") {
             candidate.created_event_seq += 1;
         } else {
@@ -202,9 +215,8 @@ fn candidate_provenance_seq_and_ordinal_mismatches_are_atomic() {
         assert_eq!(core.state(&state.session_id).unwrap(), &before);
     }
 
-    for field in ["plan_seq", "plan_ordinal"] {
-        let (mut core, state) = approved_spec_core();
-        let work = state.required_model_action.clone().unwrap();
+    let plan_candidate = |state: &PlanningState| {
+        let work = state.required_model_action.as_ref().unwrap();
         let requirement = state.entities.current_requirements()[0];
         let criterion = state.entities.current_acceptance_criteria()[0];
         let content = serde_json::json!({
@@ -214,18 +226,32 @@ fn candidate_provenance_seq_and_ordinal_mismatches_are_atomic() {
             "plan_risks":[]
         });
         let spec_approval = state.spec.approval.as_ref().unwrap();
-        let mut candidate = PlanCandidate {
+        PlanCandidate {
             candidate_id: "candidate-provenance-plan".to_string(),
             created_event_seq: state.revision + 1,
             created_ordinal: 0,
             base_plan_revision: state.plan_revision,
-            plan_input_hash: work.input_hash,
+            plan_input_hash: work.input_hash.clone(),
             semantic_hash: crate::planning::canonical::canonical_hash(&content),
             spec_candidate_id: spec_approval.candidate_id.clone(),
             spec_semantic_hash: spec_approval.semantic_hash.clone(),
             content,
             stale: false,
-        };
+        }
+    };
+    for field in ["plan_seq", "plan_ordinal"] {
+        let (mut control_core, control_state) = approved_spec_core();
+        let control_candidate = plan_candidate(&control_state);
+        control_core
+            .generate_plan(PlanCandidateCommand {
+                session_id: control_state.session_id.clone(),
+                expected_revision: control_state.revision,
+                candidate: control_candidate,
+            })
+            .unwrap();
+
+        let (mut core, state) = approved_spec_core();
+        let mut candidate = plan_candidate(&state);
         if field.ends_with("seq") {
             candidate.created_event_seq += 1;
         } else {
