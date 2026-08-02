@@ -18,7 +18,10 @@ pub(super) fn projection_plan(
     force: bool,
     include_managed_edit: bool,
 ) -> Result<(Vec<PlannedFile>, Option<ManagedTomlEdit>)> {
-    let megara_bin = env::current_exe().context("failed to resolve current megara executable")?;
+    let megara_bin = env::current_exe()
+        .context("failed to resolve current megara executable")?
+        .canonicalize()
+        .context("failed to canonicalize current megara executable")?;
     let managed_config = if include_managed_edit && scope == InstallScope::Project {
         Some(super::mcp_config::plan(&root, &megara_bin, force)?)
     } else {
