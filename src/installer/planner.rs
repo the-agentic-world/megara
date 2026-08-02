@@ -324,7 +324,7 @@ exec "$python_bin" -m engine "$@"
     if runtime_root != root {
         files.push(PlannedFile::new(
             runtime_root.join(".gitignore"),
-            "state/\nartifacts/\ncache/\n",
+            "state/\nartifacts/\ncache/\nplanning/\n",
         ));
     }
     Ok(files)

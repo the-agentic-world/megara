@@ -92,6 +92,7 @@ fn installs_project_scope_codex_harness() {
     assert!(runtime_gitignore.contains("state/"));
     assert!(runtime_gitignore.contains("artifacts/"));
     assert!(runtime_gitignore.contains("cache/"));
+    assert!(runtime_gitignore.contains("planning/"));
     let ultragoal =
         fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
     assert!(ultragoal.contains("Verification Evidence"));
