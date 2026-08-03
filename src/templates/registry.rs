@@ -73,16 +73,8 @@ impl TemplateRegistry {
         Self { files }
     }
 
-    pub fn workflows(&self) -> Vec<&HarnessTemplate> {
-        self.by_kind(TemplateKind::Workflow)
-    }
-
     pub fn skills(&self) -> Vec<&HarnessTemplate> {
         self.by_kind(TemplateKind::Skill)
-    }
-
-    pub fn fragments(&self) -> Vec<&HarnessTemplate> {
-        self.by_kind(TemplateKind::SkillFragment)
     }
 
     pub fn tools(&self) -> Vec<&HarnessTemplate> {

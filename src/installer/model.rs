@@ -6,7 +6,6 @@ use serde::Serialize;
 use crate::{
     cli::{resolve_scope, resolve_target, DoctorArgs, InstallArgs, ScopeArg, SyncArgs},
     paths::{InstallPaths, InstallScope, TargetRuntime},
-    targets::codex,
     writer::WriteSummary,
 };
 
@@ -105,7 +104,7 @@ fn managed_projection_exists(scope: InstallScope, target: TargetRuntime) -> Resu
     let marker_paths = match target {
         TargetRuntime::Codex => vec![
             paths.target_root.join("AGENTS.md"),
-            paths.target_root.join("hooks.json"),
+            paths.target_root.join("agents/executor.toml"),
         ],
         TargetRuntime::Pi => vec![
             paths.target_root.join("extensions/megara.ts"),
@@ -138,6 +137,7 @@ pub struct DoctorOptions {
     pub scope: InstallScope,
     pub target: TargetRuntime,
     pub json: bool,
+    pub repair: bool,
 }
 
 impl DoctorArgs {
@@ -146,6 +146,7 @@ impl DoctorArgs {
             scope: resolve_scope(self.scope, false)?,
             target: resolve_target(self.target, false)?,
             json: self.json,
+            repair: self.repair,
         })
     }
 }
@@ -204,6 +205,5 @@ pub struct InstallResult {
     pub plan: InstallPlan,
     pub summary: WriteSummary,
     pub migrations: Vec<StateMigrationSummary>,
-    pub hook_trust: Option<codex::HookTrustSummary>,
     pub warnings: Vec<String>,
 }

@@ -38,11 +38,7 @@ pub fn maybe_notify(command: &Commands) {
     if update_check_disabled()
         || matches!(
             command,
-            Commands::Hook(_)
-                | Commands::Update(_)
-                | Commands::Planning(_)
-                | Commands::Define(_)
-                | Commands::Plan(_)
+            Commands::Update(_) | Commands::Planning(_) | Commands::Define(_) | Commands::Plan(_)
         )
     {
         return;

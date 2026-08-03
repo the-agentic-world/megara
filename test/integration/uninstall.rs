@@ -5,10 +5,6 @@ fn uninstall_removes_managed_project_harness_and_preserves_runtime_data() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     install_project_harness(dir.path(), codex_home.path());
-    let hooks_path = fs::canonicalize(dir.path().join(".codex/hooks.json"))
-        .unwrap()
-        .display()
-        .to_string();
     let runtime_state = dir.path().join(".megara/state/recovery.json");
     fs::create_dir_all(runtime_state.parent().unwrap()).unwrap();
     fs::write(&runtime_state, "{}\n").unwrap();
@@ -29,9 +25,12 @@ fn uninstall_removes_managed_project_harness_and_preserves_runtime_data() {
     assert!(!dir.path().join(".agents/megara.toml").exists());
     assert!(!dir.path().join(".agents/bin/megara").exists());
     assert!(runtime_state.exists());
-    assert!(!fs::read_to_string(codex_home.path().join("config.toml"))
-        .unwrap()
-        .contains(&format!("[hooks.state.\"{hooks_path}:")));
+    let codex_config = codex_home.path().join("config.toml");
+    if codex_config.exists() {
+        assert!(!fs::read_to_string(codex_config)
+            .unwrap()
+            .contains("megara_planning"));
+    }
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Runtime data remains"), "stdout={stdout}");
 }

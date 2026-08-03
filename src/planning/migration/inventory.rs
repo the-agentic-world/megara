@@ -104,7 +104,7 @@ pub(crate) fn discover(root: &Path) -> Result<Discovery> {
             )?;
         }
     }
-    for relative in managed_paths() {
+    for relative in managed_projection_paths() {
         let path = super::journal::safe_relative_parent(root, relative)?;
         if fs::symlink_metadata(&path)
             .map(|metadata| metadata.file_type().is_file())
@@ -294,7 +294,7 @@ fn account_candidate(
     Ok(())
 }
 
-fn managed_paths() -> &'static [&'static str] {
+pub(crate) fn managed_projection_paths() -> &'static [&'static str] {
     &[
         ".codex/hooks.json",
         ".agents/skills/deep-interview/SKILL.md",

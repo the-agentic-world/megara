@@ -20,6 +20,16 @@ pub struct PurgeReceipt {
 }
 
 impl PlanningStore {
+    pub fn pending_cleanup_count(&self) -> Result<u64, StoreError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM purged_sessions WHERE cleanup_state='pending'",
+            [],
+            |row| row.get(0),
+        )?;
+        u64::try_from(count)
+            .map_err(|_| StoreError::DbCorrupt("pending cleanup count is negative".to_string()))
+    }
+
     pub fn purge(
         &mut self,
         session_id: &str,

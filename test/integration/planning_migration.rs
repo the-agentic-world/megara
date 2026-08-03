@@ -136,6 +136,7 @@ fn managed_projection_only_migration_has_no_session_or_database() {
     let project = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     support::install(project.path(), codex_home.path());
+    support::seed_codex_legacy_projections(project.path());
     let db = project.path().join(".megara/planning/planning.db");
 
     let report = support::report(&support::run(

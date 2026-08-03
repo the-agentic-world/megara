@@ -13,13 +13,12 @@ fn lists_targets_and_templates() {
     assert!(templates.status.success());
     let stdout = String::from_utf8_lossy(&templates.stdout);
     assert!(stdout.contains("Megara / Templates"));
-    assert!(stdout.contains("deep-interview"));
     assert!(stdout.contains("caveman"));
     assert!(stdout.contains("insane-search"));
+    assert!(stdout.contains("agent-models"));
     assert_eq!(stdout.matches("insane-search").count(), 1);
-    assert!(stdout.contains("deep-interview/auto-research-greenfield"));
     assert!(!stdout.contains("insane-search/engine/fetch_chain.py"));
-    assert!(!stdout.contains("megara-hook"));
+    assert!(!stdout.contains("hooks.json"));
 
     let tool = megara()
         .arg("templates")

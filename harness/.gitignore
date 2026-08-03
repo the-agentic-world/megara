@@ -1,3 +1,5 @@
 state/
 artifacts/
 cache/
+planning/
+migration-backups/

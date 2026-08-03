@@ -23,6 +23,8 @@ pub(super) fn write_legacy_file(project: &Path, bytes: &[u8]) -> std::path::Path
 }
 
 pub(super) fn seed_codex_legacy_projections(project: &Path) {
+    let fixture_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/fixtures/planning/legacy");
     for relative in [
         "skills/deep-interview/SKILL.md",
         "skills/ralplan/SKILL.md",
@@ -33,11 +35,18 @@ pub(super) fn seed_codex_legacy_projections(project: &Path) {
         "skill-fragments/deep-interview/lateral-review-panel.md",
         "skill-fragments/ultragoal/ai-slop-cleaner.md",
     ] {
-        let source = project.join(".agents").join(relative);
-        let target = project.join(".codex").join(relative);
-        fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::copy(source, target).unwrap();
+        let source = fixture_root.join(relative);
+        for root in [".agents", ".codex"] {
+            let target = project.join(root).join(relative);
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::copy(&source, target).unwrap();
+        }
     }
+    fs::copy(
+        fixture_root.join("hooks.json"),
+        project.join(".codex/hooks.json"),
+    )
+    .unwrap();
 }
 
 pub(super) fn report(output: &Output) -> serde_json::Value {

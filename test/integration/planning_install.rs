@@ -1,5 +1,7 @@
 use super::*;
 
+use std::{path::Path, process::Output};
+
 fn install(project: &Path, codex_home: &Path, extra: &[&str]) -> Output {
     let mut command = megara_with_codex_home(codex_home);
     command
@@ -315,7 +317,7 @@ fn uninstall_preserves_edited_table_without_force() {
 }
 
 #[test]
-fn uninstall_config_failure_preserves_hook_trust_and_managed_files() {
+fn uninstall_config_failure_preserves_managed_files() {
     let project = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
     assert!(install(project.path(), codex_home.path(), &[])
@@ -328,8 +330,6 @@ fn uninstall_config_failure_preserves_hook_trust_and_managed_files() {
     fs::write(&config, edited.clone()).unwrap();
     let backup = config.with_file_name("config.toml.megara.mcp.bak");
     fs::write(&backup, "preserve this backup\n").unwrap();
-    let codex_config = codex_home.path().join("config.toml");
-    let trust_before = fs::read(&codex_config).unwrap();
 
     let output = megara_with_codex_home(codex_home.path())
         .args([
@@ -344,11 +344,10 @@ fn uninstall_config_failure_preserves_hook_trust_and_managed_files() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert_eq!(fs::read(&codex_config).unwrap(), trust_before);
     assert_eq!(fs::read(&config).unwrap(), edited.as_bytes());
     assert_eq!(fs::read(&backup).unwrap(), b"preserve this backup\n");
     assert!(project.path().join(".codex/AGENTS.md").exists());
-    assert!(project.path().join(".codex/hooks.json").exists());
+    assert!(!project.path().join(".codex/hooks.json").exists());
 }
 
 #[test]

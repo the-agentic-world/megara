@@ -20,7 +20,6 @@ struct UninstallResult {
     dry_run: bool,
     removed: Vec<PathBuf>,
     retained_runtime_data: bool,
-    removed_hook_trust: usize,
 }
 
 pub fn run(args: UninstallArgs, registry: &TemplateRegistry) -> Result<()> {
@@ -62,22 +61,13 @@ pub fn run(args: UninstallArgs, registry: &TemplateRegistry) -> Result<()> {
         .into_iter()
         .collect::<Vec<_>>();
     let planned_removed = remove_managed_files(&paths, true)?;
-    let planned_hook_trust = if target == TargetRuntime::Codex {
-        codex::remove_hook_trust(&plan.target_root.join("hooks.json"), true)?
-    } else {
-        0
-    };
     let mut removed = if args.dry_run {
         planned_removed
     } else {
         if let Some(edit) = &managed_config {
             edit.apply(false)?;
         }
-        let removed = remove_managed_files(&paths, false)?;
-        if target == TargetRuntime::Codex {
-            codex::remove_hook_trust(&plan.target_root.join("hooks.json"), false)?;
-        }
-        removed
+        remove_managed_files(&paths, false)?
     };
     if let Some(edit) = &managed_config {
         if edit.changed {
@@ -95,7 +85,6 @@ pub fn run(args: UninstallArgs, registry: &TemplateRegistry) -> Result<()> {
         dry_run: args.dry_run,
         removed,
         retained_runtime_data,
-        removed_hook_trust: planned_hook_trust,
     };
     print(&result, keep_shared_files, args.json)
 }
@@ -176,15 +165,6 @@ fn print(result: &UninstallResult, kept_shared_files: bool, json: bool) -> Resul
             vec![
                 "Runtime data remains for recovery and is never removed by uninstall.".to_string(),
             ],
-        ));
-    }
-    if result.removed_hook_trust > 0 {
-        sections.push(Section::new(
-            "Hook Trust",
-            vec![format!(
-                "Removed {} Codex hook trust record(s).",
-                result.removed_hook_trust
-            )],
         ));
     }
     ui::print_dashboard(

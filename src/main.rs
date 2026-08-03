@@ -2,17 +2,13 @@ mod agents;
 mod cli;
 mod docs;
 mod doctor;
-mod hook;
 mod installer;
 mod paths;
-mod pi;
 pub mod planning;
 mod targets;
-mod team;
 mod templates;
 mod tui;
 mod ui;
-mod ultragoal;
 mod uninstall;
 mod update;
 mod writer;
@@ -20,8 +16,8 @@ mod writer;
 use anyhow::Result;
 use clap::Parser;
 use cli::{
-    Cli, Commands, DocsCommands, PiCommands, PlanningArgs, PlanningCommands, PlanningSessionArgs,
-    PlanningStartArgs, TargetCommands, TeamCommands, TemplateCommands,
+    Cli, Commands, DocsCommands, PlanningArgs, PlanningCommands, PlanningSessionArgs,
+    PlanningStartArgs, TargetCommands, TemplateCommands,
 };
 use installer::{InstallAction, InstallOptions, Planner};
 use templates::TemplateRegistry;
@@ -78,26 +74,6 @@ fn main() -> Result<()> {
             }
         }
         Commands::Agents(args) => agents::run(args, &registry)?,
-        Commands::Hook(args) => {
-            let exit_code = hook::run(args)?;
-            if exit_code != 0 {
-                std::process::exit(exit_code);
-            }
-        }
-        Commands::Ultragoal(args) => ultragoal::run(args)?,
-        Commands::Team(args) => match args.command {
-            TeamCommands::Split(args) => {
-                let report = team::split::prepare_from_cli(args)?;
-                if report.json {
-                    println!("{}", serde_json::to_string_pretty(&report)?);
-                } else {
-                    report.print()?;
-                }
-            }
-            TeamCommands::Teammate(args) => {
-                team::split::run_teammate_from_cli(args)?;
-            }
-        },
         Commands::Docs(args) => match args.command {
             DocsCommands::Init(args) => docs::init(args)?,
             DocsCommands::Check(args) => docs::check(args)?,
@@ -108,9 +84,6 @@ fn main() -> Result<()> {
             }
             update::run(args)?
         }
-        Commands::Pi(args) => match args.command {
-            PiCommands::Event(args) => pi::run_event(args, &registry)?,
-        },
         Commands::Planning(args) => cli::run_planning(args)?,
         Commands::Templates { command } => match command {
             TemplateCommands::List(args) => {

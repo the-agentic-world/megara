@@ -30,34 +30,6 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         content: include_str!("../../harness/rules/planning.md"),
     },
     TemplateSpec {
-        name: "deep-interview",
-        kind: TemplateKind::Workflow,
-        relative_path: "skills/deep-interview/SKILL.md",
-        description: "Socratic requirements interview",
-        content: include_str!("../../harness/skills/deep-interview/SKILL.md"),
-    },
-    TemplateSpec {
-        name: "ralplan",
-        kind: TemplateKind::Workflow,
-        relative_path: "skills/ralplan/SKILL.md",
-        description: "Consensus planning workflow",
-        content: include_str!("../../harness/skills/ralplan/SKILL.md"),
-    },
-    TemplateSpec {
-        name: "ultragoal",
-        kind: TemplateKind::Workflow,
-        relative_path: "skills/ultragoal/SKILL.md",
-        description: "Durable goal execution workflow",
-        content: include_str!("../../harness/skills/ultragoal/SKILL.md"),
-    },
-    TemplateSpec {
-        name: "team",
-        kind: TemplateKind::Workflow,
-        relative_path: "skills/team/SKILL.md",
-        description: "Multi-agent lane coordination",
-        content: include_str!("../../harness/skills/team/SKILL.md"),
-    },
-    TemplateSpec {
         name: "caveman",
         kind: TemplateKind::Skill,
         relative_path: "skills/caveman/SKILL.md",
@@ -312,40 +284,6 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
         relative_path: "tools/insane-search/references/twitter.md",
         description: "insane-search Twitter reference",
         content: include_str!("../../harness/tools/insane-search/references/twitter.md"),
-    },
-    TemplateSpec {
-        name: "deep-interview/auto-answer-uncertain",
-        kind: TemplateKind::SkillFragment,
-        relative_path: "skill-fragments/deep-interview/auto-answer-uncertain.md",
-        description: "Deep Interview uncertain-answer fragment",
-        content: include_str!(
-            "../../harness/skill-fragments/deep-interview/auto-answer-uncertain.md"
-        ),
-    },
-    TemplateSpec {
-        name: "deep-interview/auto-research-greenfield",
-        kind: TemplateKind::SkillFragment,
-        relative_path: "skill-fragments/deep-interview/auto-research-greenfield.md",
-        description: "Deep Interview greenfield research fragment",
-        content: include_str!(
-            "../../harness/skill-fragments/deep-interview/auto-research-greenfield.md"
-        ),
-    },
-    TemplateSpec {
-        name: "deep-interview/lateral-review-panel",
-        kind: TemplateKind::SkillFragment,
-        relative_path: "skill-fragments/deep-interview/lateral-review-panel.md",
-        description: "Deep Interview lateral review fragment",
-        content: include_str!(
-            "../../harness/skill-fragments/deep-interview/lateral-review-panel.md"
-        ),
-    },
-    TemplateSpec {
-        name: "ultragoal/ai-slop-cleaner",
-        kind: TemplateKind::SkillFragment,
-        relative_path: "skill-fragments/ultragoal/ai-slop-cleaner.md",
-        description: "Ultragoal cleanup detector fragment",
-        content: include_str!("../../harness/skill-fragments/ultragoal/ai-slop-cleaner.md"),
     },
     TemplateSpec {
         name: "executor",

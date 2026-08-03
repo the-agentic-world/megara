@@ -175,25 +175,6 @@ pub fn has_project_trust(runtime_root: &Path) -> bool {
     runtime_root.join("trust/pi-project.toml").is_file()
 }
 
-pub fn is_project_trusted(
-    runtime_root: &Path,
-    project_root: &Path,
-    registry: &TemplateRegistry,
-) -> bool {
-    let path = runtime_root.join("trust/pi-project.toml");
-    let Ok(content) = fs::read_to_string(path) else {
-        return false;
-    };
-    let Ok(trust) = toml::from_str::<ProjectTrust>(&content) else {
-        return false;
-    };
-    let root = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
-    trust.project_root == root.display().to_string()
-        && trust.agents_sha256 == agents_sha256(registry)
-}
-
 fn pi_settings() -> String {
     serde_json::to_string_pretty(&serde_json::json!({
         "megara_managed": "MEGARA:MANAGED",

@@ -35,6 +35,20 @@ pub fn open_project(root: impl AsRef<Path>) -> Result<PlanningStore, StoreError>
 }
 
 pub fn open_existing_project(root: impl AsRef<Path>) -> Result<Option<PlanningStore>, StoreError> {
+    open_existing_project_with_flags(root, OpenFlags::SQLITE_OPEN_READ_ONLY, false)
+}
+
+pub fn open_existing_project_for_repair(
+    root: impl AsRef<Path>,
+) -> Result<Option<PlanningStore>, StoreError> {
+    open_existing_project_with_flags(root, OpenFlags::SQLITE_OPEN_READ_WRITE, true)
+}
+
+fn open_existing_project_with_flags(
+    root: impl AsRef<Path>,
+    flags: OpenFlags,
+    configure_connection: bool,
+) -> Result<Option<PlanningStore>, StoreError> {
     let identity = canonical_project_identity(root.as_ref())?;
     let database_path = PathBuf::from(&identity.canonical_root).join(PLANNING_DB_RELATIVE_PATH);
     let metadata = match fs::symlink_metadata(&database_path) {
@@ -47,9 +61,12 @@ pub fn open_existing_project(root: impl AsRef<Path>) -> Result<Option<PlanningSt
             "planning database is not a regular file".to_string(),
         ));
     }
-    let conn =
-        rusqlite::Connection::open_with_flags(&database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    conn.busy_timeout(Duration::from_millis(5_000))?;
+    let conn = rusqlite::Connection::open_with_flags(&database_path, flags)?;
+    if configure_connection {
+        configure(&conn)?;
+    } else {
+        conn.busy_timeout(Duration::from_millis(5_000))?;
+    }
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version != STORE_SCHEMA_VERSION {
         return Err(if version > STORE_SCHEMA_VERSION {

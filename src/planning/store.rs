@@ -168,6 +168,12 @@ impl PlanningStore {
         schema::open_existing_project(root)
     }
 
+    pub(crate) fn open_existing_project_for_repair(
+        root: impl AsRef<Path>,
+    ) -> Result<Option<Self>, StoreError> {
+        schema::open_existing_project_for_repair(root)
+    }
+
     pub fn open(
         database_path: impl AsRef<Path>,
         identity: ProjectIdentity,

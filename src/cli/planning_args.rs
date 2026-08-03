@@ -14,7 +14,7 @@ pub enum PlanningCommands {
     Rpc(PlanningRpcArgs),
     /// Run the Codex MCP stdio server.
     Mcp(PlanningMcpArgs),
-    /// Migrate legacy workflow state and managed projections.
+    /// Migrate previous runtime state and managed projections.
     Migrate(PlanningMigrateArgs),
     Start(PlanningStartArgs),
     Answer(PlanningAnswerArgs),

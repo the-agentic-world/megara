@@ -23,6 +23,8 @@ mod staging;
 #[path = "migration/types.rs"]
 mod types;
 
+#[allow(unused_imports)]
+pub(crate) use inventory::validate_candidate_path;
 pub(crate) use lock::acquire as acquire_project_lock;
 pub(crate) use safe_fs::remove_tree_at_validated;
 pub(crate) use staging::validate_held as validate_staging_held;

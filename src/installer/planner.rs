@@ -137,13 +137,6 @@ impl<'a> Planner<'a> {
         )?
         .into_iter()
         .collect::<Vec<_>>();
-        let hook_trust = match self.options.target {
-            TargetRuntime::Codex => Some(codex::ensure_hook_trust(
-                &plan.target_root.join("hooks.json"),
-                self.options.dry_run,
-            )?),
-            TargetRuntime::Pi => None,
-        };
         let mut warnings = runtime_dependency_issues(self.options.target);
         if self.options.target == TargetRuntime::Pi && self.options.scope == InstallScope::Project {
             if self.options.trust_project {
@@ -177,20 +170,11 @@ impl<'a> Planner<'a> {
                 ));
             }
         }
-        if matches!(self.options.action, InstallAction::Install)
-            && self.options.target == TargetRuntime::Codex
-        {
-            warnings.push(
-                "Codex App loads hooks when a session starts; open a new session after install for hooks to take effect."
-                    .to_string(),
-            );
-        }
         Ok(InstallResult {
             options: self.options.clone(),
             plan,
             summary,
             migrations,
-            hook_trust,
             warnings,
         })
     }
@@ -324,7 +308,7 @@ exec "$python_bin" -m engine "$@"
     if runtime_root != root {
         files.push(PlannedFile::new(
             runtime_root.join(".gitignore"),
-            "state/\nartifacts/\ncache/\nplanning/\n",
+            "state/\nartifacts/\ncache/\nplanning/\nmigration-backups/\n",
         ));
     }
     Ok(files)
