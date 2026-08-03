@@ -1,7 +1,7 @@
 ---
 type: DecisionRecord
 title: Megara 2.0.0 Release Decision Record
-description: Release gate record for Megara 2.0.0, pending final main, tag, and archive binding.
+description: Release gate record for Megara 2.0.0, including the explicit unsigned-release decision and final tag/archive binding.
 timestamp: 2026-08-04
 tags: [okf, decision, release, planning, v2]
 ---
@@ -10,9 +10,16 @@ tags: [okf, decision, release, planning, v2]
 
 This record follows the Release Decision Record contract in
 `docs/plan/planning-core-redesign-completion-checklist.md` and the operating
-procedure in `docs/plan/planning-core-v1-release-operations.md`. It is
-intentionally not marked `PASS` until every blocking and manual gate is tied to
-the final main commit and the signed tag archive.
+procedure in `docs/plan/planning-core-v1-release-operations.md`. The user made
+an explicit, release-scoped decision on 2026-08-04 that v2.0.0 will not use a
+cryptographic Release Decision Record signature or cryptographically signed
+tag. This is a plain-text approved decision, not a claim that a signature
+exists, and it does not change the default policy for future releases.
+
+The release may be marked `PASS` only after every remaining blocking and manual
+gate is tied to the final main commit and immutable tag archive. The two
+signature gates are recorded as `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`, never
+as `PASS` or as a silent waiver.
 
 ## 1. Release identity
 
@@ -27,6 +34,7 @@ the final main commit and the signed tag archive.
 - Completion checklist: `docs/plan/planning-core-redesign-completion-checklist.md`
 - Evidence archive: `PENDING tag workflow artifact megara-planning-release-evidence-<release-commit>`
 - Evidence archive SHA-256: `PENDING tag workflow`
+- Tag form: annotated tag, cryptographically unsigned by explicit v2.0.0 decision
 
 ## 2. Baseline and automated evidence
 
@@ -56,18 +64,24 @@ the final main commit and the signed tag archive.
 | Check | State | Evidence and impact |
 | --- | --- | --- |
 | Final version/release commit binding | PENDING | Must be regenerated after main integration. |
-| Signed Release Decision Record | PENDING | User supplied reviewer authorization for the isolated fixtures; final release authority signature is not yet recorded. |
-| Signed `v2.0.0` tag | BLOCKED | This host has no `gpg` executable, no configured signing format/key, and no SSH signing identity. An unsigned tag is not an acceptable substitute. |
-| Tag-triggered `VB-RELEASE` archive | PENDING | Cannot run before the signed tag and final clean commit. |
+| Cryptographic Release Decision Record signature | NOT_REQUIRED_BY_EXPLICIT_V2_DECISION | The user approved the unsigned v2.0.0 decision in plain text on 2026-08-04. This exception is release-scoped and is not a PASS. |
+| Cryptographic `v2.0.0` tag signature | NOT_REQUIRED_BY_EXPLICIT_V2_DECISION | The final tag must still be annotated, immutable, and pointed at the exact final main SHA. This exception does not allow a lightweight, moved, or force-pushed tag. |
+| Tag-triggered `VB-RELEASE` archive | PENDING | The archive must run from the exact annotated tag target and retain all raw evidence and hashes. |
 | GitHub Release assets/checksums | PENDING | Cannot verify before the tag workflow completes. |
 
-No item above is skipped or waived. Until these states are resolved, the final
-release decision is `FAIL/PENDING`, and #4/#11 must remain open.
+No remaining verification item is skipped or waived. The two cryptographic
+signature requirements are explicitly not required for this release by the
+user's dated decision and remain visibly distinct from `PASS`. Until the final
+tag, archive, and assets are verified, the release decision is `FAIL/PENDING`,
+and #4/#11 must remain open.
 
 ## 5. Manual reviewer authorization and fixture boundary
 
 The user explicitly authorized the Megara 2.0.0 release and, for the isolated
 temporary fixture only, authorized submission after exact screen comparison.
+On 2026-08-04 the user additionally approved the v2.0.0 unsigned-release
+policy in plain text, replacing the prior signed RDR/tag gate only for this
+release.
 The Codex fixture matched the precomputed session, candidate ID, semantic hash,
 revision, command ID, and argv before approval; the purge fixture matched the
 session identity, revision, command ID, and argv before purge. The Pi 0.80.10
@@ -77,9 +91,10 @@ mutations to a real user project or production state.
 ## 6. Final decision
 
 - Final decision: `PENDING — NOT PASS`
-- Blocking failures/unverified: at least the signed tag and final archive gates
-- Manual failures/unverified: final release-authority signature and final
-  release-commit binding
+- Blocking failures/unverified: final annotated tag, exact main target, archive,
+  and release assets
+- Explicitly not required: cryptographic RDR/tag signatures under the dated
+  v2.0.0 decision; these are not marked PASS
 - Unresolved TO_DEFINE: must be reconciled against the completion checklist
   before issue closeout
-- Release authority signature: `PENDING`
+- Release authority decision: `APPROVED IN PLAIN TEXT — 2026-08-04 — v2.0.0 ONLY`

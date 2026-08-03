@@ -37,5 +37,8 @@ Source or `Cargo.lock` changes after evidence generation invalidate the bundle.
 
 The baseline manifest is evidence input, not the final `VB-RELEASE` archive:
 the final tag workflow must regenerate it after the 2.0.0 version and release
-documents are integrated. The final RDR must record the tag workflow URL,
+documents are integrated. The final RDR must record the plain-text v2.0.0
+approval, annotated tag object type, exact main target, tag workflow URL,
 artifact URL, artifact hash/manifest, and release asset checksums.
+Cryptographic tag/RDR signatures are explicitly not required for v2.0.0 only;
+this does not permit a lightweight or moved tag.

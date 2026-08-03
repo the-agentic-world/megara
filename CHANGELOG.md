@@ -9,4 +9,4 @@ Release preparation for Planning Core v1:
 - added Codex MCP and Pi host integration with explicit confirmation gates;
 - added release evidence generation, immutable CI archive instructions, and the v2.0.0 release decision record.
 
-The release is complete only after the signed Release Decision Record, final main integration, signed `v2.0.0` tag, and tag workflow archive are verified.
+For v2.0.0 only, the user approved a plain-text decision not to cryptographically sign the Release Decision Record or tag. The release still requires final main integration, an annotated immutable unsigned `v2.0.0` tag, and a passing tag workflow archive. Future releases retain the default signed policy.

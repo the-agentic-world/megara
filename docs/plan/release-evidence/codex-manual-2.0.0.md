@@ -24,7 +24,9 @@ the input was submitted.
 
 The receipt is a host-gate input. It is not bound to the final release commit;
 the Release Decision Record remains `PENDING` until the final main commit,
-signed tag, and immutable evidence archive are available.
+annotated immutable tag, and immutable evidence archive are available. The
+user's 2026-08-04 v2.0.0 decision makes cryptographic RDR/tag signatures
+`NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`; it does not waive the remaining gates.
 
 ## Approval confirmation
 
@@ -112,5 +114,5 @@ then closed with EOF; it was not left waiting indefinitely.
 `MPC-MAN-005` is satisfied for this isolated Codex host fixture: the approval
 and purge mutations occurred only after exact host confirmation, and the
 before/after event evidence is recorded above. Final release acceptance remains
-pending the signed RDR, final main integration, signed tag, and tag workflow
-archive.
+pending the plain-text approved RDR decision, final main integration, annotated
+immutable unsigned tag, and tag workflow archive.

@@ -14,7 +14,7 @@ tags: [okf, plan, planning, megara, checklist, acceptance]
 
 ### 1.1 최종 판정
 
-최종 판정은 `PASS` 또는 `FAIL`만 사용한다. 조건부 통과, 부분 통과, 구현 완료 추정은 허용하지 않는다.
+최종 판정은 `PASS` 또는 `FAIL`만 사용한다. 조건부 통과, 부분 통과, 구현 완료 추정은 허용하지 않는다. 단, 2026-08-04 사용자의 명시적 v2.0.0 release decision은 cryptographic RDR/tag signature gate에 한해 `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`을 허용한다. 이 상태는 `PASS`가 아니며 v2.0.0에만 적용되고, annotated tag target/immutability와 나머지 BLOCKING/MANUAL gate를 완화하지 않는다.
 
 #### PASS
 
@@ -28,7 +28,7 @@ tags: [okf, plan, planning, megara, checklist, acceptance]
 6. 필수 E2E 시나리오가 동일 release commit을 대상으로 통과했다.
 7. 증거 묶음이 동일한 release commit, `Cargo.lock`, toolchain을 가리킨다.
 8. negative-proof 항목이 정적 검색, 설치 결과, runtime 동작 세 관점에서 모두 통과했다.
-9. Release Decision Record가 완성되고 release authority가 서명했다.
+9. Release Decision Record가 완성되고 release authority가 승인했다. cryptographic signature는 기본 정책이며, v2.0.0은 dated plain-text decision으로만 예외 처리한다.
 
 #### FAIL
 
@@ -261,12 +261,12 @@ git diff --check
 - [ ] `MPC-TDF-*`를 모두 승인된 계약과 실행된 검증으로 대체했다.
 - [ ] `VB-BASELINE`부터 `VB-RELEASE`까지 같은 release commit 기준으로 실행했다.
 - [ ] 모든 `BLOCKING` check가 `PASS`이고 ignored·skipped·filtered-out 필수 테스트가 없다.
-- [ ] 모든 `MANUAL` check가 항목별 근거와 검토자 서명을 가진다.
+- [ ] 모든 `MANUAL` check가 항목별 근거와 검토자 결정을 가진다. v2.0.0의 cryptographic signature 예외는 RDR에 별도 기록하고 `PASS`로 표시하지 않는다.
 - [ ] `MPC-NEG-*`가 source, install, runtime 관점에서 요구된 증거를 모두 가진다.
 - [ ] `MPC-E2E-001`부터 `MPC-E2E-020`까지 독립 fixture에서 통과했다.
 - [ ] baseline과 비교해 신규 failure가 0개다.
 - [ ] 증거 archive manifest와 각 원문 증거의 hash를 검증했다.
-- [ ] Release Decision Record가 모든 check ID를 추적하고 release authority가 `PASS`로 서명했다.
+- [ ] Release Decision Record가 모든 check ID를 추적하고 release authority가 `PASS`로 승인했다. v2.0.0의 서명 미사용 결정은 `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`으로 기록한다.
 
 ---
 
@@ -708,9 +708,9 @@ git diff --check
 | `MPC-TST-006` | BLOCKING | 자동 | crash 테스트가 transaction 전·중·후와 DB commit 후 projection/manifest 실패를 각각 다룬다. | crash matrix report | 모든 지점 실행 | 대표 지점 하나만 테스트 |
 | `MPC-TST-007` | BLOCKING | 자동 | E2E가 CLI, Codex MCP, Pi, migration, purge를 포함한다. | §5 시나리오 report | 모든 필수 E2E PASS | 하나 미실행 |
 | `MPC-TST-008` | BLOCKING | 자동 | release evidence가 동일 release commit과 clean tree를 가리킨다. | evidence manifest | commit/hash 일치 | mixed commit·dirty tree |
-| `MPC-TST-009` | BLOCKING | 혼합 | 증거 archive 위치, 형식, 보존 기간, 변경 방지 정책이 확정되고 적용된다. | `MPC-TDF-009` 해소 기록 | raw logs·hash·서명 보존 | evidence 위치·retention 미정 |
+| `MPC-TST-009` | BLOCKING | 혼합 | 증거 archive 위치, 형식, 보존 기간, 변경 방지 정책이 확정되고 적용된다. | `MPC-TDF-009` 해소 기록 | raw logs·hash와 적용 가능한 승인 결정 보존 | evidence 위치·retention 미정 |
 | `MPC-TST-010` | BLOCKING | 자동 | `VB-RELEASE` 전체가 최종 release commit에서 마지막으로 실행됐다. | timestamped raw logs | 모든 exit 0 또는 인정된 baseline만 존재 | 일부 command 미실행 |
-| `MPC-TST-011` | BLOCKING | 수동 | 수동 검토 결과가 항목별로 서명되고 release commit에 결박된다. | `ER-MANUAL` | 누락 서명 0 | unsigned review |
+| `MPC-TST-011` | BLOCKING | 수동 | 수동 검토 결과가 항목별로 결정되고 release commit에 결박된다. 기본 정책은 서명이며, v2.0.0은 cryptographic RDR/tag signature gate만 명시적 plain-text decision으로 대체한다. | `ER-MANUAL` | 누락된 결정 0, v2 예외는 별도 표시 | 항목별 결정 누락 또는 조용한 unsigned 처리 |
 | `MPC-TST-012` | BLOCKING | 혼합 | Release Decision Record가 모든 check ID와 증거 URI/hash를 참조한다. | completed record | orphan check/evidence 0 | 요약 판정만 존재 |
 
 ### 3.15 비차단 후속 개선 경계

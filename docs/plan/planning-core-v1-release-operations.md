@@ -67,16 +67,17 @@ retention: 90 days
 
 빈 archive는 허용하지 않으며(`if-no-files-found: error`), release commit 이후 source 또는 `Cargo.lock`이 바뀌면 기존 bundle은 무효다. raw stdout/stderr, test report와 trace를 삭제하거나 요약본으로 대체하지 않는다.
 
-v1 release claim은 macOS arm64와 Linux x86_64에 한정한다. 각 target의 automated install, update, doctor, SQLite WAL, path protection, migration과 purge 결과를 보관하고, 실제 Codex/Pi host confirmation과 screen/command evidence는 별도 manual gate로 서명한다. 현재 Pi version 계약은 `>=0.80.10` 및 `<0.81.0`이며, host가 이 범위를 벗어나면 skip/waive하지 않고 release blocker로 기록한다.
+v1 release claim은 macOS arm64와 Linux x86_64에 한정한다. 각 target의 automated install, update, doctor, SQLite WAL, path protection, migration과 purge 결과를 보관하고, 실제 Codex/Pi host confirmation과 screen/command evidence는 별도 manual gate로 검토한다. 기본 release 정책은 항목별 reviewer sign-off와 cryptographically signed RDR/tag를 요구한다. 단, 2026-08-04 사용자의 명시적 결정으로 `v2.0.0`만 plain-text approved decision과 cryptographically unsigned annotated tag를 사용한다. 이 예외는 서명 검증을 통과한 것으로 표시하지 않으며 미래 release의 기본 정책을 바꾸지 않는다. v2.0.0에서도 exact final main target, annotated tag object, immutable ref, evidence hash와 모든 나머지 acceptance gate는 그대로 필수다. 현재 Pi version 계약은 `>=0.80.10` 및 `<0.81.0`이며, host가 이 범위를 벗어나면 skip/waive하지 않고 release blocker로 기록한다.
 
 ## Release Decision Record
 
-최종 release는 [Planning Core v1 개발 완료 판정 체크리스트](planning-core-redesign-completion-checklist.md)의 Release Decision Record에 다음을 연결한 뒤에만 PASS다.
+최종 release는 [Planning Core v1 개발 완료 판정 체크리스트](planning-core-redesign-completion-checklist.md)의 Release Decision Record에 다음을 연결한 뒤에만 PASS다. v2.0.0은 아래의 일반 signed RDR/tag 정책에 대한 명시적이고 release-scoped한 예외를 사용하며, 예외 항목은 `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`으로 기록한다.
 
 - 동일 release commit, clean tree, `Cargo.lock` hash와 toolchain
 - `VB-RELEASE` raw command logs와 evidence manifest hash
 - migration/rollback, purge/tombstone, DB/FS/protocol trace
-- Codex/Pi host matrix와 reviewer signature
+- Codex/Pi host matrix와 항목별 reviewer decision
 - 모든 BLOCKING·MANUAL check의 PASS 또는 명시적 external blocker
+- v2.0.0의 plain-text unsigned decision과 annotated tag target/immutability receipt
 
-BLOCKING 또는 MANUAL 항목이 미검증이면 issue를 닫거나 release PASS로 표시하지 않는다. 이 문서와 채팅은 spec/evidence가 될 수 있지만 execution tracker는 GitHub Issues의 #11 umbrella와 active Slice issue #4다.
+BLOCKING 또는 MANUAL 항목이 미검증이면 issue를 닫거나 release PASS로 표시하지 않는다. v2.0.0의 두 cryptographic signature gate는 사용자의 dated decision으로만 `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`이 될 수 있으며, 다른 gate를 완화하지 않는다. 이 문서와 채팅은 spec/evidence가 될 수 있지만 execution tracker는 GitHub Issues의 #11 umbrella와 active Slice issue #4다.
