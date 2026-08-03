@@ -47,6 +47,19 @@ pub(crate) fn is_temporary_name(name: &str, base: &str) -> bool {
         .is_some_and(|suffix| Uuid::parse_str(suffix).is_ok())
 }
 
+#[cfg(unix)]
+#[allow(clippy::unnecessary_cast)]
+pub(super) fn device_id(value: libc::dev_t) -> u64 {
+    #[cfg(target_os = "linux")]
+    {
+        value
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        value as u64
+    }
+}
+
 pub(crate) fn read_file_nofollow(path: &Path) -> io::Result<(fs::Metadata, Vec<u8>)> {
     read_file_nofollow_limited(path, usize::MAX)
 }

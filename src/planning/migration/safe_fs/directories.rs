@@ -113,7 +113,9 @@ pub(crate) fn rename_directory_at_noreplace(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if source_stat.st_dev as u64 != held_stat.dev() || source_stat.st_ino != held_stat.ino() {
+        if super::device_id(source_stat.st_dev) != held_stat.dev()
+            || source_stat.st_ino != held_stat.ino()
+        {
             return Err(io::Error::other("migration publish source changed"));
         }
     }
@@ -204,7 +206,9 @@ pub(crate) fn remove_empty_directory_at(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if path_stat.st_dev as u64 != held_stat.dev() || path_stat.st_ino != held_stat.ino() {
+        if super::device_id(path_stat.st_dev) != held_stat.dev()
+            || path_stat.st_ino != held_stat.ino()
+        {
             return Err(io::Error::other("migration staging namespace changed"));
         }
     }

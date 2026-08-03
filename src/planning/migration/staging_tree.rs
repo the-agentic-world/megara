@@ -188,7 +188,10 @@ fn verify_file(
 #[cfg(unix)]
 fn opened_matches_stat(stat: &libc::stat, metadata: &fs::Metadata) -> Result<bool> {
     use std::os::unix::fs::MetadataExt;
-    Ok(stat.st_dev as u64 == metadata.dev() && stat.st_ino == metadata.ino())
+    Ok(
+        super::super::safe_fs::device_id(stat.st_dev) == metadata.dev()
+            && stat.st_ino == metadata.ino(),
+    )
 }
 
 #[cfg(unix)]
