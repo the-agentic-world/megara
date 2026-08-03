@@ -13,3 +13,4 @@ tags: [okf, index, megara]
 - [Workflow UX audit](references/workflow-ux-audit.md)
 - [Planning Core 재설계 기획안](plan/planning-core-redesign.md)
 - [Planning Core 개발 완료 판정 체크리스트](plan/planning-core-redesign-completion-checklist.md)
+- [Planning Core v1 운영·마이그레이션·릴리스 절차](plan/planning-core-v1-release-operations.md)

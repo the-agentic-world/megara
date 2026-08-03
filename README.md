@@ -196,6 +196,8 @@ megara docs check --root knowledge
 
 Megara는 기본적으로 기존 사용자 파일을 보호합니다. 목적지가 Megara 관리 파일이 아니면 충돌을 보고하고 그대로 둡니다. Megara가 파일 소유권을 가져가야 할 때만 `--force`를 사용하세요.
 
+Planning migration과 purge는 먼저 논리 상태와 event 경계를 확정한 뒤 filesystem cleanup을 수행합니다. migration은 `--dry-run`으로 범위를 확인하고, 중단 시 `--resume` 또는 검증된 `--rollback`을 사용합니다. purge 뒤 `doctor --repair`는 event를 수정하지 않고 replay cache, managed Markdown projection, artifact·backup cleanup residue만 재시도합니다. SSD wear-leveling이나 외부 backup까지 포함하는 forensic erase는 보장하지 않습니다. 자세한 운영 절차는 [Planning Core v1 운영·마이그레이션·릴리스 절차](docs/plan/planning-core-v1-release-operations.md)를 참고하세요.
+
 Megara는 일반 CLI 명령 사용 시 하루에 한 번 최신 릴리스를 확인합니다. 새 버전이 있으면 stderr에 `megara update` 안내만 표시하고 자동으로 변경하지 않습니다. Planning RPC와 command adapter 실행 중에는 업데이트 체크를 하지 않으며, 자동 체크를 끄려면 `MEGARA_NO_UPDATE_CHECK=1`을 설정하세요.
 
 ### 프롬프트로 Planning Core 사용하기
@@ -237,7 +239,7 @@ Planning Core를 사용하는 일반적인 흐름은 다음과 같습니다.
 ## 현재 제약사항
 
 - 지원 런타임은 Codex와 Pi Coding Agent입니다. Pi 역할 에이전트는 프로젝트 설치 시 명시적 신뢰가 필요합니다.
-- 릴리스 설치 스크립트는 macOS arm64만 지원합니다. Linux, Windows, macOS Intel은 현재 소스 빌드로만 사용할 수 있습니다.
+- 릴리스 설치 스크립트와 공식 binary는 macOS arm64와 Linux x86_64를 지원합니다. Windows, Linux arm64, macOS Intel은 현재 release artifact 대상이 아니며 소스 빌드가 필요합니다.
 - Codex App은 프로젝트의 생성된 `AGENTS.md`와 configured skills를 읽습니다. 프로젝트 범위 설치 후에는 저장된 프로젝트 또는 정확한 설치 디렉터리로 새 세션을 열어야 합니다.
 - 프로젝트 범위 Codex 설치는 스킬 중복 표시를 피하기 위해 `.agents/skills`를 사용하고 `.codex/skills`로 스킬을 복사하지 않습니다.
 - 프로젝트 없는 Codex App 세션은 `name-2` 같은 sibling 디렉터리를 만들 수 있습니다. 이 경우 설치한 `.agents/`와 `.codex/`가 없는 위치에서 세션이 시작될 수 있습니다.

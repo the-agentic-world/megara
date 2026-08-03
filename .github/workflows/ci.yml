@@ -24,6 +24,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --locked
       - run: sh -n install.sh
+      - run: bash -n scripts/release-evidence.sh
+      - run: cargo run --quiet -- docs check --root docs
 
   build:
     name: Build (${{ matrix.target }})
