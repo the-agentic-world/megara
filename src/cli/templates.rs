@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
 pub enum TemplateCommands {
-    /// List bundled workflow and agent templates.
+    /// List bundled harness and agent templates.
     List(JsonArgs),
     /// Print a bundled template by name.
     Show(ShowTemplateArgs),

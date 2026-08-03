@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use toml::Value;
 
 use crate::{
@@ -24,8 +24,17 @@ impl<'a> Planner<'a> {
     }
 
     pub fn plan(&self) -> Result<InstallPlan> {
+        self.plan_with_managed_edits(true)
+    }
+
+    pub fn plan_without_managed_edits(&self) -> Result<InstallPlan> {
+        self.plan_with_managed_edits(false)
+    }
+
+    fn plan_with_managed_edits(&self, include_managed_edits: bool) -> Result<InstallPlan> {
         let paths = InstallPaths::resolve(self.options.scope, self.options.target)?;
         let mut files = Vec::new();
+        let mut managed_toml_edits = Vec::new();
         files.extend(runtime_support_files(
             paths.ssot_root.clone(),
             paths.runtime_root.clone(),
@@ -45,11 +54,30 @@ impl<'a> Planner<'a> {
         };
 
         match self.options.target {
-            TargetRuntime::Codex => files.extend(codex::projection_files(
-                paths.target_root.clone(),
-                self.options.scope,
-                &projection_registry,
-            )?),
+            TargetRuntime::Codex => {
+                let (projection_files, managed_edit) = if include_managed_edits {
+                    codex::projection_plan_with_force(
+                        paths.target_root.clone(),
+                        self.options.scope,
+                        &projection_registry,
+                        self.options.force,
+                    )?
+                } else {
+                    (
+                        codex::projection_files_with_force(
+                            paths.target_root.clone(),
+                            self.options.scope,
+                            &projection_registry,
+                            self.options.force,
+                        )?,
+                        None,
+                    )
+                };
+                files.extend(projection_files);
+                if let Some(edit) = managed_edit {
+                    managed_toml_edits.push(edit);
+                }
+            }
             TargetRuntime::Pi => files.extend(pi::projection_files(
                 paths.target_root.clone(),
                 self.options.scope,
@@ -76,13 +104,28 @@ impl<'a> Planner<'a> {
             runtime_root: paths.runtime_root,
             target_root: paths.target_root,
             files,
+            managed_toml_edits,
             obsolete_files,
         })
     }
 
     pub fn execute(&self) -> Result<InstallResult> {
         let plan = self.plan()?;
-        let mut summary = write_files(&plan.files, self.options.dry_run, self.options.force)?;
+        let preflight = write_files(&plan.files, true, self.options.force)?;
+        if !self.options.dry_run && !preflight.conflicts.is_empty() {
+            bail!(
+                "refusing to overwrite {} unmanaged file(s); rerun with --force",
+                preflight.conflicts.len()
+            );
+        }
+        let mut summary = if self.options.dry_run {
+            preflight
+        } else {
+            for edit in &plan.managed_toml_edits {
+                edit.apply(false)?;
+            }
+            write_files(&plan.files, false, self.options.force)?
+        };
         summary.removed.extend(remove_managed_files(
             &plan.obsolete_files,
             self.options.dry_run,
@@ -94,13 +137,6 @@ impl<'a> Planner<'a> {
         )?
         .into_iter()
         .collect::<Vec<_>>();
-        let hook_trust = match self.options.target {
-            TargetRuntime::Codex => Some(codex::ensure_hook_trust(
-                &plan.target_root.join("hooks.json"),
-                self.options.dry_run,
-            )?),
-            TargetRuntime::Pi => None,
-        };
         let mut warnings = runtime_dependency_issues(self.options.target);
         if self.options.target == TargetRuntime::Pi && self.options.scope == InstallScope::Project {
             if self.options.trust_project {
@@ -134,20 +170,11 @@ impl<'a> Planner<'a> {
                 ));
             }
         }
-        if matches!(self.options.action, InstallAction::Install)
-            && self.options.target == TargetRuntime::Codex
-        {
-            warnings.push(
-                "Codex App loads hooks when a session starts; open a new session after install for hooks to take effect."
-                    .to_string(),
-            );
-        }
         Ok(InstallResult {
             options: self.options.clone(),
             plan,
             summary,
             migrations,
-            hook_trust,
             warnings,
         })
     }
@@ -281,7 +308,7 @@ exec "$python_bin" -m engine "$@"
     if runtime_root != root {
         files.push(PlannedFile::new(
             runtime_root.join(".gitignore"),
-            "state/\nartifacts/\ncache/\n",
+            "state/\nartifacts/\ncache/\nplanning/\nmigration-backups/\n",
         ));
     }
     Ok(files)

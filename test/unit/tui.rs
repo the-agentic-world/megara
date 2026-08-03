@@ -24,6 +24,7 @@ fn doctor_args(scope: Option<ScopeArg>, target: Option<TargetArg>) -> DoctorArgs
         scope,
         target,
         json: false,
+        repair: false,
         no_interactive: false,
     }
 }

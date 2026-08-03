@@ -35,7 +35,12 @@ struct UpdateCheckState {
 }
 
 pub fn maybe_notify(command: &Commands) {
-    if matches!(command, Commands::Hook(_) | Commands::Update(_)) || update_check_disabled() {
+    if update_check_disabled()
+        || matches!(
+            command,
+            Commands::Update(_) | Commands::Planning(_) | Commands::Define(_) | Commands::Plan(_)
+        )
+    {
         return;
     }
     let _ = maybe_notify_inner();

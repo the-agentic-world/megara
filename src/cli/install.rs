@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use clap::Args;
 
 use super::{ScopeArg, TargetArg};
@@ -63,22 +61,8 @@ pub struct DoctorArgs {
     pub target: Option<TargetArg>,
     #[arg(long)]
     pub json: bool,
+    #[arg(long, help = "Retry pending Planning Core cleanup residue")]
+    pub repair: bool,
     #[arg(long)]
     pub no_interactive: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct HookArgs {
-    #[arg(long, hide = true)]
-    pub managed_marker: Option<String>,
-    #[arg(long, value_enum, default_value = "project")]
-    pub scope: ScopeArg,
-    #[arg(long)]
-    pub project_root: Option<PathBuf>,
-    #[arg(long, default_value = "codex")]
-    pub runtime: String,
-    #[arg(long)]
-    pub event: String,
-    #[arg(long)]
-    pub matcher: Option<String>,
 }

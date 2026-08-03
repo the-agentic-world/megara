@@ -1,6 +1,6 @@
-use std::{fs, process::Command, thread};
+use std::{fs, process::Command};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use tempfile::tempdir;
 
 use super::*;
@@ -8,12 +8,14 @@ use super::*;
 fn install_pi(project: &std::path::Path, trust_project: bool) {
     let mut command = megara();
     command
-        .arg("install")
-        .arg("--scope")
-        .arg("project")
-        .arg("--target")
-        .arg("pi")
-        .arg("--no-interactive")
+        .args([
+            "install",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--no-interactive",
+        ])
         .current_dir(project);
     if trust_project {
         command.arg("--trust-project");
@@ -26,18 +28,8 @@ fn install_pi(project: &std::path::Path, trust_project: bool) {
     );
 }
 
-fn event(project: &std::path::Path, value: Value) -> Value {
-    let output = run_pi_event(project, serde_json::to_vec(&value).unwrap().as_slice());
-    assert!(
-        output.status.success(),
-        "stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).unwrap()
-}
-
 #[test]
-fn pi_project_install_projects_agents_and_requires_explicit_trust() {
+fn pi_project_install_projects_planning_adapter_and_supports_explicit_trust() {
     let project = tempdir().unwrap();
     install_pi(project.path(), false);
 
@@ -45,178 +37,54 @@ fn pi_project_install_projects_agents_and_requires_explicit_trust() {
         .path()
         .join(".agents/pi/extensions/megara.ts")
         .exists());
+    assert!(project
+        .path()
+        .join(".agents/pi/extensions/megara_process.ts")
+        .exists());
     assert!(project.path().join(".pi/extensions/megara.ts").exists());
+    assert!(project
+        .path()
+        .join(".pi/extensions/megara_process.ts")
+        .exists());
     assert!(project.path().join(".pi/agents/executor.md").exists());
     assert!(project.path().join(".pi/settings.json").exists());
-    let extension = fs::read_to_string(project.path().join(".pi/extensions/megara.ts")).unwrap();
-    assert!(extension.contains("--append-system-prompt"));
-    assert!(extension.contains("\"--approve\""));
-    assert!(!extension.contains("--agent"));
-    assert!(extension.contains("event.text.match(WORKFLOW_PATTERN)"));
-    assert!(!extension.contains("event.input.match(WORKFLOW_PATTERN)"));
-    assert!(extension.contains("${event.systemPrompt}"));
-    assert!(extension.contains("Follow the loaded workflow skill"));
-    let executor = fs::read_to_string(project.path().join(".pi/agents/executor.md")).unwrap();
-    assert!(executor.contains("name: executor"));
-    assert!(executor.contains("# Executor"));
 
-    let blocked = event(
-        project.path(),
-        json!({"protocol_version": 1, "action": "activate", "event_id": "blocked", "workflow": "ralplan"}),
-    );
-    assert_eq!(blocked["status"], "blocked");
+    let extension = fs::read_to_string(project.path().join(".pi/extensions/megara.ts")).unwrap();
+    let process_helper =
+        fs::read_to_string(project.path().join(".pi/extensions/megara_process.ts")).unwrap();
+    assert!(extension.contains("./megara_process.js"));
+    assert!(extension.contains("planning rpc"));
+    assert!(extension.contains("planning_start"));
+    assert!(extension.contains("planning_answer"));
+    assert!(extension.contains("use the returned next_action and current work item"));
+    assert!(extension.contains("never infer approval or invoke user-owned actions"));
+    assert!(extension.contains("pi.registerCommand(\"megara-approve\""));
+    assert!(extension.contains("pi.registerCommand(\"megara-revise\""));
+    assert!(extension.contains("pi.registerCommand(\"megara-purge\""));
+    assert!(extension.contains("pi.exec(megaraCommand()"));
+    assert!(!extension.contains("name: \"planning_spec_approve\""));
+    assert!(!extension.contains("name: \"planning_plan_approve\""));
+    assert!(!extension.contains("name: \"planning_purge\""));
+    assert!(!extension.contains("name: \"planning_spec_revise\""));
+    assert!(!extension.contains("name: \"planning_plan_revise\""));
+    assert!(!extension.contains("name: \"planning_export\""));
+    assert!(!extension.contains("pi.on("));
+    assert!(extension
+        .contains("enumValue([\"interview\", \"specification\", \"planning\", \"complete\"])"));
+    assert!(extension.contains("enumValue([\"delta\", \"full\"])"));
+    assert!(extension.contains("enumValue([\"markdown\", \"json\"])"));
+    assert!(extension.contains("additionalProperties: false"));
+    assert!(process_helper.contains("MAX_RPC_OUTPUT_BYTES = 4 * 1024 * 1024"));
+    assert!(process_helper.contains("TERMINATION_GRACE_MS = 2_000"));
+    assert!(process_helper.contains("child.kill(\"SIGTERM\")"));
+    assert!(process_helper.contains("child.kill(\"SIGKILL\")"));
+    assert!(process_helper.contains("Megara planning rpc stderr exceeded 4 MiB"));
 
     install_pi(project.path(), true);
     assert!(project
         .path()
         .join(".megara/trust/pi-project.toml")
         .exists());
-    let active = event(
-        project.path(),
-        json!({"protocol_version": 1, "action": "activate", "event_id": "trusted", "workflow": "ralplan"}),
-    );
-    assert_eq!(active["status"], "active");
-    let roles = event(
-        project.path(),
-        json!({"protocol_version": 1, "action": "next-action", "event_id": "trusted", "workflow": "ralplan"}),
-    );
-    assert_eq!(
-        roles["required_roles"],
-        json!(["planner", "architect", "critic"])
-    );
-}
-
-#[test]
-fn pi_event_protocol_recovers_completed_output_and_bounds_retries() {
-    let project = tempdir().unwrap();
-    install_pi(project.path(), true);
-    let activate = json!({"protocol_version": 1, "action": "activate", "event_id": "run", "workflow": "ultragoal"});
-    assert_eq!(event(project.path(), activate.clone())["status"], "active");
-    assert_eq!(event(project.path(), activate)["status"], "active");
-
-    let started = event(
-        project.path(),
-        json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "run", "workflow": "ultragoal", "role": "executor"}),
-    );
-    let attempt_id = started["attempt_id"].as_str().unwrap();
-    let completed = event(
-        project.path(),
-        json!({"protocol_version": 1, "action": "attempt-finished", "event_id": "run", "workflow": "ultragoal", "attempt_id": attempt_id, "status": "completed", "output": "verified"}),
-    );
-    assert_eq!(completed["status"], "completed");
-    let replay = event(
-        project.path(),
-        json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "run", "workflow": "ultragoal", "role": "executor"}),
-    );
-    assert_eq!(replay["status"], "completed");
-    assert_eq!(replay["output"], "verified");
-
-    assert_eq!(
-        event(
-            project.path(),
-            json!({"protocol_version": 1, "action": "activate", "event_id": "retry", "workflow": "team"})
-        )["status"],
-        "active"
-    );
-    for expected in ["retry", "retry", "fallback", "blocked"] {
-        let started = event(
-            project.path(),
-            json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "retry", "workflow": "team", "role": "critic", "model": "primary"}),
-        );
-        let response = event(
-            project.path(),
-            json!({"protocol_version": 1, "action": "attempt-finished", "event_id": "retry", "workflow": "team", "attempt_id": started["attempt_id"], "status": "failed", "error": "Selected model is at capacity"}),
-        );
-        assert_eq!(response["status"], expected);
-    }
-}
-
-#[test]
-fn pi_role_receipts_keep_each_completed_output() {
-    let project = tempdir().unwrap();
-    install_pi(project.path(), true);
-    let activate = json!({"protocol_version": 1, "action": "activate", "event_id": "role-output", "workflow": "deep-interview"});
-    assert_eq!(event(project.path(), activate)["status"], "active");
-
-    for (role, output) in [
-        ("researcher", "research finding"),
-        ("contrarian", "risk finding"),
-    ] {
-        let started = event(
-            project.path(),
-            json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "role-output", "workflow": "deep-interview", "role": role}),
-        );
-        assert_eq!(started["status"], "started");
-        let completed = event(
-            project.path(),
-            json!({"protocol_version": 1, "action": "attempt-finished", "event_id": "role-output", "workflow": "deep-interview", "attempt_id": started["attempt_id"], "status": "completed", "output": output}),
-        );
-        assert_eq!(completed["output"], output);
-    }
-
-    for (role, output) in [
-        ("researcher", "research finding"),
-        ("contrarian", "risk finding"),
-    ] {
-        let replay = event(
-            project.path(),
-            json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "role-output", "workflow": "deep-interview", "role": role}),
-        );
-        assert_eq!(replay["status"], "completed");
-        assert_eq!(replay["output"], output);
-    }
-}
-
-#[test]
-fn pi_parallel_role_attempts_preserve_every_receipt() {
-    let project = tempdir().unwrap();
-    install_pi(project.path(), true);
-    assert_eq!(
-        event(
-            project.path(),
-            json!({"protocol_version": 1, "action": "activate", "event_id": "parallel", "workflow": "deep-interview"})
-        )["status"],
-        "active"
-    );
-
-    let project_path = project.path().to_path_buf();
-    let roles = ["researcher", "contrarian", "simplifier", "architect"];
-    let responses = thread::scope(|scope| {
-        let handles = roles.map(|role| {
-            let project_path = project_path.clone();
-            scope.spawn(move || {
-                event(
-                    &project_path,
-                    json!({"protocol_version": 1, "action": "prepare-attempt", "event_id": "parallel", "workflow": "deep-interview", "role": role}),
-                )
-            })
-        });
-        handles
-            .into_iter()
-            .map(|handle| handle.join().expect("parallel Pi event should finish"))
-            .collect::<Vec<_>>()
-    });
-    assert!(responses
-        .iter()
-        .all(|response| response["status"] == "started"));
-    let mut attempt_ids = responses
-        .iter()
-        .map(|response| response["attempt_id"].as_str().unwrap())
-        .collect::<Vec<_>>();
-    attempt_ids.sort_unstable();
-    attempt_ids.dedup();
-    assert_eq!(attempt_ids.len(), roles.len());
-
-    let receipt: Value = serde_json::from_slice(
-        &fs::read(
-            project
-                .path()
-                .join(".megara/state/workflows/pi/events/parallel.json"),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(receipt["attempts"].as_array().unwrap().len(), roles.len());
 }
 
 #[test]

@@ -1,0 +1,302 @@
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+use super::domain::{LifecyclePhase, PlanningState};
+use super::evidence::snapshot_is_current;
+use super::protocol::{state::project_state, LogicalRequest, PROTOCOL_VERSION, RESULT_SCHEMA};
+use super::store::{EventActor, EventAdapter, EventContext, PlanningStore, StoreError};
+
+#[path = "service/artifact_commands.rs"]
+mod artifact_commands;
+#[path = "service/artifact_export.rs"]
+mod artifact_export;
+#[path = "service/artifact_projection.rs"]
+mod artifact_projection;
+#[path = "service/artifact_wire.rs"]
+mod artifact_wire;
+#[path = "service/audit_wire.rs"]
+mod audit_wire;
+#[path = "service/core_commands.rs"]
+mod core_commands;
+#[path = "service/error.rs"]
+mod error;
+#[path = "service/response.rs"]
+mod response;
+
+pub(crate) use artifact_projection::{
+    inspect_candidate_projection, render_candidate_markdown, repair_candidate_projection,
+    ProjectionStatus,
+};
+use error::ServiceError;
+use response::observed_list;
+pub(crate) use response::{error_response, protocol_error_response, store_error_response};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServiceAuthority {
+    ModelPi,
+    ModelCodex,
+    UserCli,
+    UserCodexMcp,
+}
+
+impl ServiceAuthority {
+    fn event_context(self, request_id: &str) -> EventContext {
+        match self {
+            Self::ModelPi => EventContext {
+                actor: EventActor::Model,
+                adapter: EventAdapter::Pi,
+                request_id: Some(request_id.to_string()),
+            },
+            Self::ModelCodex => EventContext {
+                actor: EventActor::Model,
+                adapter: EventAdapter::CodexMcp,
+                request_id: Some(request_id.to_string()),
+            },
+            Self::UserCli => EventContext {
+                actor: EventActor::User,
+                adapter: EventAdapter::Cli,
+                request_id: Some(request_id.to_string()),
+            },
+            Self::UserCodexMcp => EventContext {
+                actor: EventActor::User,
+                adapter: EventAdapter::CodexMcp,
+                request_id: Some(request_id.to_string()),
+            },
+        }
+    }
+
+    pub(crate) fn is_user(self) -> bool {
+        matches!(self, Self::UserCli | Self::UserCodexMcp)
+    }
+
+    pub(crate) fn allows_model_revision_or_export(self) -> bool {
+        matches!(self, Self::ModelCodex | Self::UserCli | Self::UserCodexMcp)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListParams {
+    phase: Option<LifecyclePhase>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PurgeParams {
+    confirm: String,
+}
+
+pub struct PlanningService {
+    store: PlanningStore,
+}
+
+impl PlanningService {
+    pub fn open_project(root: impl AsRef<std::path::Path>) -> Result<Self, StoreError> {
+        Ok(Self {
+            store: PlanningStore::open_project(root)?,
+        })
+    }
+
+    pub fn project_id(&self) -> &str {
+        self.store.project_id()
+    }
+
+    pub fn handle_request(&mut self, request: LogicalRequest) -> Value {
+        self.handle(request, ServiceAuthority::ModelPi)
+    }
+
+    pub fn handle_codex_request(&mut self, request: LogicalRequest) -> Value {
+        self.handle(request, ServiceAuthority::ModelCodex)
+    }
+
+    pub fn handle_user_request(&mut self, request: LogicalRequest) -> Value {
+        self.handle(request, ServiceAuthority::UserCli)
+    }
+
+    pub fn handle_codex_user_request(&mut self, request: LogicalRequest) -> Value {
+        self.handle(request, ServiceAuthority::UserCodexMcp)
+    }
+
+    fn handle(&mut self, request: LogicalRequest, authority: ServiceAuthority) -> Value {
+        let request_id = request.request_id.clone();
+        let operation = request.operation.clone();
+        match self.dispatch(request, authority) {
+            Ok(mut response) => {
+                self.refresh_observed(&mut response);
+                response
+            }
+            Err(error) => error_response(Some(&request_id), Some(&operation), error),
+        }
+    }
+
+    fn refresh_observed(&self, response: &mut Value) {
+        if response.get("ok").and_then(Value::as_bool) != Some(true) {
+            return;
+        }
+        let Some(session_id) = response.get("session_id").and_then(Value::as_str) else {
+            return;
+        };
+        let current = match self.store.current(session_id) {
+            Ok(state) => state,
+            Err(_) => return,
+        };
+        let health = current
+            .repo_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot_is_current(self.store.project_root(), snapshot));
+        let (evidence_current, warning) = match health {
+            None => (false, None),
+            Some(Ok(true)) => (true, None),
+            Some(Ok(false)) => (false, Some("EVIDENCE_STALE")),
+            Some(Err(_)) => (false, Some("EVIDENCE_HEALTH_IO")),
+        };
+        response["observed"]["evidence_current"] = json!(evidence_current);
+        let mut warnings = response["observed"]["warnings"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if let Some(warning) = warning {
+            if !warnings.iter().any(|value| value.as_str() == Some(warning)) {
+                warnings.push(json!(warning));
+            }
+        }
+        response["observed"]["warnings"] = Value::Array(warnings);
+    }
+
+    fn dispatch(
+        &mut self,
+        request: LogicalRequest,
+        authority: ServiceAuthority,
+    ) -> Result<Value, ServiceError> {
+        request.validate().map_err(ServiceError::protocol)?;
+        match request.operation.as_str() {
+            "planning.start" => self.start(request, authority),
+            "planning.answer" => self.answer(request, authority),
+            "planning.status" | "planning.current" => self.status(request),
+            "planning.list" => self.list(request),
+            "planning.evidence.refresh" => self.refresh_evidence(request, authority),
+            "planning.audit.apply" => self.apply_audit(request, authority),
+            "planning.spec.generate" => self.spec_generate(request, authority),
+            "planning.spec.show" => self.spec_show(request),
+            "planning.spec.approve" => self.spec_approve(request, authority),
+            "planning.spec.revise" => self.spec_revise(request, authority),
+            "planning.plan.generate" => self.plan_generate(request, authority),
+            "planning.plan.show" => self.plan_show(request),
+            "planning.plan.approve" => self.plan_approve(request, authority),
+            "planning.plan.revise" => self.plan_revise(request, authority),
+            "planning.export" => self.export(request, authority),
+            "planning.purge" if authority.is_user() => self.purge(request),
+            "planning.purge" => Err(ServiceError::with_code(
+                "USER_ENTRYPOINT_REQUIRED",
+                "purge requires an explicit user entrypoint",
+            )),
+            operation => Err(ServiceError::invalid(format!(
+                "{operation} is not available in this service boundary"
+            ))),
+        }
+    }
+
+    fn status(&self, request: LogicalRequest) -> Result<Value, ServiceError> {
+        let state = self.read_session(request.session_id.as_deref())?;
+        Ok(response::query_response_with_health(&request, state, None))
+    }
+
+    fn list(&self, request: LogicalRequest) -> Result<Value, ServiceError> {
+        let params = decode_params_or_default::<ListParams>(&request)?;
+        let sessions = self
+            .store
+            .list(params.phase)?
+            .iter()
+            .map(project_state)
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": request.request_id,
+            "ok": true,
+            "replayed": false,
+            "result": {
+                "schema": RESULT_SCHEMA,
+                "operation": request.operation,
+                "sessions": sessions,
+            },
+            "observed": observed_list()
+        }))
+    }
+
+    fn purge(&mut self, request: LogicalRequest) -> Result<Value, ServiceError> {
+        let session_id = required_session(&request)?;
+        let params = decode_params::<PurgeParams>(&request)?;
+        let request_hash = request
+            .canonical_request_hash(self.store.project_id())
+            .map_err(ServiceError::protocol)?;
+        let receipt = self.store.purge(
+            session_id,
+            request.command_id.as_deref().unwrap_or_default(),
+            &request_hash,
+            request.expected_revision.unwrap_or_default(),
+            &params.confirm,
+        )?;
+        Ok(json!({
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": request.request_id,
+            "ok": true,
+            "command_id": request.command_id,
+            "session_id": receipt.session_id,
+            "replayed": receipt.replayed,
+            "result": {
+                "schema": RESULT_SCHEMA,
+                "operation": request.operation,
+                "purged": receipt.purged,
+                "cleanup_state": receipt.cleanup_state,
+            },
+            "observed": observed_list()
+        }))
+    }
+
+    fn read_session(&self, session_id: Option<&str>) -> Result<PlanningState, ServiceError> {
+        if let Some(session_id) = session_id {
+            return self.store.current(session_id).map_err(Into::into);
+        }
+        let states = self.store.list(None)?;
+        let active = states
+            .iter()
+            .filter(|state| state.phase != LifecyclePhase::Complete)
+            .collect::<Vec<_>>();
+        match active.as_slice() {
+            [state] => Ok((*state).clone()),
+            [] if states.len() == 1 => Ok(states[0].clone()),
+            [] => Err(ServiceError::with_code(
+                "SESSION_NOT_FOUND",
+                "no planning session exists",
+            )),
+            _ => Err(ServiceError::session_ambiguous()),
+        }
+    }
+}
+
+fn decode_params<T: for<'de> Deserialize<'de>>(
+    request: &LogicalRequest,
+) -> Result<T, ServiceError> {
+    serde_json::from_value(
+        request
+            .params
+            .clone()
+            .ok_or_else(|| ServiceError::invalid("params are required"))?,
+    )
+    .map_err(|error| ServiceError::invalid(error.to_string()))
+}
+
+fn decode_params_or_default<T: for<'de> Deserialize<'de>>(
+    request: &LogicalRequest,
+) -> Result<T, ServiceError> {
+    serde_json::from_value(request.params.clone().unwrap_or_else(|| json!({})))
+        .map_err(|error| ServiceError::invalid(error.to_string()))
+}
+
+fn required_session(request: &LogicalRequest) -> Result<&str, ServiceError> {
+    request
+        .session_id
+        .as_deref()
+        .filter(|session_id| !session_id.trim().is_empty())
+        .ok_or_else(|| ServiceError::with_code("SESSION_REQUIRED", "session_id is required"))
+}

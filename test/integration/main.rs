@@ -1,9 +1,4 @@
-use std::{
-    fs,
-    io::Write,
-    path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
-};
+use std::{fs, path::Path, process::Command};
 
 use tempfile::tempdir;
 
@@ -17,52 +12,6 @@ fn megara_with_codex_home(codex_home: &Path) -> Command {
     let mut command = megara();
     command.env("CODEX_HOME", codex_home);
     command
-}
-
-fn run_hook(
-    project_root: &Path,
-    cwd: &Path,
-    event: &str,
-    matcher: Option<&str>,
-    payload: &[u8],
-) -> Output {
-    let mut command = megara();
-    command
-        .arg("hook")
-        .arg("--scope")
-        .arg("project")
-        .arg("--project-root")
-        .arg(project_root)
-        .arg("--runtime")
-        .arg("codex")
-        .arg("--event")
-        .arg(event)
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(matcher) = matcher {
-        command.arg("--matcher").arg(matcher);
-    }
-    let mut child = command.spawn().unwrap();
-    child.stdin.as_mut().unwrap().write_all(payload).unwrap();
-    child.wait_with_output().unwrap()
-}
-
-fn run_pi_event(project_root: &Path, payload: &[u8]) -> Output {
-    let mut command = megara();
-    command
-        .arg("pi")
-        .arg("event")
-        .arg("--scope")
-        .arg("project")
-        .current_dir(project_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = command.spawn().unwrap();
-    child.stdin.as_mut().unwrap().write_all(payload).unwrap();
-    child.wait_with_output().unwrap()
 }
 
 fn install_project_harness(project: &Path, codex_home: &Path) {
@@ -82,35 +31,33 @@ fn install_project_harness(project: &Path, codex_home: &Path) {
     );
 }
 
-fn occurrences(haystack: &str, needle: &str) -> usize {
-    haystack.match_indices(needle).count()
-}
-
 mod agent_policies;
 mod docs;
 mod doctor;
-mod hook_deep_interview;
-mod hook_deep_interview_support;
-mod hook_git_guard;
-mod hook_ralplan_approval;
-mod hook_ralplan_direct;
-mod hook_ralplan_handoff;
-mod hook_ralplan_input_lock;
-mod hook_ralplan_priority;
-mod hook_ralplan_refine;
-mod hook_ralplan_support;
-mod hook_runtime;
-mod hook_runtime_scope;
-mod hook_runtime_ultragoal;
-mod hook_team;
-mod hook_workflow_pipeline;
 mod install;
 mod install_global;
 mod install_listing;
 mod install_sync;
-mod install_trust;
+mod legacy_cli_removal;
 mod pi;
-mod ultragoal;
-mod ultragoal_support;
+#[allow(dead_code, unused_imports)]
+#[path = "../../src/planning.rs"]
+mod planning;
+mod planning_adapter_equivalence;
+mod planning_cli;
+mod planning_cli_aliases;
+mod planning_cli_artifact_support;
+mod planning_cli_artifacts;
+mod planning_cli_evidence;
+mod planning_install;
+mod planning_mcp;
+mod planning_migration;
+mod planning_migration_concurrency;
+mod planning_migration_races;
+mod planning_migration_resources;
+mod planning_migration_rollback;
+mod planning_migration_safety;
+mod planning_migration_support;
+mod planning_pi;
 mod uninstall;
 mod update;

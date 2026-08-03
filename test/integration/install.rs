@@ -6,11 +6,7 @@ fn installs_project_scope_codex_harness() {
     let codex_home = tempdir().unwrap();
 
     let output = megara_with_codex_home(codex_home.path())
-        .arg("install")
-        .arg("--scope")
-        .arg("project")
-        .arg("--target")
-        .arg("codex")
+        .args(["install", "--scope", "project", "--target", "codex"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -22,434 +18,79 @@ fn installs_project_scope_codex_harness() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Megara / Install"));
-    assert!(stdout.contains("open a new session after install"));
-    assert!(dir.path().join(".agents/megara.toml").exists());
-    assert!(dir.path().join(".agents/.gitignore").exists());
-    assert!(dir.path().join(".megara/.gitignore").exists());
-    assert!(dir.path().join(".agents/bin/megara").exists());
-    assert!(dir.path().join(".agents/bin/insane-search").exists());
-    assert!(dir.path().join(".codex/AGENTS.md").exists());
-    assert!(dir
-        .path()
-        .join(".agents/skills/deep-interview/SKILL.md")
-        .exists());
-    assert!(dir.path().join(".agents/skills/caveman/SKILL.md").exists());
-    assert!(dir
-        .path()
-        .join(".agents/skills/insane-search/SKILL.md")
-        .exists());
-    assert!(!dir
-        .path()
-        .join(".codex/skills/deep-interview/SKILL.md")
-        .exists());
-    assert!(!dir.path().join(".codex/skills/caveman/SKILL.md").exists());
-    assert!(dir
-        .path()
-        .join(".agents/tools/insane-search/TOOL.md")
-        .exists());
-    assert!(dir
-        .path()
-        .join(".agents/tools/insane-search/engine/__main__.py")
-        .exists());
-    assert!(dir
-        .path()
-        .join(".agents/tools/insane-search/requirements.txt")
-        .exists());
-    assert!(dir
-        .path()
-        .join(".agents/tools/insane-search/engine/templates/playwright_real_chrome.js")
-        .exists());
-    assert!(dir
-        .path()
-        .join(".agents/tools/insane-search/references/public-api.md")
-        .exists());
-    assert!(!dir
-        .path()
-        .join(".codex/skills/insane-search/SKILL.md")
-        .exists());
-    assert!(dir
-        .path()
-        .join(".agents/skill-fragments/deep-interview/auto-research-greenfield.md")
-        .exists());
-    assert!(dir
-        .path()
-        .join(".codex/skill-fragments/deep-interview/auto-research-greenfield.md")
-        .exists());
-    assert!(dir.path().join(".agents/agents/executor.toml").exists());
-    assert!(dir.path().join(".agents/agents/researcher.toml").exists());
-    assert!(dir.path().join(".agents/agents/contrarian.toml").exists());
-    assert!(dir.path().join(".agents/agents/simplifier.toml").exists());
-    assert!(dir.path().join(".codex/hooks.json").exists());
-    assert!(dir.path().join(".codex/agents/executor.toml").exists());
-    assert!(dir.path().join(".codex/agents/researcher.toml").exists());
-    assert!(dir.path().join(".codex/agents/contrarian.toml").exists());
-    assert!(dir.path().join(".codex/agents/simplifier.toml").exists());
-    let agents_gitignore = fs::read_to_string(dir.path().join(".agents/.gitignore")).unwrap();
-    assert!(agents_gitignore.contains("MEGARA:MANAGED"));
-    assert!(agents_gitignore.contains("state/"));
-    let runtime_gitignore = fs::read_to_string(dir.path().join(".megara/.gitignore")).unwrap();
-    assert!(runtime_gitignore.contains("MEGARA:MANAGED"));
-    assert!(runtime_gitignore.contains("state/"));
-    assert!(runtime_gitignore.contains("artifacts/"));
-    assert!(runtime_gitignore.contains("cache/"));
-    let ultragoal =
-        fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
-    assert!(ultragoal.contains("Verification Evidence"));
-    assert!(ultragoal.contains("Do not create, edit, copy, link, or list Megara runtime files"));
-    assert!(ultragoal.contains("Quality gate JSON may be passed inline"));
-    assert!(ultragoal.contains("artifactRefs` is optional"));
-    assert!(!ultragoal.contains("Stable Evidence Directory"));
-    assert!(!ultragoal.contains(".megara/artifacts/ultragoal/<session-id>/evidence/"));
-    assert!(ultragoal.contains("ultragoal 승인"));
-    assert!(ultragoal.contains("실행 단위 생성"));
-    assert!(ultragoal.contains("Do not mention goals being opened, selected, approved, converted, or split into execution units"));
-    let team = fs::read_to_string(dir.path().join(".agents/skills/team/SKILL.md")).unwrap();
-    assert!(team.contains("The current session is always the team leader"));
-    assert!(team.contains("correlation id and teammate id"));
-    assert!(team.contains("Final synthesis is allowed only after every required teammate"));
-    assert!(team.contains("Codex App"));
-    assert!(team.contains("The current App thread is the team leader"));
-    assert!(team.contains("Codex CLI"));
-    assert!(team.contains("Split-pane teammates are limited to `cmux`, `tmux`, and `orca`"));
-    assert!(team.contains("Target split layout: two columns"));
-    assert!(team.contains(r#""$MEGARA_BIN" team split"#));
-    assert!(team.contains("megara team teammate"));
-    assert!(team.contains("Do not use Warp"));
-    assert!(team.contains("CLI split pane 생성 실패로 subagent fallback 사용"));
-    assert!(team.contains("Message Contract"));
-    let skill =
-        fs::read_to_string(dir.path().join(".agents/skills/deep-interview/SKILL.md")).unwrap();
-    assert!(skill.starts_with("---\n"));
-    assert!(skill.contains("MEGARA:MANAGED"));
-    assert!(skill.contains("Do not print a separate threshold line"));
-    assert!(skill.contains("Default ladder: `15% -> 5% -> 2% -> 0% remaining ambiguity`"));
-    assert!(skill.contains("Ambiguity Target Ladder"));
-    assert!(skill.contains("15% -> 5% -> 2% -> 0%"));
-    assert!(skill.contains("At `15%`, stop asking ordinary interview questions"));
-    assert!(skill.contains("At `5%`, stop asking ordinary interview questions"));
-    assert!(skill.contains("At `2%`, stop asking ordinary interview questions"));
-    assert!(skill.contains("At `0%`, do not ask another milestone decision"));
-    assert!(skill.contains("show `0%` as the final visible ambiguity score"));
-    assert!(skill.contains("two distinct, concrete corrections"));
-    assert!(skill.contains("reaching the active target automatically creates"));
-    assert!(skill.contains("do not crystallize at `1%`"));
-    assert!(skill.contains("Runtime-Backed Multi-Turn Contract"));
-    assert!(skill.contains("Codex App delegation wrappers"));
-    assert!(skill.contains("use `researcher`, `contrarian`, `simplifier`, and `architect`"));
-    assert!(skill.contains("must not call tools, read files, write files"));
-    assert!(skill.contains("Use a minimal fact pass"));
-    assert!(skill.contains("do not block the immediate next question"));
-    assert!(skill.contains("Ask one compact follow-up from the confirmed topology"));
-    assert!(skill.contains("read at most"));
-    assert!(skill.contains("it schedules `researcher`, `contrarian`, and `simplifier`"));
-    assert!(skill.contains(
-        "A reassessment with increased ambiguity, a changed scope boundary, or an invalidated assumption"
-    ));
-    assert!(skill.contains("must forbid tool calls and file reads"));
-    assert!(skill.contains("starts `ralplan` in the same session"));
-    assert!(skill.contains("without another skill invocation or approval"));
-    assert!(skill.contains("does not require Codex Plan mode"));
-    assert!(skill.contains("Do not ask the user to toggle `/plan`"));
-    assert!(!skill.contains("Codex Plan-Mode Activation"));
-    assert!(!skill.contains("Runtime hooks attempt to activate Codex Plan mode before Round 0"));
-    assert!(!skill.contains("activate Codex Plan mode first"));
-    assert!(!skill.contains("A `/plan` text prefix is not enough by itself"));
-    assert!(!skill.contains("Do not offer a \"continue without Plan mode\" option"));
-    assert!(!skill.contains("Continue here without `/plan`"));
-    assert!(!skill.contains("The preflight question must have"));
-    assert!(skill.contains("<configured-locale ambiguity label>: NN%"));
-    assert!(skill.contains("Calculate ambiguity as `100 - weighted_clarity`"));
-    assert!(skill.contains("Ambiguity is bidirectional and non-monotonic"));
-    assert!(skill.contains("reassess the entire current specification from scratch"));
-    assert!(skill.contains("do not use the prior percentage as a baseline"));
-    assert!(skill.contains("Never treat an answer as proof that ambiguity fell"));
-    assert!(skill.contains("Compact Visible Output"));
-    assert!(skill.contains("Keep active interview output compact for humans"));
-    assert!(skill.contains("Show the current ambiguity score on every active interview question"));
-    assert!(skill.contains("exactly four visible options"));
-    assert!(skill.contains("Show one recommendation line after the options"));
-    assert!(skill.contains("five visible numbered options"));
-    assert!(skill.contains("one-sentence crystallized requirement"));
-    assert!(skill.contains("what you recommend and why"));
-    assert!(skill.contains("(Recommended)"));
-    assert!(skill
-        .contains("The user only needs the ambiguity score, next question, recommendation, and answer choices"));
-    assert!(skill.contains("do not include technical hook blocks"));
-    assert!(skill.contains("short numbered visible option list"));
-    assert!(skill.contains("1. <option 1>"));
-    assert!(skill.contains("1. <option 1> (Recommended)"));
-    assert!(skill.contains("3. <option 3>"));
-    assert!(skill.contains("4. <configured-locale direct input / not in listed options>"));
-    assert!(skill.contains("Append the literal suffix `(Recommended)`"));
-    assert!(skill.contains("Do not mark option 4 as recommended"));
-    assert!(skill.contains("user may answer with the option number"));
-    assert!(skill.contains("direct input / not in listed options"));
-    assert!(skill.contains("Do not include technical gate blocks"));
-    assert!(skill.contains("Runtime hooks infer the pending question"));
-    assert!(skill.contains("Do not emit a visible ledger update"));
-    assert!(skill.contains("output only the user-facing markdown spec"));
-    assert!(skill.contains("do not produce a duplicate final-spec response"));
-    assert!(skill.contains("produce the `ralplan` result in the same user-selected turn"));
-    assert!(skill.contains("For a `0%` target completion, this must be exactly `0%`"));
-    assert!(skill.contains("Do not show raw labels such as `Metadata`"));
-    assert!(!skill.contains("Interview ledger update:"));
-    assert!(!skill.contains("Megara Question Gate:"));
-    assert!(!skill.contains("Megara Workflow State:"));
-    assert!(skill.contains("Do not emit `Megara Workflow State`"));
-    assert!(skill.contains("candidate markdown artifact"));
-    assert!(skill.contains("promote it after the user selects `ralplan`"));
-    assert!(skill.contains("spec_path"));
-    assert!(skill.contains("pipeline_lock"));
-    assert!(skill.contains("Write every user-facing sentence in the configured locale"));
-    assert!(skill.contains("option labels"));
-    assert!(skill.contains("prefer natural terms in the configured locale"));
-    assert!(skill.contains("short explanation in the configured locale"));
-    assert!(skill.contains("free-text values"));
-    assert!(skill.contains("Do not copy English section headings"));
-    assert!(skill.contains("Round 0: Topology Confirmation"));
-    assert!(!skill.contains("Deep Interview threshold:"));
-    assert!(!skill.contains("I'm reading this as"));
-    assert!(!skill.contains("Restate gate"));
-    let caveman = fs::read_to_string(dir.path().join(".agents/skills/caveman/SKILL.md")).unwrap();
-    assert!(caveman.contains("ACTIVE EVERY RESPONSE"));
-    assert!(caveman.contains("stop caveman"));
-    let insane_wrapper = fs::read_to_string(dir.path().join(".agents/bin/insane-search")).unwrap();
-    assert!(insane_wrapper.contains(r#"runtime_root="$root_dir/../.megara""#));
-    assert!(insane_wrapper.contains("state/tools/insane-search"));
-    assert!(insane_wrapper.contains("python3 -m venv"));
-    assert!(insane_wrapper.contains("pip install -r"));
-    assert!(insane_wrapper.contains("requirements.stamp"));
-    assert!(insane_wrapper.contains("-nt \"$requirements_stamp\""));
-    assert!(insane_wrapper.contains("curl_cffi"));
-    assert!(insane_wrapper.contains("yt_dlp"));
-    assert!(insane_wrapper.contains(r#"exec "$python_bin" -m engine "$@""#));
-    let insane_tool =
-        fs::read_to_string(dir.path().join(".agents/tools/insane-search/TOOL.md")).unwrap();
-    assert!(insane_tool.contains("kind: tool"));
-    assert!(insane_tool.contains("not a default active skill"));
-    assert!(insane_tool.contains("https://github.com/fivetaku/insane-search"));
-    assert!(insane_tool.contains("bootstraps dependencies on first use"));
-    assert!(insane_tool.contains(".megara/state/tools/insane-search/venv"));
-    let insane_skill =
-        fs::read_to_string(dir.path().join(".agents/skills/insane-search/SKILL.md")).unwrap();
-    assert!(insane_skill.contains("name: insane-search"));
-    assert!(insane_skill.contains("on-demand, not a default active skill"));
-    assert!(insane_skill.contains(".agents/tools/insane-search/TOOL.md"));
-    assert!(insane_skill.contains(".agents/bin/insane-search"));
-    assert!(insane_skill.contains(".megara/state/tools/insane-search/venv"));
-    let insane_requirements = fs::read_to_string(
-        dir.path()
-            .join(".agents/tools/insane-search/requirements.txt"),
-    )
-    .unwrap();
-    assert!(insane_requirements.starts_with("# MEGARA:MANAGED"));
-    assert!(insane_requirements.contains("curl_cffi>=0.15.0"));
-    let insane_engine = fs::read_to_string(
-        dir.path()
-            .join(".agents/tools/insane-search/engine/__main__.py"),
-    )
-    .unwrap();
-    assert!(insane_engine.starts_with("# MEGARA:MANAGED"));
-    assert!(!insane_engine.contains("<!-- MEGARA:MANAGED"));
-    let insane_yaml = fs::read_to_string(
-        dir.path()
-            .join(".agents/tools/insane-search/engine/waf_profiles.yaml"),
-    )
-    .unwrap();
-    assert!(insane_yaml.starts_with("# MEGARA:MANAGED"));
-    let insane_js = fs::read_to_string(
-        dir.path()
-            .join(".agents/tools/insane-search/engine/templates/playwright_real_chrome.js"),
-    )
-    .unwrap();
-    assert!(insane_js.starts_with("// MEGARA:MANAGED"));
-    serde_json::from_str::<serde_json::Value>(
-        &fs::read_to_string(
-            dir.path()
-                .join(".agents/tools/insane-search/engine/templates/package.json"),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let ralplan = fs::read_to_string(dir.path().join(".agents/skills/ralplan/SKILL.md")).unwrap();
-    assert!(!ralplan.contains("Megara Review Pass:"));
-    assert!(!ralplan.contains("Megara Plan Gate:"));
-    assert!(!ralplan.contains("Megara Approval Gate:"));
-    assert!(ralplan.contains("Do not output runtime metadata"));
-    assert!(ralplan.contains("Runtime hooks record subagent receipts"));
-    assert!(ralplan
-        .contains("Do not send progress messages that merely narrate internal workflow mechanics"));
-    assert!(ralplan.contains(
-        "begin planning from the locked spec without asking another transition question"
-    ));
-    assert!(ralplan.contains("Normal user approval should be a number or natural-language choice"));
-    assert!(ralplan.contains("hooks inject a hidden requirement"));
-    assert!(ralplan.contains("input_spec_sha256"));
-    assert!(ralplan.contains("plan_sha256"));
-    assert!(ralplan.contains("pending-approval plan"));
-    assert!(ralplan.contains("Baseline failure handling"));
-    assert!(ralplan.contains("pre-existing"));
-    assert!(ralplan.contains("Plan-owned clarification"));
-    assert!(ralplan.contains("Do not block on details"));
-    assert!(ralplan.contains("Pick the stricter product-facing"));
-    assert!(ralplan.contains("generic list of unresolved review notes"));
-    assert!(ralplan.contains("close every completed planner, architect, or critic"));
-    assert!(ralplan.contains("Never spawn a third critic pass"));
-    assert!(ralplan.contains("Do not put workflow or handoff names"));
-    assert!(ralplan.contains("final numbered approval choices"));
-    assert!(ralplan.contains("prefer natural terms in the configured locale"));
-    assert!(ralplan.contains("short explanation in the configured locale"));
-    assert!(ralplan.contains("Selecting `ultragoal` or `team` is the transition authorization"));
-    assert!(ralplan.contains("Do not ask for a separate skill invocation or approval"));
-    let ultragoal =
-        fs::read_to_string(dir.path().join(".agents/skills/ultragoal/SKILL.md")).unwrap();
-    assert!(ultragoal.contains(r#"MEGARA_BIN="${MEGARA_BIN:-.agents/bin/megara}""#));
-    assert!(ultragoal.contains(r#""$MEGARA_BIN" ultragoal"#));
-    assert!(ultragoal.contains("output only user-facing prose"));
-    assert!(ultragoal.contains("Run Megara CLI commands silently"));
-    assert!(ultragoal.contains("Do not narrate session ids"));
-    assert!(ultragoal.contains("Runtime artifact paths under `.megara/state`"));
-    assert!(ultragoal.contains("Do not link them, cite them as deliverables"));
-    assert!(ultragoal.contains("runtime files are owned by Megara hooks and CLI commands"));
-    assert!(ultragoal.contains("checkpoint attempts"));
-    assert!(ultragoal.contains("start-goal"));
-    assert!(ultragoal.contains("that selection is sufficient authorization"));
-    assert!(ultragoal.contains("no more than once per user turn"));
-    assert!(ultragoal.contains("Never retry a Megara CLI command with identical arguments"));
-    assert!(!ultragoal.contains("redirects repeated `status` polling"));
-    assert!(ultragoal
-        .contains("User-visible progress should mention only externally meaningful product work"));
-    assert!(ultragoal.contains("Runtime state is managed by the `megara ultragoal` CLI commands"));
-    assert!(!ultragoal.contains("\nmegara ultragoal"));
-    assert!(megara_with_codex_home(codex_home.path())
-        .arg("--version")
-        .current_dir(dir.path())
-        .output()
-        .unwrap()
-        .status
-        .success());
-    let wrapper = dir.path().join(".agents/bin/megara");
-    assert!(Command::new(&wrapper)
-        .arg("--version")
-        .current_dir(dir.path())
-        .output()
-        .unwrap()
-        .status
-        .success());
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(&wrapper).unwrap().permissions().mode();
-        assert_ne!(mode & 0o111, 0);
+    assert!(!stdout.to_ascii_lowercase().contains("hook"));
+
+    for path in [
+        ".agents/megara.toml",
+        ".agents/.gitignore",
+        ".agents/bin/megara",
+        ".agents/bin/insane-search",
+        ".agents/skills/caveman/SKILL.md",
+        ".agents/skills/insane-search/SKILL.md",
+        ".agents/skills/agent-models/SKILL.md",
+        ".agents/tools/insane-search/TOOL.md",
+        ".agents/agents/executor.toml",
+        ".agents/agents/researcher.toml",
+        ".agents/agents/contrarian.toml",
+        ".agents/agents/simplifier.toml",
+        ".megara/.gitignore",
+        ".codex/AGENTS.md",
+        ".codex/config.toml",
+        ".codex/agents/executor.toml",
+        ".codex/agents/researcher.toml",
+        ".codex/agents/contrarian.toml",
+        ".codex/agents/simplifier.toml",
+    ] {
+        assert!(dir.path().join(path).exists(), "missing {path}");
     }
-    let ssot_agent = fs::read_to_string(dir.path().join(".agents/agents/executor.toml")).unwrap();
-    let ssot_agent: toml::Value = toml::from_str(&ssot_agent).unwrap();
-    assert!(ssot_agent.get("instructions").is_some());
-    assert!(ssot_agent.get("developer_instructions").is_none());
-    assert_eq!(
-        ssot_agent
-            .get("codex")
-            .and_then(|codex| codex.get("model"))
-            .and_then(toml::Value::as_str),
-        Some("gpt-5.6-terra")
-    );
+    for path in [
+        ".codex/hooks.json",
+        ".agents/skill-fragments",
+        ".codex/skills",
+        ".codex/skill-fragments",
+    ] {
+        assert!(!dir.path().join(path).exists(), "unexpected {path}");
+    }
 
-    let codex_agent = fs::read_to_string(dir.path().join(".codex/agents/executor.toml")).unwrap();
-    let codex_agent: toml::Value = toml::from_str(&codex_agent).unwrap();
-    assert_eq!(
-        codex_agent.get("model").and_then(toml::Value::as_str),
-        Some("gpt-5.6-terra")
-    );
-    assert_eq!(
-        codex_agent
-            .get("model_reasoning_effort")
-            .and_then(toml::Value::as_str),
-        Some("high")
-    );
-    assert!(codex_agent
-        .get("developer_instructions")
-        .and_then(toml::Value::as_str)
-        .is_some_and(|instructions| instructions.contains("# Executor")));
-    assert!(codex_agent.get("instructions").is_none());
-    toml::from_str::<toml::Value>(
-        &fs::read_to_string(dir.path().join(".codex/config.toml")).unwrap(),
-    )
-    .unwrap();
-    let hooks_json = fs::read_to_string(dir.path().join(".codex/hooks.json")).unwrap();
-    let hooks: serde_json::Value = serde_json::from_str(&hooks_json).unwrap();
-    assert!(hooks_json.contains("megara-caveman-SessionStart"));
-    assert!(hooks_json.contains(r#""matcher": "startup|resume""#));
-    assert!(hooks_json.contains("CAVEMAN MODE ACTIVE"));
-    assert!(hooks_json.contains("megara-hook-UserPromptSubmit"));
-    assert!(hooks_json.contains("megara-hook-PreToolUse"));
-    assert!(hooks_json.contains("megara-hook-PostToolUse"));
-    assert!(hooks_json.contains("megara-hook-SubagentStart"));
-    assert!(hooks_json.contains("megara-hook-SubagentStop"));
-    assert!(
-        hooks_json.contains("hook --managed-marker MEGARA:MANAGED --scope project --project-root")
-    );
-    assert!(hooks_json.contains("--runtime codex --event UserPromptSubmit"));
-    assert!(hooks_json.contains("--runtime codex --event SubagentStart"));
-    let command = hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap();
-    assert!(command.starts_with('"'));
-    assert!(!command.starts_with("megara hook"));
-    assert!(!hooks_json.contains("megara-hook.sh"));
-    assert!(!hooks_json.contains("python3"));
-    assert!(!hooks_json.contains(r#""matcher": "Bash""#));
-    let megara_config = fs::read_to_string(dir.path().join(".agents/megara.toml")).unwrap();
-    assert!(megara_config.contains("locale = \"ko-KR\""));
-    assert!(megara_config.contains("default_active_skills = [\"caveman\"]"));
-    assert!(megara_config.contains("enabled_tools = [\"insane-search\"]"));
+    let mut skills = fs::read_dir(dir.path().join(".agents/skills"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    skills.sort();
+    assert_eq!(skills, ["agent-models", "caveman", "insane-search"]);
+
+    let agents_gitignore = fs::read_to_string(dir.path().join(".agents/.gitignore")).unwrap();
+    let runtime_gitignore = fs::read_to_string(dir.path().join(".megara/.gitignore")).unwrap();
+    for ignored in [
+        "state/",
+        "artifacts/",
+        "cache/",
+        "planning/",
+        "migration-backups/",
+    ] {
+        assert!(
+            agents_gitignore.contains(ignored),
+            "missing {ignored} in SSOT ignore"
+        );
+        assert!(
+            runtime_gitignore.contains(ignored),
+            "missing {ignored} in runtime ignore"
+        );
+    }
+
     let agents_md = fs::read_to_string(dir.path().join(".codex/AGENTS.md")).unwrap();
-    assert!(agents_md.contains("## Locale"));
-    assert!(agents_md.contains("Locale: `ko-KR`"));
-    assert!(agents_md.contains("prefer natural terms in the configured locale"));
-    assert!(agents_md.contains("short explanation in the configured locale"));
-    assert!(agents_md.contains("Hook output and Megara CLI state are runtime internals"));
-    assert!(agents_md.contains("Runtime artifact paths under `.megara/state`"));
-    assert!(agents_md.contains("Do not link them, cite them as deliverables"));
-    assert!(agents_md.contains("quality-gate JSON"));
-    assert!(agents_md.contains("block completion until agent-created changes are committed"));
-    assert!(agents_md.contains("OMA `/scm`-style Conventional Commits"));
-    assert!(agents_md.contains("never `git add .` or `git add -A`"));
-    assert!(agents_md.contains("## Codex Runtime Adapter"));
-    assert!(agents_md.contains("This projected harness is running inside Codex"));
-    assert!(agents_md.contains("Deep-interview does not require Codex Plan mode"));
-    assert!(agents_md.contains("completed ambiguity reassessments"));
-    assert!(agents_md.contains("invalidated assumption requires"));
-    assert!(agents_md.contains("every selected review must finish and its subagent must be closed"));
-    assert!(agents_md.contains("Do not ask the user to toggle `/plan`"));
-    assert!(!agents_md.contains("Megara hooks try to activate Codex Plan mode before Round 0"));
-    assert!(!agents_md.contains("activate Plan mode, then resend"));
-    assert!(!agents_md.contains("Do not offer a \"continue without Plan mode\" path"));
-    assert!(agents_md.contains("delegated prompts may arrive wrapped"));
-    assert!(agents_md.contains("implementation mutation is blocked until `ralplan`"));
-    assert!(agents_md.contains("SubagentStart"));
-    assert!(agents_md.contains("## Skills"));
-    assert!(agents_md.contains("## On-Demand Tools"));
-    assert!(agents_md.contains("insane-search"));
-    assert!(agents_md.contains("- `insane-search`"));
-    assert!(agents_md.contains("tools/insane-search/TOOL.md"));
-    assert!(agents_md.contains("On-demand tools are not default active skills"));
-    assert!(agents_md.contains(".agents/bin/<tool-name>"));
-    assert!(agents_md.contains("## Default Active Skills"));
-    assert!(agents_md.contains("- `caveman`"));
-    assert!(agents_md.contains("Do not mix languages in explanatory prose"));
-    assert!(agents_md.contains("progress updates, clarification questions, option labels"));
-    assert!(agents_md.contains("stock English workflow phrases"));
-    assert!(agents_md.contains("Do not copy English workflow headings"));
-    assert!(agents_md.contains("free-text values such as `question`, `options`"));
-}
+    assert!(agents_md.contains("## Planning Adapter"));
+    assert!(agents_md.contains(".megara/planning"));
+    assert!(!agents_md.contains("hook"));
 
+    let megara_config = fs::read_to_string(dir.path().join(".agents/megara.toml")).unwrap();
+    assert!(megara_config.contains("default_active_skills = [\"caveman\"]"));
+}
 #[test]
 fn install_migrates_legacy_project_runtime_state() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
-    let legacy_state = dir
-        .path()
-        .join(".agents/state/workflows/deep-interview/legacy-session.json");
+    let legacy_state = dir.path().join(".agents/state/legacy-session.json");
     fs::create_dir_all(legacy_state.parent().unwrap()).unwrap();
     fs::write(&legacy_state, r#"{"session_id":"legacy-session"}"#).unwrap();
 
@@ -474,7 +115,7 @@ fn install_migrates_legacy_project_runtime_state() {
     assert!(!dir.path().join(".agents/state").exists());
     assert!(dir
         .path()
-        .join(".megara/state/workflows/deep-interview/legacy-session.json")
+        .join(".megara/state/legacy-session.json")
         .exists());
 }
 
@@ -510,12 +151,8 @@ fn install_project_scope_honors_locale_arg() {
 fn install_keeps_conflicting_legacy_runtime_state_in_place() {
     let dir = tempdir().unwrap();
     let codex_home = tempdir().unwrap();
-    let legacy_state = dir
-        .path()
-        .join(".agents/state/workflows/deep-interview/session.json");
-    let migrated_state = dir
-        .path()
-        .join(".megara/state/workflows/deep-interview/session.json");
+    let legacy_state = dir.path().join(".agents/state/session.json");
+    let migrated_state = dir.path().join(".megara/state/session.json");
     fs::create_dir_all(legacy_state.parent().unwrap()).unwrap();
     fs::create_dir_all(migrated_state.parent().unwrap()).unwrap();
     fs::write(&legacy_state, r#"{"source":"legacy"}"#).unwrap();

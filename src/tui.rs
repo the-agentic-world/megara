@@ -183,6 +183,7 @@ pub(crate) fn doctor_tui_options(args: DoctorArgs) -> Result<DoctorOptions> {
         scope: args.scope.map(Into::into).unwrap_or(InstallScope::Project),
         target: args.target.map(Into::into).unwrap_or(TargetRuntime::Codex),
         json: args.json,
+        repair: args.repair,
     })
 }
 
@@ -233,6 +234,7 @@ pub(crate) fn use_doctor_tui_for(args: &DoctorArgs, terminal: bool, ci: bool) ->
         && !ci
         && !args.no_interactive
         && !args.json
+        && !args.repair
         && args.scope.is_none()
         && args.target.is_none()
 }

@@ -4,41 +4,45 @@ use anyhow::{Context, Result};
 
 use crate::{
     agents,
-    installer::PlannedFile,
+    installer::{ManagedTomlEdit, PlannedFile},
     paths::{InstallScope, TargetRuntime},
     templates::TemplateRegistry,
 };
 
-use super::{agent::agent_toml, agents_md::codex_agents_md, hooks::*};
+use super::{agent::agent_toml, agents_md::codex_agents_md, config::codex_config};
 
-pub(super) fn projection_files(
+pub(super) fn projection_plan(
     root: PathBuf,
     scope: InstallScope,
     registry: &TemplateRegistry,
-) -> Result<Vec<PlannedFile>> {
-    let megara_bin = env::current_exe().context("failed to resolve current megara executable")?;
-    let mut files = vec![
-        PlannedFile::new(root.join("AGENTS.md"), codex_agents_md(registry)?),
-        PlannedFile::new(root.join("config.toml"), codex_config()),
-        PlannedFile::new(
-            root.join("hooks.json"),
-            codex_hooks_json(scope, &root, &megara_bin, registry)?,
-        ),
-    ];
+    force: bool,
+    include_managed_edit: bool,
+) -> Result<(Vec<PlannedFile>, Option<ManagedTomlEdit>)> {
+    let megara_bin = env::current_exe()
+        .context("failed to resolve current megara executable")?
+        .canonicalize()
+        .context("failed to canonicalize current megara executable")?;
+    let managed_config = if include_managed_edit && scope == InstallScope::Project {
+        Some(super::mcp_config::plan(&root, &megara_bin, force)?)
+    } else {
+        None
+    };
+    let mut files = vec![PlannedFile::new(
+        root.join("AGENTS.md"),
+        codex_agents_md(registry)?,
+    )];
 
     if scope == InstallScope::Global {
-        for skill in registry.workflows().into_iter().chain(registry.skills()) {
+        files.push(PlannedFile::new(root.join("config.toml"), codex_config()));
+    }
+
+    if scope == InstallScope::Global {
+        for skill in registry.skills() {
             files.push(PlannedFile::new(
                 root.join("skills").join(&skill.name).join("SKILL.md"),
                 skill.content.clone(),
             ));
         }
-    }
-    for fragment in registry.fragments() {
-        files.push(PlannedFile::new(
-            root.join(&fragment.relative_path),
-            fragment.content.clone(),
-        ));
     }
     for agent in registry.agents() {
         let policy = registry
@@ -55,21 +59,22 @@ pub(super) fn projection_files(
         ));
     }
 
-    Ok(files)
+    Ok((files, managed_config))
 }
 
 pub(super) fn obsolete_projection_files(
     root: PathBuf,
     scope: InstallScope,
-    registry: &TemplateRegistry,
+    _registry: &TemplateRegistry,
 ) -> Vec<PathBuf> {
     if scope != InstallScope::Project {
         return Vec::new();
     }
-    registry
-        .workflows()
-        .into_iter()
-        .chain(registry.skills())
-        .map(|skill| root.join("skills").join(&skill.name).join("SKILL.md"))
+    let Some(project_root) = root.parent() else {
+        return Vec::new();
+    };
+    crate::planning::migration::inventory::managed_projection_paths()
+        .iter()
+        .map(|relative| project_root.join(relative))
         .collect()
 }

@@ -1,16 +1,18 @@
-use std::{collections::BTreeMap, fs, path::Path, process::Command};
-
-use anyhow::Result;
-use serde::Serialize;
-use serde_json::Value;
+use std::{fs, path::Path, process::Command};
 
 use crate::{
     installer::{runtime_support_files, DoctorOptions, MANAGED_MARKER},
     paths::{InstallPaths, TargetRuntime},
+    planning::{
+        service::{inspect_candidate_projection, repair_candidate_projection, ProjectionStatus},
+        store::PlanningStore,
+    },
     targets::{codex, pi},
     templates::TemplateRegistry,
     ui::{self, Section},
 };
+use anyhow::Result;
+use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct DoctorReport {
@@ -78,10 +80,6 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
                 &mut stale,
             )?;
         }
-        if options.target == TargetRuntime::Codex {
-            inspect_hook_events(&paths.runtime_root, &mut observations);
-            inspect_stale_workflows(&paths.runtime_root, &mut warnings)?;
-        }
         if options.target == TargetRuntime::Pi
             && options.scope == crate::paths::InstallScope::Project
         {
@@ -95,8 +93,15 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
                 &mut warnings,
             )?;
         }
-        inspect_legacy_agents_state(&paths.ssot_root, &mut warnings);
     }
+
+    inspect_planning_health(
+        options.scope,
+        &paths.runtime_root,
+        options.repair,
+        &mut warnings,
+        &mut observations,
+    )?;
 
     Ok(DoctorReport {
         scope: options.scope.to_string(),
@@ -109,6 +114,220 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
         observations,
         json: options.json,
     })
+}
+
+fn inspect_planning_health(
+    scope: crate::paths::InstallScope,
+    runtime_root: &Path,
+    repair: bool,
+    warnings: &mut Vec<String>,
+    observations: &mut Vec<String>,
+) -> Result<()> {
+    if scope != crate::paths::InstallScope::Project {
+        return Ok(());
+    }
+    let Some(project_root) = runtime_root.parent() else {
+        return Ok(());
+    };
+    let mut store = if repair {
+        PlanningStore::open_existing_project_for_repair(project_root)?
+    } else {
+        PlanningStore::open_existing_project(project_root)?
+    };
+    let Some(mut store) = store.take() else {
+        return Ok(());
+    };
+    let pending_before = store.pending_cleanup_count()?;
+    if pending_before > 0 && !repair {
+        warnings.push(format!(
+            "pending Planning purge cleanup: {pending_before}; run `megara doctor --repair`"
+        ));
+    }
+
+    let inspection = match store.inspect_health() {
+        Ok(inspection) => inspection,
+        Err(error) => {
+            warnings.push(format!("Planning DB_CORRUPT: {error}"));
+            return Ok(());
+        }
+    };
+    for issue in &inspection.issues {
+        if repair && issue.repairable {
+            continue;
+        }
+        if issue.code == "PURGE_RESIDUE" && pending_before > 0 {
+            continue;
+        }
+        warnings.push(format!(
+            "Planning {}: {}{}",
+            issue.code,
+            issue.message,
+            if issue.repairable {
+                "; run `megara doctor --repair`"
+            } else {
+                ""
+            }
+        ));
+    }
+    if !inspection.tombstones.is_empty() {
+        let pending_tombstones = inspection
+            .tombstones
+            .iter()
+            .filter(|tombstone| tombstone.cleanup_state == "pending")
+            .count();
+        let residue_tombstones = inspection
+            .tombstones
+            .iter()
+            .filter(|tombstone| {
+                tombstone.artifact_residue
+                    || tombstone.backup_residue
+                    || tombstone.pending_backup_id.is_some()
+            })
+            .count();
+        let sample = inspection
+            .tombstones
+            .first()
+            .map(|tombstone| tombstone.session_id.as_str())
+            .unwrap_or("none");
+        observations.push(format!(
+            "Planning tombstones inspected: count={}, pending={}, residue={}, sample_session={sample}",
+            inspection.tombstones.len(),
+            pending_tombstones,
+            residue_tombstones,
+        ));
+    }
+
+    if repair {
+        let mut cache_repairs = 0;
+        for state in &inspection.cache_repairs {
+            match store.repair_cached_state(state) {
+                Ok(()) => cache_repairs += 1,
+                Err(error) => warnings.push(format!(
+                    "Planning PROJECTION_DIVERGED repair failed for {}: {error}",
+                    state.session_id
+                )),
+            }
+        }
+        if cache_repairs > 0 {
+            observations.push(format!(
+                "Planning replay cache repair: repaired={cache_repairs}, events unchanged"
+            ));
+        }
+    }
+
+    for state in &inspection.replayed_states {
+        inspect_projections(project_root, state, repair, warnings, observations);
+    }
+
+    if repair {
+        let repaired = store.repair_pending_cleanup()?;
+        let pending_after = store.pending_cleanup_count()?;
+        observations.push(format!(
+            "Planning purge cleanup repair: repaired={repaired}, pending={pending_after}"
+        ));
+        if pending_after > 0 {
+            warnings.push(format!(
+                "pending Planning purge cleanup remains: {pending_after}; retry `megara doctor --repair`"
+            ));
+        }
+        let post_repair = match store.inspect_health() {
+            Ok(inspection) => inspection,
+            Err(error) => {
+                warnings.push(format!("Planning DB_CORRUPT after repair: {error}"));
+                return Ok(());
+            }
+        };
+        for issue in post_repair.issues {
+            if !issue.repairable || (issue.code == "PURGE_RESIDUE" && pending_after > 0) {
+                continue;
+            }
+            warnings.push(format!("Planning {}: {}", issue.code, issue.message));
+        }
+    }
+    Ok(())
+}
+
+fn inspect_projections(
+    project_root: &Path,
+    state: &crate::planning::domain::PlanningState,
+    repair: bool,
+    warnings: &mut Vec<String>,
+    observations: &mut Vec<String>,
+) {
+    inspect_one_projection(
+        project_root,
+        &state.session_id,
+        "spec",
+        state.spec.current_candidate.as_ref(),
+        repair,
+        warnings,
+        observations,
+    );
+    inspect_one_projection(
+        project_root,
+        &state.session_id,
+        "plan",
+        state.plan.current_candidate.as_ref(),
+        repair,
+        warnings,
+        observations,
+    );
+}
+
+fn inspect_one_projection<T: serde::Serialize>(
+    project_root: &Path,
+    session_id: &str,
+    kind: &str,
+    candidate: Option<&T>,
+    repair: bool,
+    warnings: &mut Vec<String>,
+    observations: &mut Vec<String>,
+) {
+    let Some(candidate) = candidate else {
+        return;
+    };
+    let candidate = match serde_json::to_value(candidate) {
+        Ok(candidate) => candidate,
+        Err(error) => {
+            warnings.push(format!(
+                "Planning PROJECTION_IO: cannot encode {kind} candidate for {session_id}: {error}"
+            ));
+            return;
+        }
+    };
+    let status = inspect_candidate_projection(project_root, session_id, kind, &candidate);
+    match status {
+        ProjectionStatus::Unchanged => {}
+        ProjectionStatus::Missing | ProjectionStatus::Stale if repair => {
+            let repaired_status =
+                repair_candidate_projection(project_root, session_id, kind, &candidate);
+            if matches!(
+                repaired_status,
+                ProjectionStatus::Written | ProjectionStatus::Unchanged
+            ) {
+                observations.push(format!(
+                    "Planning projection repair: session={session_id}, kind={kind}, status={}",
+                    repaired_status.as_str()
+                ));
+            } else {
+                warnings.push(format!(
+                    "Planning PROJECTION_{}: session={session_id}, kind={kind}, repair_status={}",
+                    repaired_status.as_str().to_ascii_uppercase(),
+                    repaired_status.as_str()
+                ));
+            }
+        }
+        ProjectionStatus::Missing | ProjectionStatus::Stale => warnings.push(format!(
+            "Planning PROJECTION_{}: session={session_id}, kind={kind}; run `megara doctor --repair`",
+            status.as_str().to_ascii_uppercase(),
+        )),
+        ProjectionStatus::Conflict | ProjectionStatus::IoError | ProjectionStatus::Written => {
+            warnings.push(format!(
+                "Planning PROJECTION_{}: session={session_id}, kind={kind}",
+                status.as_str().to_ascii_uppercase(),
+            ));
+        }
+    }
 }
 
 impl DoctorReport {
@@ -191,147 +410,5 @@ fn inspect_wrapper_invocation(path: &Path, warnings: &mut Vec<String>) {
             "Megara wrapper is not invocable: {} ({error})",
             path.display()
         )),
-    }
-}
-
-fn inspect_hook_events(runtime_root: &Path, observations: &mut Vec<String>) {
-    let events = runtime_root.join("state/hooks/events.jsonl");
-    if events.exists() {
-        observations.push(format!(
-            "Codex hook events observed at {}",
-            events.display()
-        ));
-    } else {
-        observations.push(format!(
-            "Codex hook events have not been observed yet at {}",
-            events.display()
-        ));
-    }
-}
-
-fn inspect_stale_workflows(runtime_root: &Path, warnings: &mut Vec<String>) -> Result<()> {
-    let workflow_dir = runtime_root.join("state/workflows/deep-interview");
-    if !workflow_dir.exists() {
-        return Ok(());
-    }
-
-    let mut states = Vec::new();
-    for entry in fs::read_dir(workflow_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !is_json_file(&path) {
-            continue;
-        }
-        let state: Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
-        states.push((path, state));
-    }
-
-    for (path, state) in &states {
-        let status = state.get("status").and_then(serde_json::Value::as_str);
-        let phase = state.get("phase").and_then(serde_json::Value::as_str);
-        if matches!(status.or(phase), Some("stale")) {
-            if let Some(superseded_by) = state.get("stale_superseded_by").and_then(Value::as_str) {
-                warnings.push(format!(
-                    "stale deep-interview alias state: {} -> {}",
-                    path.display(),
-                    superseded_by
-                ));
-            } else {
-                warnings.push(format!("stale deep-interview state: {}", path.display()));
-            }
-            continue;
-        }
-        if active_pending(state) && terminal_peer_exists(path)? {
-            warnings.push(format!("stale deep-interview state: {}", path.display()));
-        }
-    }
-    inspect_duplicate_active_deep_interviews(&states, warnings);
-    Ok(())
-}
-
-fn inspect_legacy_agents_state(ssot_root: &Path, warnings: &mut Vec<String>) {
-    let legacy_state = ssot_root.join("state");
-    if legacy_state.exists() {
-        warnings.push(format!(
-            "legacy Megara runtime state found under {}; new project-scope runtime state uses .megara/state",
-            legacy_state.display()
-        ));
-    }
-}
-
-fn terminal_peer_exists(path: &Path) -> Result<bool> {
-    let Some(parent) = path.parent() else {
-        return Ok(false);
-    };
-    let current = fs::read_to_string(path)?;
-    let current: Value = serde_json::from_str(&current)?;
-    let cwd = current.get("cwd").cloned().unwrap_or(Value::Null);
-    for entry in fs::read_dir(parent)? {
-        let entry = entry?;
-        let peer = entry.path();
-        if peer == path || !is_json_file(&peer) {
-            continue;
-        }
-        let state: Value = serde_json::from_str(&fs::read_to_string(peer)?)?;
-        let same_cwd = state.get("cwd").cloned().unwrap_or(Value::Null) == cwd;
-        let active = state.get("active").and_then(Value::as_bool).unwrap_or(true);
-        if same_cwd && !active {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn active_pending(state: &Value) -> bool {
-    state
-        .get("active")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-        && state
-            .get("pending_question")
-            .and_then(|pending| pending.get("status"))
-            .and_then(Value::as_str)
-            == Some("pending")
-}
-
-fn is_json_file(path: &Path) -> bool {
-    path.is_file()
-        && path
-            .extension()
-            .is_some_and(|extension| extension == "json")
-}
-
-fn inspect_duplicate_active_deep_interviews(
-    states: &[(std::path::PathBuf, Value)],
-    warnings: &mut Vec<String>,
-) {
-    let mut active_by_cwd = BTreeMap::<String, Vec<String>>::new();
-    for (path, state) in states {
-        if !state
-            .get("active")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        let cwd = state
-            .get("cwd")
-            .and_then(Value::as_str)
-            .unwrap_or("<unknown cwd>")
-            .to_string();
-        active_by_cwd
-            .entry(cwd)
-            .or_default()
-            .push(path.display().to_string());
-    }
-
-    for (cwd, paths) in active_by_cwd {
-        if paths.len() < 2 {
-            continue;
-        }
-        warnings.push(format!(
-            "duplicate active deep-interview states for cwd {cwd}: {}",
-            paths.join(", ")
-        ));
     }
 }

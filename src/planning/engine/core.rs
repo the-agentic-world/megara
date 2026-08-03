@@ -1,0 +1,326 @@
+use serde::Serialize;
+use serde_json::{json, Value};
+use uuid::Uuid;
+
+use super::*;
+
+impl InMemoryPlanningCore {
+    pub fn state(&self, session_id: &str) -> Option<&PlanningState> {
+        self.sessions.get(session_id)
+    }
+
+    pub fn sessions(&self) -> impl Iterator<Item = &PlanningState> {
+        self.sessions.values()
+    }
+
+    pub fn events(&self) -> &[AggregateEvent] {
+        &self.events
+    }
+
+    pub fn start(&mut self, command: StartCommand) -> Result<MutationResult, CoreError> {
+        if command.project_id.trim().is_empty()
+            || command.request.trim().is_empty()
+            || command
+                .title
+                .as_deref()
+                .is_some_and(|title| title.trim().is_empty())
+        {
+            return Err(CoreError::InvalidRequest(
+                "project_id and request must not be blank".to_string(),
+            ));
+        }
+        let session_id = command.session_id.unwrap_or_else(|| {
+            self.next_session_number += 1;
+            format!("pln_{}", Uuid::now_v7())
+        });
+        if self.sessions.contains_key(&session_id) {
+            return Err(CoreError::SessionExists(session_id));
+        }
+        let mut state = PlanningState::new(session_id.clone(), command.project_id, command.request);
+        state.title = command.title.clone();
+        state.domain_revision = 1;
+        let next_work_item = work_item(&state, ModelActionKind::DeltaAudit);
+        state.required_model_action = Some(next_work_item.clone());
+        state.revision = 1;
+        let event_command = StartCommand {
+            session_id: Some(session_id.clone()),
+            project_id: state.project_id.clone(),
+            request: state.transcript.initial_request.clone(),
+            title: state.title.clone(),
+        };
+        let effects = vec![EventEffect::ModelActionRequested {
+            kind: ModelActionKind::DeltaAudit,
+        }];
+        let event = AggregateEvent {
+            schema: EVENT_SCHEMA_VERSION.to_string(),
+            session_id: session_id.clone(),
+            seq: 1,
+            revision_after: 1,
+            domain_revision_after: 1,
+            plan_revision_after: 0,
+            operation: "planning.start".to_string(),
+            primary: event_primary(command_value(&event_command)),
+            effects,
+        };
+        self.insert_started(state.clone(), event.clone())?;
+        Ok(MutationResult { state, event })
+    }
+
+    pub fn import_legacy(
+        &mut self,
+        command: LegacyImportCommand,
+    ) -> Result<MutationResult, CoreError> {
+        if command.project_id.trim().is_empty()
+            || command.session_id.trim().is_empty()
+            || command.initial_request.trim().is_empty()
+        {
+            return Err(CoreError::InvalidRequest(
+                "legacy import identity and source metadata must not be blank".to_string(),
+            ));
+        }
+        if command.project_id.len() > LEGACY_MAX_METADATA_BYTES
+            || command.session_id.len() > LEGACY_MAX_METADATA_BYTES
+            || command.initial_request.len() > LEGACY_MAX_INITIAL_REQUEST_BYTES
+        {
+            return Err(CoreError::InvalidRequest(
+                "legacy import command metadata exceeds its limit".to_string(),
+            ));
+        }
+        if self.sessions.contains_key(&command.session_id) {
+            return Err(CoreError::SessionExists(command.session_id));
+        }
+        command
+            .legacy_bundle
+            .validate()
+            .map_err(CoreError::InvalidRequest)?;
+        let event_bytes = serde_json::to_vec(&command).map_err(|error| {
+            CoreError::InvalidRequest(format!("legacy import event is not serializable: {error}"))
+        })?;
+        if event_bytes.len() > LEGACY_EVENT_MAX_BYTES {
+            return Err(CoreError::InvalidRequest(
+                "legacy import event exceeds 12MiB".to_string(),
+            ));
+        }
+        let mut state = PlanningState::new(
+            command.session_id.clone(),
+            command.project_id.clone(),
+            command.initial_request.clone(),
+        );
+        state.imported_legacy_context = true;
+        state.legacy_import = Some(LegacyImportRef {
+            migration_id: command.legacy_bundle.migration_id.clone(),
+            source_backup_id: command.legacy_bundle.source_backup_id.clone(),
+            source_bundle_hash: command.legacy_bundle.source_bundle_hash.clone(),
+        });
+        state.domain_revision = 1;
+        state.required_model_action = Some(legacy_work_item(&state, &command.legacy_bundle));
+        state.revision = 1;
+        let event = AggregateEvent {
+            schema: EVENT_SCHEMA_VERSION.to_string(),
+            session_id: state.session_id.clone(),
+            seq: 1,
+            revision_after: 1,
+            domain_revision_after: 1,
+            plan_revision_after: 0,
+            operation: "planning.migration.import".to_string(),
+            primary: event_primary(command_value(&command)),
+            effects: vec![EventEffect::ModelActionRequested {
+                kind: ModelActionKind::DeltaAudit,
+            }],
+        };
+        state.assert_invariants().map_err(CoreError::Invariant)?;
+        self.sessions
+            .insert(state.session_id.clone(), state.clone());
+        self.events.push(event.clone());
+        Ok(MutationResult { state, event })
+    }
+
+    pub fn answer(&mut self, command: AnswerCommand) -> Result<MutationResult, CoreError> {
+        self.mutate(
+            &command.session_id,
+            command.expected_revision,
+            "planning.answer",
+            command_value(&command),
+            |state, effects| {
+                if state.phase != LifecyclePhase::Interview {
+                    return Err(CoreError::InvalidPhase(
+                        "answer requires Interview".to_string(),
+                    ));
+                }
+                let pending = state
+                    .pending_question
+                    .clone()
+                    .ok_or(CoreError::QuestionMismatch)?;
+                if pending.question_id != command.question_id
+                    || pending.based_on_revision != command.based_on_revision
+                {
+                    return Err(CoreError::QuestionMismatch);
+                }
+                if command.text.trim().is_empty() {
+                    return Err(CoreError::InvalidRequest(
+                        "answer must not be blank".to_string(),
+                    ));
+                }
+                state.pending_question = None;
+                state.domain_revision += 1;
+                let answer_id = format!("ans_{}", Uuid::now_v7());
+                state.transcript.answers.push(AnswerRecord {
+                    answer_id: answer_id.clone(),
+                    created_event_seq: state.revision + 1,
+                    created_ordinal: 0,
+                    question_id: command.question_id.clone(),
+                    based_on_revision: command.based_on_revision,
+                    text: command.text.clone(),
+                    selected_choice_ids: command.selected_choice_ids.clone(),
+                });
+                effects.push(EventEffect::AnswerSubmitted { answer_id });
+                invalidate_artifacts(state, effects);
+                let next = work_item(state, ModelActionKind::DeltaAudit);
+                state.required_model_action = Some(next.clone());
+                effects.push(EventEffect::ModelActionRequested {
+                    kind: ModelActionKind::DeltaAudit,
+                });
+                Ok(json!({"question_id": command.question_id}))
+            },
+        )
+    }
+
+    pub fn refresh_evidence(
+        &mut self,
+        command: EvidenceRefreshCommand,
+    ) -> Result<EvidenceRefreshResult, CoreError> {
+        validate_snapshot(&command.snapshot)?;
+        let current = self
+            .sessions
+            .get(&command.session_id)
+            .cloned()
+            .ok_or_else(|| CoreError::SessionNotFound(command.session_id.clone()))?;
+        if current.revision != command.expected_revision {
+            return Err(CoreError::RevisionConflict {
+                expected: command.expected_revision,
+                actual: current.revision,
+            });
+        }
+        if current
+            .repo_snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.semantic_eq(&command.snapshot))
+        {
+            return Ok(EvidenceRefreshResult::Unchanged { state: current });
+        }
+        let (changed_evidence_ids, broad_invalidation) =
+            evidence_changes(current.repo_snapshot.as_ref(), &command.snapshot);
+        self.mutate(
+            &command.session_id,
+            command.expected_revision,
+            "planning.evidence.refresh",
+            command_value(&command),
+            |state, effects| {
+                state.repo_snapshot = Some(command.snapshot.clone());
+                state.domain_revision += 1;
+                invalidate_evidence_entities(
+                    state,
+                    effects,
+                    &changed_evidence_ids,
+                    broad_invalidation,
+                );
+                if state.phase != LifecyclePhase::Interview {
+                    state.phase = LifecyclePhase::Interview;
+                    effects.push(EventEffect::PhaseChanged {
+                        phase: LifecyclePhase::Interview,
+                    });
+                }
+                state.pending_question = None;
+                state.full_audit = None;
+                invalidate_artifacts(state, effects);
+                let next_work_item = work_item(state, ModelActionKind::DeltaAudit);
+                state.required_model_action = Some(next_work_item.clone());
+                effects.push(EventEffect::ModelActionRequested {
+                    kind: ModelActionKind::DeltaAudit,
+                });
+                Ok(json!({"evidence_hash": command.snapshot.evidence_hash}))
+            },
+        )
+        .map(EvidenceRefreshResult::Changed)
+    }
+    fn insert_started(
+        &mut self,
+        state: PlanningState,
+        event: AggregateEvent,
+    ) -> Result<(), CoreError> {
+        state.assert_invariants().map_err(CoreError::Invariant)?;
+        self.sessions.insert(state.session_id.clone(), state);
+        self.events.push(event);
+        Ok(())
+    }
+
+    pub(crate) fn mutate<F>(
+        &mut self,
+        session_id: &str,
+        expected_revision: u64,
+        operation: &str,
+        primary: Value,
+        apply: F,
+    ) -> Result<MutationResult, CoreError>
+    where
+        F: FnOnce(&mut PlanningState, &mut Vec<EventEffect>) -> Result<Value, CoreError>,
+    {
+        let current = self
+            .sessions
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| CoreError::SessionNotFound(session_id.to_string()))?;
+        if current.revision != expected_revision {
+            return Err(CoreError::RevisionConflict {
+                expected: expected_revision,
+                actual: current.revision,
+            });
+        }
+        let mut next = current.clone();
+        let mut effects = Vec::new();
+        let _derived_primary = apply(&mut next, &mut effects)?;
+        next.revision += 1;
+        if next.domain_revision < current.domain_revision
+            || next.domain_revision > current.domain_revision + 1
+            || next.plan_revision < current.plan_revision
+            || next.plan_revision > current.plan_revision + 1
+        {
+            return Err(CoreError::Invariant(
+                "one mutation may advance each derived revision at most once".to_string(),
+            ));
+        }
+        next.assert_invariants().map_err(CoreError::Invariant)?;
+        let event = AggregateEvent {
+            schema: EVENT_SCHEMA_VERSION.to_string(),
+            session_id: session_id.to_string(),
+            seq: next.revision,
+            revision_after: next.revision,
+            domain_revision_after: next.domain_revision,
+            plan_revision_after: next.plan_revision,
+            operation: operation.to_string(),
+            primary: event_primary(primary),
+            effects,
+        };
+        self.sessions.insert(session_id.to_string(), next.clone());
+        self.events.push(event.clone());
+        Ok(MutationResult { state: next, event })
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EvidenceRefreshResult {
+    Changed(MutationResult),
+    Unchanged { state: PlanningState },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MutationResult {
+    pub state: PlanningState,
+    pub event: AggregateEvent,
+}
+pub(crate) fn command_value<T: Serialize>(command: &T) -> Value {
+    serde_json::to_value(command).expect("planning command serialization is infallible")
+}
+
+fn event_primary(primary: Value) -> Value {
+    json!({"command": primary})
+}

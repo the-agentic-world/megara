@@ -1,0 +1,90 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "name": "megara-caveman-SessionStart",
+            "type": "command",
+            "command": "echo 'CAVEMAN MODE ACTIVE. Rules: Drop articles/filler/pleasantries/hedging. Fragments OK. Short synonyms. Pattern: [thing] [action] [reason]. [next step]. Off only: stop caveman / normal mode. Code, commands, commits, PRs: write normal.'",
+            "timeout": 5,
+            "statusMessage": "Loading caveman mode"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "name": "megara-hook-UserPromptSubmit",
+            "type": "command",
+            "command": "\"/tmp/megara\" hook --managed-marker MEGARA:MANAGED --scope project --project-root \"/tmp/project\" --runtime codex --event UserPromptSubmit",
+            "timeout": 21
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "name": "megara-hook-PreToolUse",
+            "type": "command",
+            "command": "\"/tmp/megara\" hook --managed-marker MEGARA:MANAGED --scope project --project-root \"/tmp/project\" --runtime codex --event PreToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "name": "megara-hook-PostToolUse",
+            "type": "command",
+            "command": "\"/tmp/megara\" hook --managed-marker MEGARA:MANAGED --scope project --project-root \"/tmp/project\" --runtime codex --event PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "name": "megara-hook-Stop",
+            "type": "command",
+            "command": "\"/tmp/megara\" hook --managed-marker MEGARA:MANAGED --scope project --project-root \"/tmp/project\" --runtime codex --event Stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "name": "megara-hook-SubagentStart",
+            "type": "command",
+            "command": "\"/tmp/megara\" hook --managed-marker MEGARA:MANAGED --scope project --project-root \"/tmp/project\" --runtime codex --event SubagentStart",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "name": "megara-hook-SubagentStop",
+            "type": "command",
+            "command": "\"/tmp/megara\" hook --managed-marker MEGARA:MANAGED --scope project --project-root \"/tmp/project\" --runtime codex --event SubagentStop",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

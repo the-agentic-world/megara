@@ -1,0 +1,33 @@
+{
+  "schema": "megara.planning-baseline-projection/v1",
+  "captured_from_commit": "9dfa8efb2e67d0d6ca68f2fad6700c0bc6b0cad2",
+  "project_scope": {
+    "ssot_root": ".agents",
+    "runtime_root": ".megara",
+    "codex_root": ".codex",
+    "pi_root": ".pi",
+    "managed_projection": [
+      ".agents/megara.toml",
+      ".agents/AGENTS.md",
+      ".megara/bin/megara",
+      ".megara/bin/insane-search",
+      ".megara/.gitignore",
+      ".codex/AGENTS.md",
+      ".codex/config.toml",
+      ".codex/hooks.json",
+      ".pi/settings.json",
+      ".pi/extensions/megara.ts"
+    ],
+    "runtime_state": [
+      ".agents/state/",
+      ".megara/state/",
+      ".megara/artifacts/",
+      ".megara/cache/"
+    ]
+  },
+  "snapshot_contract": {
+    "capture": "install --scope project --target codex and pi in isolated fixture projects",
+    "compare": "file path, mode, managed marker, and SHA-256",
+    "preserve": "pre-existing user files and unrelated dirty paths are never included in mutation set without --force"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schema": "megara.question-authoring-anti/v1",
+  "failure_rule_ids": ["choices", "MPC-QST-004"],
+  "question": {
+    "context": "두 방향 중 하나를 정합니다. 선택 결과에 따라 다음 계획의 시작점이 달라집니다.",
+    "question": "어느 방향을 택할까요?",
+    "why_it_matters": "선택에 따라 다음 계획이 달라집니다.",
+    "technical_terms": [],
+    "source_refs": [{"kind":"initial_request","id":"request"}],
+    "answer": {
+      "mode": "choice",
+      "choices": [
+        {
+          "id": "same",
+          "label": "유지",
+          "direction": "기존 방향을 유지합니다.",
+          "benefits": ["변경이 적습니다."],
+          "tradeoffs": ["기존 한계가 남습니다."]
+        },
+        {
+          "id": "same",
+          "label": "유지",
+          "direction": "기존 방향을 유지합니다.",
+          "benefits": ["변경이 적습니다."],
+          "tradeoffs": ["기존 한계가 남습니다."]
+        }
+      ],
+      "recommendation": null,
+      "freeform_hint": "직접 설명해도 됩니다."
+    }
+  },
+  "review_note": "선택지 ID와 label, 방향, 장점, 감수할 점이 반복되어 선택의 차이가 없다."
+}

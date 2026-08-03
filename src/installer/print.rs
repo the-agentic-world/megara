@@ -87,19 +87,6 @@ impl InstallResult {
             ));
         }
 
-        if let Some(hook_trust) = &self.hook_trust {
-            sections.push(Section::new(
-                "Hook Trust",
-                vec![format!(
-                    "hook trust: registered={}, unchanged={}, skipped={}, config={}",
-                    hook_trust.registered,
-                    hook_trust.unchanged,
-                    hook_trust.skipped,
-                    hook_trust.config_path.display()
-                )],
-            ));
-        }
-
         if !self.warnings.is_empty() {
             sections.push(Section::new("Warnings", self.warnings.clone()));
         }
