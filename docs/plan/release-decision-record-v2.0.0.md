@@ -98,3 +98,10 @@ mutations to a real user project or production state.
 - Unresolved TO_DEFINE: must be reconciled against the completion checklist
   before issue closeout
 - Release authority decision: `APPROVED IN PLAIN TEXT — 2026-08-04 — v2.0.0 ONLY`
+
+## 7. Immutable-tag recovery receipt
+
+- Initial tag workflow: [run 30861879520](https://github.com/the-agentic-world/megara/actions/runs/30861879520) — `FAIL` at annotated-tag verification before build or publish.
+- Failure cause: `actions/checkout@v4` fetched the tagged commit directly into `refs/tags/v2.0.0`, so the runner saw a `commit` ref instead of the remote annotated `tag` object.
+- Immutable remote tag retained: object `0151c363af61c27b9a2fc23724956cb7d2481a2b`, peeled target `b9d8ffbce9198f5377ad249cca9c673660bb167d`; no deletion, movement, or recreation is permitted.
+- Recovery workflow: `PENDING fix merge and dispatch`. It must require and compare `release_tag`, peeled `release_commit`, recorded `release_tag_object`, and `main_at_release`; it must explicitly fetch the remote tag object, bind all build/evidence/publish inputs to the peeled target, and require that target to be an ancestor of current `main`.
