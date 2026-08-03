@@ -44,6 +44,17 @@ jobs:
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
           test -n "$version"
           test "${GITHUB_REF_NAME}" = "v${version}"
+      - name: Verify annotated tag and exact main target
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_ref="refs/tags/${GITHUB_REF_NAME}"
+          test "$(git cat-file -t "${tag_ref}")" = "tag"
+          tag_target="$(git rev-parse "${tag_ref}^{commit}")"
+          test "${tag_target}" = "${GITHUB_SHA}"
+          git fetch --no-tags origin main --depth=1
+          main_target="$(git rev-parse FETCH_HEAD^{commit})"
+          test "${tag_target}" = "${main_target}"
       - name: Build release evidence bundle
         env:
           RELEASE_COMMIT: ${{ github.sha }}

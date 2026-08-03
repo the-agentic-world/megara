@@ -58,4 +58,6 @@ state was involved.
 `MPC-MAN-006` is satisfied for the isolated Pi 0.80.10 host fixture: target
 identity, semantic hash, and revision were human-visible and matched the
 executed command. The release remains unbound until the final release commit,
-signed RDR, signed tag, and immutable tag workflow archive are verified.
+plain-text approved RDR decision, annotated immutable unsigned tag, and
+immutable tag workflow archive are verified. Cryptographic RDR/tag signatures
+are not required for v2.0.0 by the dated explicit decision only.
