@@ -143,6 +143,70 @@ pub(crate) fn replay_core(
     Ok(core)
 }
 
+pub(crate) fn replay_state_from_events(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<PlanningState, StoreError> {
+    let envelopes = load_envelopes(conn, session_id, None)?;
+    if envelopes.is_empty() {
+        return Err(
+            if conn
+                .query_row(
+                    "SELECT 1 FROM purged_sessions WHERE session_id=?1",
+                    params![session_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?
+                .is_some()
+            {
+                StoreError::SessionPurged(session_id.to_string())
+            } else {
+                StoreError::SessionNotFound(session_id.to_string())
+            },
+        );
+    }
+    let core = replay_events(&envelopes)?;
+    core.state(session_id)
+        .cloned()
+        .ok_or_else(|| StoreError::DbCorrupt("reducer state missing".to_string()))
+}
+
+pub(crate) fn cache_matches_state(
+    conn: &Connection,
+    state: &PlanningState,
+) -> Result<bool, StoreError> {
+    let cache: (String, String, u64, u64, u64, String, String) = conn
+        .query_row(
+            "SELECT project_id, phase, revision, domain_revision, plan_revision, state_json, normalized_state_hash FROM sessions WHERE session_id=?1",
+            params![state.session_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            },
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::ProjectionDiverged("session cache is missing".to_string()))?;
+    let cached_state: PlanningState = serde_json::from_str(&cache.5)
+        .map_err(|error| StoreError::ProjectionDiverged(format!("cache json: {error}")))?;
+    let cached_phase = parse_phase(&cache.1).ok_or_else(|| {
+        StoreError::ProjectionDiverged("session phase scalar is invalid".to_string())
+    })?;
+    Ok(cached_state == *state
+        && cache.0 == state.project_id
+        && cached_phase == state.phase
+        && cache.2 == state.revision
+        && cache.3 == state.domain_revision
+        && cache.4 == state.plan_revision
+        && cache.6 == normalized_state_hash(state))
+}
+
 pub(crate) fn replay_core_at(
     conn: &Connection,
     session_id: &str,
@@ -238,7 +302,7 @@ pub(crate) fn event_envelopes(
     load_envelopes(conn, session_id, None)
 }
 
-fn phase_name(phase: LifecyclePhase) -> &'static str {
+pub(crate) fn phase_name(phase: LifecyclePhase) -> &'static str {
     match phase {
         LifecyclePhase::Interview => "interview",
         LifecyclePhase::Specification => "specification",
@@ -247,7 +311,7 @@ fn phase_name(phase: LifecyclePhase) -> &'static str {
     }
 }
 
-fn parse_phase(value: &str) -> Option<LifecyclePhase> {
+pub(crate) fn parse_phase(value: &str) -> Option<LifecyclePhase> {
     match value {
         "interview" => Some(LifecyclePhase::Interview),
         "specification" => Some(LifecyclePhase::Specification),

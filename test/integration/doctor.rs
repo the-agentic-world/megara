@@ -1,5 +1,60 @@
 use super::*;
 
+fn doctor_json(project: &Path, repair: bool) -> serde_json::Value {
+    let mut command = megara();
+    command
+        .args(["doctor", "--scope", "project", "--target", "codex"])
+        .current_dir(project);
+    if repair {
+        command.arg("--repair");
+    }
+    let output = command.arg("--json").output().unwrap();
+    assert!(
+        output.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn start_doctor_session(
+    project: &Path,
+    command_id: &str,
+) -> (String, std::path::PathBuf, Vec<String>) {
+    let mut store = super::planning::store::PlanningStore::open_project(project).unwrap();
+    let database_path = store.database_path().to_path_buf();
+    let started = store
+        .start(
+            command_id,
+            &format!("sha256:{command_id}"),
+            super::planning::engine::StartCommand {
+                session_id: None,
+                project_id: store.project_id().to_string(),
+                request: "doctor health test".to_string(),
+                title: Some("Doctor health test".to_string()),
+            },
+        )
+        .unwrap();
+    let session_id = started.state.session_id.clone();
+    let event_hashes = store
+        .event_envelopes(&session_id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.state_hash_after)
+        .collect();
+    (session_id, database_path, event_hashes)
+}
+
+fn doctor_warning(report: &serde_json::Value, code: &str) -> bool {
+    report["warnings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|warning| warning.as_str())
+        .any(|warning| warning.contains(code))
+}
+
 #[test]
 fn doctor_reports_missing_then_ok() {
     let dir = tempdir().unwrap();
@@ -111,6 +166,213 @@ fn doctor_reports_broken_project_wrapper() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"ok\": false"));
     assert!(stdout.contains(".agents/bin/megara"));
+}
+
+#[test]
+fn doctor_is_read_only_and_repairs_diverged_replay_cache_without_events() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let (session_id, database_path, event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-cache");
+
+    {
+        let connection = rusqlite::Connection::open(&database_path).unwrap();
+        connection
+            .execute(
+                "UPDATE sessions SET state_json=?1, normalized_state_hash=?2 WHERE session_id=?3",
+                rusqlite::params!["{broken", "sha256:broken", session_id],
+            )
+            .unwrap();
+    }
+
+    let read_only = doctor_json(dir.path(), false);
+    assert_eq!(read_only["ok"], false);
+    assert!(doctor_warning(&read_only, "PROJECTION_DIVERGED"));
+    let cached_after_read_only: String = rusqlite::Connection::open(&database_path)
+        .unwrap()
+        .query_row(
+            "SELECT state_json FROM sessions WHERE session_id=?1",
+            [&session_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(cached_after_read_only, "{broken");
+    let unchanged_after_read_only = super::planning::store::PlanningStore::open_project(dir.path())
+        .unwrap()
+        .event_envelopes(&session_id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.state_hash_after)
+        .collect::<Vec<_>>();
+    assert_eq!(unchanged_after_read_only, event_hashes);
+
+    let repaired = doctor_json(dir.path(), true);
+    assert_eq!(repaired["warnings"], serde_json::json!([]));
+    assert!(repaired["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|observation| observation
+            .as_str()
+            .is_some_and(|observation| observation.contains("events unchanged"))));
+    let repaired_store = super::planning::store::PlanningStore::open_project(dir.path()).unwrap();
+    assert!(repaired_store.current(&session_id).is_ok());
+    let unchanged_after_repair = repaired_store
+        .event_envelopes(&session_id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.state_hash_after)
+        .collect::<Vec<_>>();
+    assert_eq!(unchanged_after_repair, event_hashes);
+}
+
+#[test]
+fn doctor_repairs_missing_projection_without_new_event() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+    let (session_id, _database_path, _initial_event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-projection");
+    super::planning_cli_artifact_support::prepare_complete(dir.path(), &session_id);
+    let event_hashes = super::planning::store::PlanningStore::open_project(dir.path())
+        .unwrap()
+        .event_envelopes(&session_id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.state_hash_after)
+        .collect::<Vec<_>>();
+
+    let projection = dir
+        .path()
+        .join(".megara/planning/artifacts")
+        .join(&session_id)
+        .join("spec.md");
+    assert!(projection.is_file());
+    fs::remove_file(&projection).unwrap();
+
+    let read_only = doctor_json(dir.path(), false);
+    assert_eq!(read_only["ok"], false);
+    assert!(doctor_warning(&read_only, "PROJECTION_MISSING"));
+    assert!(!projection.exists());
+
+    let repaired = doctor_json(dir.path(), true);
+    assert_eq!(repaired["warnings"], serde_json::json!([]));
+    assert!(projection.is_file());
+    assert!(repaired["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |observation| observation.as_str().is_some_and(|observation| {
+                observation.contains(&format!("session={session_id}, kind=spec"))
+            })
+        ));
+    let store = super::planning::store::PlanningStore::open_project(dir.path()).unwrap();
+    let repaired_event_hashes = store
+        .event_envelopes(&session_id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.state_hash_after)
+        .collect::<Vec<_>>();
+    assert_eq!(repaired_event_hashes, event_hashes);
+}
+
+#[test]
+fn doctor_repairs_clean_tombstone_artifact_residue_without_warning() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let (session_id, _database_path, _event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-residue");
+    let mut store = super::planning::store::PlanningStore::open_project(dir.path()).unwrap();
+    let receipt = store
+        .purge(
+            &session_id,
+            "cmd-doctor-residue-purge",
+            "sha256:doctor-residue-purge",
+            1,
+            &session_id,
+        )
+        .unwrap();
+    assert_eq!(receipt.cleanup_state, "clean");
+    drop(store);
+
+    let residue = dir
+        .path()
+        .join(".megara/planning/artifacts")
+        .join(&session_id);
+    fs::create_dir_all(&residue).unwrap();
+    fs::write(residue.join("leftover.md"), "residue\n").unwrap();
+
+    let read_only = doctor_json(dir.path(), false);
+    assert_eq!(read_only["ok"], false);
+    assert!(doctor_warning(&read_only, "PURGE_RESIDUE"));
+    assert!(residue.exists());
+
+    let repaired = doctor_json(dir.path(), true);
+    assert_eq!(repaired["warnings"], serde_json::json!([]));
+    assert!(!residue.exists());
+    assert!(repaired["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|observation| observation
+            .as_str()
+            .is_some_and(|observation| observation.contains("repaired=1, pending=0"))));
+}
+
+#[test]
+fn doctor_reports_invalid_tombstone_without_rewriting_it() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let (session_id, database_path, _event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-corrupt-tombstone");
+    let mut store = super::planning::store::PlanningStore::open_project(dir.path()).unwrap();
+    store
+        .purge(
+            &session_id,
+            "cmd-doctor-corrupt-tombstone-purge",
+            "sha256:doctor-corrupt-tombstone-purge",
+            1,
+            &session_id,
+        )
+        .unwrap();
+    drop(store);
+
+    let invalid_response = serde_json::json!({
+        "purged": true,
+        "session_id": session_id,
+    })
+    .to_string();
+    let connection = rusqlite::Connection::open(&database_path).unwrap();
+    connection
+        .execute(
+            "UPDATE purged_sessions SET core_response_json=?1 WHERE session_id=?2",
+            rusqlite::params![invalid_response, session_id],
+        )
+        .unwrap();
+    drop(connection);
+
+    let read_only = doctor_json(dir.path(), false);
+    assert_eq!(read_only["ok"], false);
+    assert!(doctor_warning(&read_only, "TOMBSTONE_INVALID"));
+
+    let repaired = doctor_json(dir.path(), true);
+    assert_eq!(repaired["ok"], false);
+    assert!(doctor_warning(&repaired, "TOMBSTONE_INVALID"));
+    let stored_response: String = rusqlite::Connection::open(&database_path)
+        .unwrap()
+        .query_row(
+            "SELECT core_response_json FROM purged_sessions WHERE session_id=?1",
+            [&session_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored_response, invalid_response);
 }
 
 #[cfg(unix)]

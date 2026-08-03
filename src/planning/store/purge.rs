@@ -211,8 +211,9 @@ impl PlanningStore {
         } else {
             true
         };
+        let artifact_clean = remove_purged_artifacts(self.project_root(), session_id).is_ok();
         let database_clean = cleanup_storage(&self.conn).is_ok();
-        if backup_clean && database_clean {
+        if backup_clean && artifact_clean && database_clean {
             receipt.cleanup_state = "clean".to_string();
             if update_cleanup_receipt(self, &receipt, command_id, None).is_err() {
                 receipt.cleanup_state = "pending".to_string();
@@ -237,32 +238,60 @@ impl PlanningStore {
     fn repair_pending_cleanup_unlocked(&mut self) -> Result<u64, StoreError> {
         let pending = {
             let mut statement = self.conn.prepare(
-                "SELECT purge_command_id, pending_backup_id, core_response_json FROM purged_sessions WHERE cleanup_state='pending'",
+                "SELECT purge_command_id, session_id, pending_backup_id, cleanup_state, core_response_json FROM purged_sessions",
             )?;
             let rows = statement
                 .query_map([], |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
                     ))
                 })?
                 .collect::<Result<Vec<_>, rusqlite::Error>>()?;
             rows
         };
         let mut repaired = 0;
-        for (command_id, backup_id, response) in pending {
+        for (command_id, session_id, backup_id, cleanup_state, response) in pending {
+            if (cleanup_state != "clean" && cleanup_state != "pending")
+                || !valid_path_component(&session_id)
+            {
+                continue;
+            }
+            let Some(mut receipt) = valid_cleanup_receipt(&response, &session_id, &cleanup_state)
+            else {
+                continue;
+            };
+            let artifact_path = purged_artifact_path(self.project_root(), &session_id)?;
+            let artifact_residue = artifact_path
+                .as_ref()
+                .is_some_and(|path| path.symlink_metadata().is_ok());
+            if cleanup_state == "clean" && backup_id.is_none() && !artifact_residue {
+                continue;
+            }
             let backup_clean = match backup_id.as_deref() {
                 Some(id) => remove_linked_backup(self.project_root(), id).is_ok(),
                 None => true,
             };
-            if !backup_clean || cleanup_storage(&self.conn).is_err() {
-                continue;
+            let artifact_clean = match artifact_path {
+                Some(_) => remove_purged_artifacts(self.project_root(), &session_id).is_ok(),
+                None => true,
+            };
+            let database_clean = cleanup_storage(&self.conn).is_ok();
+            if backup_clean && artifact_clean && database_clean {
+                receipt.cleanup_state = "clean".to_string();
+                update_cleanup_receipt(self, &receipt, &command_id, None)?;
+            } else {
+                receipt.cleanup_state = "pending".to_string();
+                update_cleanup_receipt(
+                    self,
+                    &receipt,
+                    &command_id,
+                    backup_id.as_deref().filter(|_| !backup_clean),
+                )?;
             }
-            let mut receipt: PurgeReceipt = serde_json::from_str(&response)
-                .map_err(|error| StoreError::DbCorrupt(format!("purge receipt: {error}")))?;
-            receipt.cleanup_state = "clean".to_string();
-            update_cleanup_receipt(self, &receipt, &command_id, None)?;
             repaired += 1;
         }
         Ok(repaired)
@@ -349,6 +378,67 @@ fn validate_backup_id(value: &str) -> Result<(), StoreError> {
         return Err(StoreError::InvalidRequest(
             "linked migration backup id is invalid".to_string(),
         ));
+    }
+    Ok(())
+}
+
+fn purged_artifact_path(
+    project: &Path,
+    session_id: &str,
+) -> Result<Option<std::path::PathBuf>, StoreError> {
+    let mut components = Path::new(session_id).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(StoreError::InvalidRequest(
+            "purged session id is not a safe path component".to_string(),
+        ));
+    }
+    let target = project.join(".megara/planning/artifacts").join(session_id);
+    match fs::symlink_metadata(&target) {
+        Ok(_) => Ok(Some(target)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn valid_path_component(value: &str) -> bool {
+    let mut components = Path::new(value).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
+
+fn valid_cleanup_receipt(
+    response: &str,
+    session_id: &str,
+    cleanup_state: &str,
+) -> Option<PurgeReceipt> {
+    let value = serde_json::from_str::<serde_json::Value>(response).ok()?;
+    let object = value.as_object()?;
+    let expected = ["cleanup_state", "purged", "replayed", "session_id"];
+    if object.keys().any(|key| !expected.contains(&key.as_str()))
+        || expected.iter().any(|key| !object.contains_key(*key))
+    {
+        return None;
+    }
+    let receipt = serde_json::from_value::<PurgeReceipt>(value).ok()?;
+    (receipt.session_id == session_id
+        && receipt.purged
+        && !receipt.replayed
+        && receipt.cleanup_state == cleanup_state)
+        .then_some(receipt)
+}
+
+fn remove_purged_artifacts(project: &Path, session_id: &str) -> Result<(), StoreError> {
+    let Some(target) = purged_artifact_path(project, session_id)? else {
+        return Ok(());
+    };
+    let metadata = fs::symlink_metadata(&target)?;
+    if !metadata.file_type().is_dir() {
+        return Err(StoreError::InvalidRequest(
+            "purged artifact residue is not a directory".to_string(),
+        ));
+    }
+    crate::planning::migration::remove_tree_nofollow(&target).map_err(StoreError::Io)?;
+    if let Some(parent) = target.parent() {
+        fs::File::open(parent)?.sync_all()?;
     }
     Ok(())
 }

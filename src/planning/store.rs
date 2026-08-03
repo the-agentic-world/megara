@@ -22,6 +22,8 @@ mod artifacts;
 mod command_cache;
 #[path = "store/hash.rs"]
 mod hash;
+#[path = "store/health.rs"]
+pub(crate) mod health;
 #[path = "store/import.rs"]
 mod import;
 #[path = "store/persistence.rs"]

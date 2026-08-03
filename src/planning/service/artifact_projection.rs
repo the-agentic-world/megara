@@ -11,7 +11,7 @@ use super::super::store::StoredOutcome;
 use super::response::mutation_response;
 
 #[derive(Clone, Copy)]
-pub(super) enum ArtifactKind {
+pub(crate) enum ArtifactKind {
     Spec,
     Plan,
 }
@@ -23,25 +23,92 @@ impl ArtifactKind {
             Self::Plan => "plan",
         }
     }
+
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "spec" => Some(Self::Spec),
+            "plan" => Some(Self::Plan),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ProjectionStatus {
+pub(crate) enum ProjectionStatus {
     Written,
     Unchanged,
+    Missing,
+    Stale,
     Conflict,
     IoError,
 }
 
 impl ProjectionStatus {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Written => "written",
             Self::Unchanged => "unchanged",
+            Self::Missing => "missing",
+            Self::Stale => "stale",
             Self::Conflict => "conflict",
             Self::IoError => "io_error",
         }
     }
+}
+
+pub(crate) fn inspect_candidate_projection(
+    root: &Path,
+    session_id: &str,
+    kind: &str,
+    candidate: &Value,
+) -> ProjectionStatus {
+    let Some(kind) = ArtifactKind::from_name(kind) else {
+        return ProjectionStatus::IoError;
+    };
+    let directory = root
+        .join(".megara")
+        .join("planning")
+        .join("artifacts")
+        .join(session_id);
+    let path = directory.join(format!("{}.md", kind.name()));
+    let manifest_path = directory.join("projection-manifest.json");
+    let manifest = match read_manifest(&manifest_path, session_id) {
+        Ok(manifest) => manifest,
+        Err(status) => return status,
+    };
+    let managed_digest = manifest.as_ref().and_then(|manifest| {
+        manifest["files"][kind.name()]["digest"]
+            .as_str()
+            .map(str::to_owned)
+    });
+    let expected = render_markdown(session_id, kind, candidate);
+    let expected_digest = digest_bytes(expected.as_bytes());
+    match fs::read(&path) {
+        Ok(existing)
+            if existing == expected.as_bytes()
+                && managed_digest.as_deref() == Some(&expected_digest) =>
+        {
+            ProjectionStatus::Unchanged
+        }
+        Ok(existing) if managed_digest.as_deref() == Some(&digest_bytes(&existing)) => {
+            ProjectionStatus::Stale
+        }
+        Ok(_) => ProjectionStatus::Conflict,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProjectionStatus::Missing,
+        Err(_) => ProjectionStatus::IoError,
+    }
+}
+
+pub(crate) fn repair_candidate_projection(
+    root: &Path,
+    session_id: &str,
+    kind: &str,
+    candidate: &Value,
+) -> ProjectionStatus {
+    let Some(kind) = ArtifactKind::from_name(kind) else {
+        return ProjectionStatus::IoError;
+    };
+    write_projection(root, session_id, kind, candidate, false)
 }
 
 pub(super) fn project_generated_candidate(

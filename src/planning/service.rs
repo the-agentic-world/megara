@@ -23,7 +23,10 @@ mod error;
 #[path = "service/response.rs"]
 mod response;
 
-pub(crate) use artifact_projection::render_candidate_markdown;
+pub(crate) use artifact_projection::{
+    inspect_candidate_projection, render_candidate_markdown, repair_candidate_projection,
+    ProjectionStatus,
+};
 use error::ServiceError;
 use response::observed_list;
 pub(crate) use response::{error_response, protocol_error_response, store_error_response};
