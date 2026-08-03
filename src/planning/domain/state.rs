@@ -148,6 +148,41 @@ pub struct ArtifactTrack<T> {
     pub approval: Option<ApprovalRef>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyContextEncoding {
+    Utf8,
+    Hex,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpaqueLegacyFile {
+    pub relative_path: String,
+    pub byte_sha256: String,
+    pub size: u64,
+    pub encoding: LegacyContextEncoding,
+    pub payload: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyContextBundle {
+    pub migration_id: String,
+    pub source_backup_id: String,
+    pub source_bundle_hash: String,
+    pub source_path: String,
+    pub files: Vec<OpaqueLegacyFile>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyImportRef {
+    pub migration_id: String,
+    pub source_backup_id: String,
+    pub source_bundle_hash: String,
+}
+
 impl<T> Default for ArtifactTrack<T> {
     fn default() -> Self {
         Self {
@@ -187,6 +222,8 @@ pub struct PlanningState {
     pub required_model_action: Option<ModelWorkItem>,
     pub blockers: BTreeMap<BlockerId, Blocker>,
     pub imported_legacy_context: bool,
+    #[serde(default)]
+    pub legacy_import: Option<LegacyImportRef>,
     pub entities: EntityGraph,
     pub transcript: TranscriptIndex,
     pub repo_snapshot: Option<RepoEvidenceSnapshot>,
@@ -209,6 +246,7 @@ impl PlanningState {
             required_model_action: None,
             blockers: BTreeMap::new(),
             imported_legacy_context: false,
+            legacy_import: None,
             entities: EntityGraph::default(),
             transcript: TranscriptIndex {
                 initial_request,
@@ -274,6 +312,9 @@ impl PlanningState {
     }
 
     pub fn assert_invariants(&self) -> Result<(), String> {
+        if self.imported_legacy_context != self.legacy_import.is_some() {
+            return Err("legacy import flag and reference must agree".to_string());
+        }
         if self.pending_question.is_some() && self.required_model_action.is_some() {
             return Err(
                 "pending_question and required_model_action are mutually exclusive".to_string(),

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OpenFlags, OptionalExtension};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
@@ -32,6 +32,44 @@ pub fn open_project(root: impl AsRef<Path>) -> Result<PlanningStore, StoreError>
         fs::create_dir_all(parent)?;
     }
     open(database_path, identity)
+}
+
+pub fn open_existing_project(root: impl AsRef<Path>) -> Result<Option<PlanningStore>, StoreError> {
+    let identity = canonical_project_identity(root.as_ref())?;
+    let database_path = PathBuf::from(&identity.canonical_root).join(PLANNING_DB_RELATIVE_PATH);
+    let metadata = match fs::symlink_metadata(&database_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.file_type().is_file() {
+        return Err(StoreError::DbCorrupt(
+            "planning database is not a regular file".to_string(),
+        ));
+    }
+    let conn =
+        rusqlite::Connection::open_with_flags(&database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.busy_timeout(Duration::from_millis(5_000))?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version != STORE_SCHEMA_VERSION {
+        return Err(if version > STORE_SCHEMA_VERSION {
+            StoreError::SchemaVersionUnsupported {
+                actual: version,
+                expected: STORE_SCHEMA_VERSION,
+            }
+        } else {
+            StoreError::SchemaUpgradeRequired {
+                actual: version,
+                expected: STORE_SCHEMA_VERSION,
+            }
+        });
+    }
+    ensure_identity_read_only(&conn, &identity)?;
+    Ok(Some(PlanningStore {
+        conn,
+        identity,
+        database_path,
+    }))
 }
 
 pub fn open(
@@ -207,6 +245,50 @@ fn ensure_identity(
         }
         _ => Err(StoreError::DbCorrupt(
             "project metadata must contain project_id and canonical_root together".to_string(),
+        )),
+    }
+}
+
+fn ensure_identity_read_only(
+    conn: &rusqlite::Connection,
+    identity: &ProjectIdentity,
+) -> Result<(), StoreError> {
+    let stored_project: Option<String> = conn
+        .query_row(
+            "SELECT value_json FROM project_meta WHERE key='project_id'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let stored_root: Option<String> = conn
+        .query_row(
+            "SELECT value_json FROM project_meta WHERE key='canonical_root'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match (stored_project, stored_root) {
+        (Some(project_value), Some(root_value)) => {
+            let actual: String = serde_json::from_str(&project_value)
+                .map_err(|_| StoreError::DbCorrupt("project_id metadata is invalid".to_string()))?;
+            let actual_root: String = serde_json::from_str(&root_value).map_err(|_| {
+                StoreError::DbCorrupt("canonical_root metadata is invalid".to_string())
+            })?;
+            if actual != identity.project_id {
+                return Err(StoreError::ProjectIdMismatch {
+                    expected: identity.project_id.clone(),
+                    actual,
+                });
+            }
+            if actual_root != identity.canonical_root {
+                return Err(StoreError::ProjectIdentity(
+                    "canonical_root metadata mismatch".to_string(),
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(StoreError::DbCorrupt(
+            "planning database identity metadata is incomplete".to_string(),
         )),
     }
 }

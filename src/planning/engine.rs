@@ -27,8 +27,12 @@ mod work_items;
 
 pub use commands::{
     AnswerCommand, ApprovalCommand, AuditCommand, AuditEndpoint, AuditMode, AuditReadiness,
-    BlockerOp, EdgeOp, EntityOp, EvidenceRefreshCommand, PlanCandidateCommand, ReadinessGate,
-    RevisionRequestCommand, SpecCandidateCommand, StartCommand,
+    BlockerOp, EdgeOp, EntityOp, EvidenceRefreshCommand, LegacyImportCommand, PlanCandidateCommand,
+    ReadinessGate, RevisionRequestCommand, SpecCandidateCommand, StartCommand,
+};
+pub(crate) use commands::{
+    LEGACY_CONTEXT_MAX_BYTES, LEGACY_EVENT_MAX_BYTES, LEGACY_MAX_FILES,
+    LEGACY_MAX_INITIAL_REQUEST_BYTES, LEGACY_MAX_METADATA_BYTES, LEGACY_MAX_PATH_BYTES,
 };
 pub use core::{EvidenceRefreshResult, MutationResult};
 pub use error::CoreError;
@@ -53,4 +57,5 @@ pub(crate) use readiness::{
 pub(crate) use readiness_validation::{
     validate_counterexample_review, validate_question_proposal, validate_source_refs_exist,
 };
+pub(crate) use work_items::legacy_work_item;
 pub(crate) use work_items::{plan_input_hash, work_item};

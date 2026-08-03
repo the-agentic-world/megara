@@ -45,6 +45,8 @@ pub struct EventMetadata {
 pub enum EventType {
     #[serde(rename = "planning.start")]
     Start,
+    #[serde(rename = "planning.migration.import")]
+    MigrationImport,
     #[serde(rename = "planning.answer")]
     Answer,
     #[serde(rename = "planning.evidence.refresh")]
@@ -69,6 +71,7 @@ impl EventType {
     pub fn from_operation(operation: &str) -> Option<Self> {
         Some(match operation {
             "planning.start" => Self::Start,
+            "planning.migration.import" => Self::MigrationImport,
             "planning.answer" => Self::Answer,
             "planning.evidence.refresh" => Self::EvidenceRefresh,
             "planning.audit.apply" => Self::AuditApply,
@@ -85,6 +88,7 @@ impl EventType {
     pub fn operation(self) -> &'static str {
         match self {
             Self::Start => "planning.start",
+            Self::MigrationImport => "planning.migration.import",
             Self::Answer => "planning.answer",
             Self::EvidenceRefresh => "planning.evidence.refresh",
             Self::AuditApply => "planning.audit.apply",
@@ -237,6 +241,9 @@ fn reduce_event(
         .ok_or_else(|| StoreError::DbCorrupt("event command payload missing".to_string()))?;
     match event.operation.as_str() {
         "planning.start" => Ok(core.start(decode(command)?).map_err(core_corrupt)?),
+        "planning.migration.import" => {
+            Ok(core.import_legacy(decode(command)?).map_err(core_corrupt)?)
+        }
         "planning.answer" => Ok(core.answer(decode(command)?).map_err(core_corrupt)?),
         "planning.evidence.refresh" => match core
             .refresh_evidence(decode(command)?)

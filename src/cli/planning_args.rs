@@ -14,6 +14,8 @@ pub enum PlanningCommands {
     Rpc(PlanningRpcArgs),
     /// Run the Codex MCP stdio server.
     Mcp(PlanningMcpArgs),
+    /// Migrate legacy workflow state and managed projections.
+    Migrate(PlanningMigrateArgs),
     Start(PlanningStartArgs),
     Answer(PlanningAnswerArgs),
     Status(PlanningSessionArgs),
@@ -51,6 +53,24 @@ pub struct PlanningRpcArgs {
 pub struct PlanningMcpArgs {
     #[arg(long, default_value = ".")]
     pub project: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct PlanningMigrateArgs {
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+    #[arg(long)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub apply: bool,
+    #[arg(long)]
+    pub resume: Option<String>,
+    #[arg(long)]
+    pub rollback: Option<String>,
+    #[arg(long)]
+    pub force: bool,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

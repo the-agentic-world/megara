@@ -22,6 +22,8 @@ mod artifacts;
 mod command_cache;
 #[path = "store/hash.rs"]
 mod hash;
+#[path = "store/import.rs"]
+mod import;
 #[path = "store/persistence.rs"]
 mod persistence;
 #[path = "store/purge.rs"]
@@ -158,6 +160,12 @@ pub struct PlanningStore {
 impl PlanningStore {
     pub fn open_project(root: impl AsRef<Path>) -> Result<Self, StoreError> {
         schema::open_project(root)
+    }
+
+    pub(crate) fn open_existing_project(
+        root: impl AsRef<Path>,
+    ) -> Result<Option<Self>, StoreError> {
+        schema::open_existing_project(root)
     }
 
     pub fn open(

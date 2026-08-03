@@ -668,6 +668,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm",
+ "libc",
  "ratatui",
  "rmcp",
  "rusqlite",

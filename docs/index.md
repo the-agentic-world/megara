@@ -11,3 +11,5 @@ tags: [okf, index, megara]
 - [Knowledge log](log.md)
 - [Open Knowledge Format](references/open-knowledge-format.md)
 - [Workflow UX audit](references/workflow-ux-audit.md)
+- [Planning Core 재설계 기획안](plan/planning-core-redesign.md)
+- [Planning Core 개발 완료 판정 체크리스트](plan/planning-core-redesign-completion-checklist.md)

@@ -1,0 +1,170 @@
+{
+  "schema": "megara.planning-legacy-removal-inventory/v1",
+  "captured_from_commit": "a63bd1ba",
+  "removal_order": [
+    "planning_migration_journal_and_backup",
+    "planning_legacy_context_import_and_replay",
+    "managed_legacy_projection_removal",
+    "legacy_cli_and_runtime_module_removal",
+    "clean_install_negative_proof"
+  ],
+  "commands": {
+    "remove": [
+    "megara hook",
+      "megara pi event",
+      "megara team split",
+      "megara team teammate",
+      "megara ultragoal status",
+      "megara ultragoal create-goals",
+      "megara ultragoal start-goal",
+      "megara ultragoal checkpoint",
+      "megara ultragoal steer"
+    ],
+    "retain": [
+      "megara planning"
+    ]
+  },
+  "remove_exact_files": [
+    "src/cli/team.rs",
+    "src/cli/ultragoal.rs",
+    "src/cli/pi.rs",
+    "src/hook.rs",
+    "src/pi.rs",
+    "src/team.rs",
+    "src/ultragoal.rs",
+    "src/targets/codex/hooks.rs",
+    "src/targets/codex/trust.rs",
+    "src/targets/codex/trust_hash.rs",
+    "src/targets/codex/trust_toml.rs",
+    "test/unit/hook.rs",
+    "test/unit/team.rs",
+    "test/unit/ultragoal.rs",
+    "test/integration/ultragoal.rs",
+    "test/integration/ultragoal_support.rs",
+    "test/integration/hook_deep_interview.rs",
+    "test/integration/hook_deep_interview_support.rs",
+    "test/integration/hook_git_guard.rs",
+    "test/integration/hook_ralplan_approval.rs",
+    "test/integration/hook_ralplan_direct.rs",
+    "test/integration/hook_ralplan_handoff.rs",
+    "test/integration/hook_ralplan_input_lock.rs",
+    "test/integration/hook_ralplan_priority.rs",
+    "test/integration/hook_ralplan_refine.rs",
+    "test/integration/hook_ralplan_support.rs",
+    "test/integration/hook_runtime.rs",
+    "test/integration/hook_runtime_scope.rs",
+    "test/integration/hook_runtime_ultragoal.rs",
+    "test/integration/hook_team.rs",
+    "test/integration/hook_workflow_pipeline.rs"
+  ],
+  "remove_directory_roots": [
+    "src/hook/",
+    "src/pi/",
+    "src/team/",
+    "src/ultragoal/"
+  ],
+  "remove_harness_paths": [
+    "harness/skills/deep-interview/SKILL.md",
+    "harness/skills/ralplan/SKILL.md",
+    "harness/skills/team/SKILL.md",
+    "harness/skills/ultragoal/SKILL.md",
+    "harness/skill-fragments/deep-interview/",
+    "harness/skill-fragments/ultragoal/"
+  ],
+  "edit_boundaries": [
+    "src/main.rs",
+    "src/cli.rs",
+    "src/cli/install.rs",
+    "src/update.rs",
+    "src/installer/model.rs",
+    "src/installer/planner.rs",
+    "src/installer/print.rs",
+    "src/uninstall.rs",
+    "src/targets/codex.rs",
+    "src/targets/codex/projection.rs",
+    "src/targets/codex/agents_md.rs",
+    "src/templates/specs.rs",
+    "src/templates/model.rs",
+    "src/templates/registry.rs",
+    "harness/README.md",
+    "README.md",
+    "harness/megara.toml",
+    "test/integration/main.rs",
+    "test/unit/main.rs"
+  ],
+  "retained_adapter_paths": [
+    "src/targets/pi.rs",
+    "harness/pi/extensions/megara.ts",
+    "harness/pi/extensions/megara_process.ts",
+    "harness/rules/planning.md"
+  ],
+  "mixed_test_files": {
+    "test/unit/pi.rs": "retain projection/support coverage; replace only the legacy role-agent assertion with the planning-only target contract",
+    "test/integration/pi.rs": "retain install/global/sync/doctor/projection coverage; remove only legacy pi event/role/receipt cases"
+  },
+  "legacy_dependency_removal": [],
+  "legacy_content_binding": {
+    "marker_only_is_insufficient": true,
+    "template_paths": [
+      "harness/skills/deep-interview/SKILL.md",
+      "harness/skills/ralplan/SKILL.md",
+      "harness/skills/team/SKILL.md",
+      "harness/skills/ultragoal/SKILL.md",
+      "harness/skill-fragments/deep-interview/auto-answer-uncertain.md",
+      "harness/skill-fragments/deep-interview/auto-research-greenfield.md",
+      "harness/skill-fragments/deep-interview/lateral-review-panel.md",
+      "harness/skill-fragments/ultragoal/ai-slop-cleaner.md"
+    ],
+    "eligible_install_locations": [
+      ".agents/skills/",
+      ".codex/skills/",
+      ".agents/skill-fragments/",
+      ".codex/skill-fragments/"
+    ],
+    "managed_skill_sha256": {
+      "deep-interview/SKILL.md": "3e83b4a4410defe3175e1ccc1275c54301f303fcc03b1c3f8ca9ba097a42ad0c",
+      "ralplan/SKILL.md": "dccbe98d696adc2c9c19f10e642113b4806f5eaa10ca6395ebcbb762f382e749",
+      "team/SKILL.md": "4930278582a90133e5d16c8155eee53c66aa8796012a87a736fa90b0ef24fd58",
+      "ultragoal/SKILL.md": "7cf1f1110b6710de56eae7d93d2e9d7d6eea0bad78f17d00005098e0c4fa2337"
+    },
+    "fragment_sha256": {
+      "deep-interview/auto-answer-uncertain.md": "4ca53fb6942b8d06bf17ef042e1d11ba214b024b7f76f92b433ee05c9d093d82",
+      "deep-interview/auto-research-greenfield.md": "fcaf78df91e57c406fbc6d4e1a4236429f95c7c1b888609e06fe1bbe0bd5e6df",
+      "deep-interview/lateral-review-panel.md": "2e2117a6fc234f5e78561fd83b7dc114d946e5d3379a9b027fa0bfc7686dff27",
+      "ultragoal/ai-slop-cleaner.md": "e0682e30281e08fcfb18a89d89fae9c398d1ac291e61de00c2dc8bd91efb25c5"
+    },
+    "marker_normalization": "remove exactly one generated marker line for the file syntax, then compare the normalized source SHA-256 at every eligible location",
+    "hooks_json": "structured normalized legacy Codex hook schema with dynamic executable/project values replaced by placeholders"
+  },
+  "legacy_runtime_roots": [
+    ".agents/state/hooks/",
+    ".agents/state/workflows/",
+    ".agents/state/team/",
+    ".agents/artifacts/deep-interview/",
+    ".agents/artifacts/ralplan/",
+    ".agents/artifacts/ultragoal/",
+    ".megara/state/hooks/",
+    ".megara/state/workflows/",
+    ".megara/state/team/",
+    ".megara/artifacts/deep-interview/",
+    ".megara/artifacts/ralplan/",
+    ".megara/artifacts/ultragoal/"
+  ],
+  "preserved_runtime_roots": [
+    ".agents/state/tools/",
+    ".megara/state/tools/",
+    ".megara/cache/",
+    ".megara/planning/"
+  ],
+  "dependency_note": "ratatui/crossterm remain command-scoped installer/update/doctor UI dependencies; no Cargo dependency is exclusively owned by the removed workflow runtime at this baseline.",
+  "negative_search_needles": [
+    "deep-interview",
+    "ralplan",
+    "ultragoal",
+    "SubagentStart",
+    "SubagentStop",
+    "PreToolUse",
+    "PostToolUse",
+    "UserPromptSubmit"
+  ]
+}

@@ -50,7 +50,7 @@ impl PlanningStore {
     ) -> Result<Option<StoredOutcome>, StoreError> {
         let tx = self
             .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            .transaction_with_behavior(TransactionBehavior::Deferred)?;
         let outcome = check_idempotency(&tx, command_id, request_hash)?;
         tx.commit()?;
         Ok(outcome)
@@ -456,7 +456,10 @@ impl PlanningStore {
     }
 }
 
-fn validate_command_identity(command_id: &str, request_hash: &str) -> Result<(), StoreError> {
+pub(crate) fn validate_command_identity(
+    command_id: &str,
+    request_hash: &str,
+) -> Result<(), StoreError> {
     if command_id.trim().is_empty() || request_hash.trim().is_empty() {
         return Err(StoreError::InvalidRequest(
             "command_id and request_hash are required".to_string(),

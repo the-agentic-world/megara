@@ -66,6 +66,75 @@ impl InMemoryPlanningCore {
         Ok(MutationResult { state, event })
     }
 
+    pub fn import_legacy(
+        &mut self,
+        command: LegacyImportCommand,
+    ) -> Result<MutationResult, CoreError> {
+        if command.project_id.trim().is_empty()
+            || command.session_id.trim().is_empty()
+            || command.initial_request.trim().is_empty()
+        {
+            return Err(CoreError::InvalidRequest(
+                "legacy import identity and source metadata must not be blank".to_string(),
+            ));
+        }
+        if command.project_id.len() > LEGACY_MAX_METADATA_BYTES
+            || command.session_id.len() > LEGACY_MAX_METADATA_BYTES
+            || command.initial_request.len() > LEGACY_MAX_INITIAL_REQUEST_BYTES
+        {
+            return Err(CoreError::InvalidRequest(
+                "legacy import command metadata exceeds its limit".to_string(),
+            ));
+        }
+        if self.sessions.contains_key(&command.session_id) {
+            return Err(CoreError::SessionExists(command.session_id));
+        }
+        command
+            .legacy_bundle
+            .validate()
+            .map_err(CoreError::InvalidRequest)?;
+        let event_bytes = serde_json::to_vec(&command).map_err(|error| {
+            CoreError::InvalidRequest(format!("legacy import event is not serializable: {error}"))
+        })?;
+        if event_bytes.len() > LEGACY_EVENT_MAX_BYTES {
+            return Err(CoreError::InvalidRequest(
+                "legacy import event exceeds 12MiB".to_string(),
+            ));
+        }
+        let mut state = PlanningState::new(
+            command.session_id.clone(),
+            command.project_id.clone(),
+            command.initial_request.clone(),
+        );
+        state.imported_legacy_context = true;
+        state.legacy_import = Some(LegacyImportRef {
+            migration_id: command.legacy_bundle.migration_id.clone(),
+            source_backup_id: command.legacy_bundle.source_backup_id.clone(),
+            source_bundle_hash: command.legacy_bundle.source_bundle_hash.clone(),
+        });
+        state.domain_revision = 1;
+        state.required_model_action = Some(legacy_work_item(&state, &command.legacy_bundle));
+        state.revision = 1;
+        let event = AggregateEvent {
+            schema: EVENT_SCHEMA_VERSION.to_string(),
+            session_id: state.session_id.clone(),
+            seq: 1,
+            revision_after: 1,
+            domain_revision_after: 1,
+            plan_revision_after: 0,
+            operation: "planning.migration.import".to_string(),
+            primary: event_primary(command_value(&command)),
+            effects: vec![EventEffect::ModelActionRequested {
+                kind: ModelActionKind::DeltaAudit,
+            }],
+        };
+        state.assert_invariants().map_err(CoreError::Invariant)?;
+        self.sessions
+            .insert(state.session_id.clone(), state.clone());
+        self.events.push(event.clone());
+        Ok(MutationResult { state, event })
+    }
+
     pub fn answer(&mut self, command: AnswerCommand) -> Result<MutationResult, CoreError> {
         self.mutate(
             &command.session_id,

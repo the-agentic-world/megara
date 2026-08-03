@@ -94,6 +94,8 @@ mod planning_invalidation;
 mod planning_invalidation_derived;
 #[path = "planning_managed_edit.rs"]
 mod planning_managed_edit;
+#[path = "planning_migration_core.rs"]
+mod planning_migration_core;
 #[path = "planning_projection.rs"]
 mod planning_projection;
 #[path = "planning_protocol.rs"]

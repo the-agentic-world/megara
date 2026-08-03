@@ -16,6 +16,8 @@ mod args;
 mod artifacts;
 #[path = "planning_input.rs"]
 mod input;
+#[path = "planning_migration.rs"]
+mod migration;
 use args::{
     PlanningAnswerArgs, PlanningAuditApplyArgs, PlanningAuditCommands, PlanningEvidenceCommands,
     PlanningEvidenceRefreshArgs, PlanningListArgs, PlanningPlanCommands, PlanningPurgeArgs,
@@ -28,6 +30,7 @@ pub fn run(args: PlanningArgs) -> Result<()> {
     match args.command {
         PlanningCommands::Rpc(args) => run_rpc(args),
         PlanningCommands::Mcp(args) => crate::planning::mcp::run(&args.project),
+        PlanningCommands::Migrate(args) => migration::run(args),
         PlanningCommands::Start(args) => run_start(args),
         PlanningCommands::Answer(args) => run_answer(args),
         PlanningCommands::Status(args) => run_session("planning.status", args),

@@ -8,6 +8,8 @@ pub mod engine;
 pub mod evidence;
 #[path = "planning/mcp.rs"]
 pub mod mcp;
+#[path = "planning/migration.rs"]
+pub mod migration;
 #[path = "planning/protocol.rs"]
 pub mod protocol;
 #[path = "planning/service.rs"]

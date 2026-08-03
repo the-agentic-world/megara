@@ -25,20 +25,9 @@ pub(crate) fn work_item(state: &PlanningState, kind: ModelActionKind) -> ModelWo
     } else {
         super::super::canonical::canonical_hash_with_aliases(&context, Some(&aliases))
     };
-    let work_item_basis = BTreeMap::from([
-        ("base_domain_revision", json!(base_domain_revision)),
-        ("base_plan_revision", json!(base_plan_revision)),
-        ("base_revision", json!(base_revision)),
-        ("input_hash", json!(input_hash)),
-        ("kind", json!(kind)),
-        ("output_schema", json!(output_schema)),
-        ("session_id", json!(state.session_id)),
-    ]);
-    let work_item_hash = super::super::canonical::canonical_hash(&work_item_basis);
-    let work_item_id = format!("wrk_{}", work_item_hash.trim_start_matches("sha256:"));
-    ModelWorkItem {
+    let mut item = ModelWorkItem {
         kind,
-        work_item_id,
+        work_item_id: String::new(),
         created_event_seq: base_revision,
         created_ordinal: 0,
         session_id: state.session_id.clone(),
@@ -48,7 +37,45 @@ pub(crate) fn work_item(state: &PlanningState, kind: ModelActionKind) -> ModelWo
         input_hash,
         output_schema: output_schema.to_string(),
         context,
+    };
+    rehash_work_item(&mut item, &aliases, kind != ModelActionKind::GeneratePlan);
+    item
+}
+
+pub(crate) fn legacy_work_item(
+    state: &PlanningState,
+    legacy_bundle: &LegacyContextBundle,
+) -> ModelWorkItem {
+    let mut item = work_item(state, ModelActionKind::DeltaAudit);
+    item.context["legacy_context"] =
+        serde_json::to_value(legacy_bundle).expect("legacy bundle is serializable");
+    let aliases = work_item_aliases(state);
+    rehash_work_item(&mut item, &aliases, true);
+    item
+}
+
+fn rehash_work_item(
+    item: &mut ModelWorkItem,
+    aliases: &BTreeMap<String, String>,
+    update_input_hash: bool,
+) {
+    if update_input_hash {
+        item.input_hash =
+            super::super::canonical::canonical_hash_with_aliases(&item.context, Some(aliases));
     }
+    let basis = BTreeMap::from([
+        ("base_domain_revision", json!(item.base_domain_revision)),
+        ("base_plan_revision", json!(item.base_plan_revision)),
+        ("base_revision", json!(item.base_revision)),
+        ("input_hash", json!(item.input_hash)),
+        ("kind", json!(item.kind)),
+        ("output_schema", json!(item.output_schema)),
+        ("session_id", json!(item.session_id)),
+    ]);
+    item.work_item_id = format!(
+        "wrk_{}",
+        super::super::canonical::canonical_hash(&basis).trim_start_matches("sha256:")
+    );
 }
 
 pub(crate) fn plan_input_hash(state: &PlanningState) -> String {
