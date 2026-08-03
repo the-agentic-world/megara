@@ -22,6 +22,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+      - name: Install canonical Pi host
+        shell: bash
+        run: |
+          set -euo pipefail
+          pi_prefix="${RUNNER_TEMP}/megara-pi"
+          npm install --prefix "${pi_prefix}" --no-save --no-package-lock @earendil-works/pi-coding-agent@0.80.10
+          pi_bin="${pi_prefix}/node_modules/.bin/pi"
+          test -x "${pi_bin}"
+          test "$("${pi_bin}" --version)" = "0.80.10"
+          echo "PI_BIN=${pi_bin}" >> "${GITHUB_ENV}"
+          echo "PI_CODING_AGENT_DIR=${RUNNER_TEMP}/megara-pi-agent" >> "${GITHUB_ENV}"
+          echo "PI_OFFLINE=1" >> "${GITHUB_ENV}"
       - name: Verify tag matches Cargo.toml version
         shell: bash
         run: |
