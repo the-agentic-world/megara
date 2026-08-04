@@ -257,16 +257,23 @@ git diff --check
 
 아래 체크박스는 상세 표의 대체물이 아니다. 각 항목은 대응 check ID와 evidence hash가 Release Decision Record에 연결됐을 때만 표시한다.
 
-- [ ] release commit, clean tree, `Cargo.lock`, toolchain과 대상 플랫폼을 고정했다.
-- [ ] `MPC-TDF-*`를 모두 승인된 계약과 실행된 검증으로 대체했다.
-- [ ] `VB-BASELINE`부터 `VB-RELEASE`까지 같은 release commit 기준으로 실행했다.
-- [ ] 모든 `BLOCKING` check가 `PASS`이고 ignored·skipped·filtered-out 필수 테스트가 없다.
-- [ ] 모든 `MANUAL` check가 항목별 근거와 검토자 결정을 가진다. v2.0.0의 cryptographic signature 예외는 RDR에 별도 기록하고 `PASS`로 표시하지 않는다.
-- [ ] `MPC-NEG-*`가 source, install, runtime 관점에서 요구된 증거를 모두 가진다.
-- [ ] `MPC-E2E-001`부터 `MPC-E2E-020`까지 독립 fixture에서 통과했다.
-- [ ] baseline과 비교해 신규 failure가 0개다.
-- [ ] 증거 archive manifest와 각 원문 증거의 hash를 검증했다.
-- [ ] Release Decision Record가 모든 check ID를 추적하고 release authority가 `PASS`로 승인했다. v2.0.0의 서명 미사용 결정은 `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`으로 기록한다.
+- [x] release commit, clean tree, `Cargo.lock`, toolchain과 대상 플랫폼을 고정했다 (v2.0.0 release target `b9d8ffbce9198f5377ad249cca9c673660bb167d`).
+- [x] `MPC-TDF-*`를 모두 승인된 계약과 실행된 검증으로 대체했다.
+- [x] `VB-BASELINE`부터 `VB-RELEASE`까지 같은 release commit 기준으로 실행했다.
+- [x] 모든 `BLOCKING` check가 `PASS`이고 ignored·skipped·filtered-out 필수 테스트가 없다.
+- [x] 모든 `MANUAL` check가 항목별 근거와 검토자 결정을 가진다. v2.0.0의 cryptographic signature 예외는 RDR에 `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`으로 별도 기록하고 `PASS`로 표시하지 않는다.
+- [x] `MPC-NEG-*`가 source, install, runtime 관점에서 요구된 증거를 모두 가진다.
+- [x] `MPC-E2E-001`부터 `MPC-E2E-020`까지 독립 fixture에서 통과했다.
+- [x] baseline과 비교해 신규 failure가 0개다.
+- [x] 증거 archive manifest와 각 원문 증거의 hash를 검증했다.
+- [x] Release Decision Record가 모든 check ID를 추적하고 release authority가 v2.0.0에 대해 `PASS`로 승인했다. 서명 미사용 결정은 `NOT_REQUIRED_BY_EXPLICIT_V2_DECISION`으로 기록하며 미래 release 기본 정책은 변경하지 않는다.
+
+### 1.11 v2.0.0 closeout receipt
+
+- Release target: annotated, cryptographically unsigned `v2.0.0` tag object `0151c363af61c27b9a2fc23724956cb7d2481a2b`, peeled commit `b9d8ffbce9198f5377ad249cca9c673660bb167d`.
+- Initial tag workflow `30861879520` failed at the checkout refspec; immutable-tag recovery workflow `30863348608` passed all verify, build, publish, smoke, Homebrew, and prune jobs.
+- `VB-RELEASE` artifact `8875222272` / `megara-planning-release-evidence-b9d8ffbce9198f5377ad249cca9c673660bb167d`: ZIP SHA-256 `83b1442cf462363462d770eee8e0af05e559a758cefd7497887d8449de39c3a8`, manifest SHA-256 `33049db1a4c35bceb443fa281716a8bc685af1041fa2b0d1f748eda53c576145`, 16 commands, 55 files, 5 traces, all exit 0.
+- GitHub Release [v2.0.0](https://github.com/the-agentic-world/megara/releases/tag/v2.0.0) contains install.sh and verified macOS arm64/Linux x86_64 archives and checksum assets. Global Pi 0.83.0 remains unchanged; canonical Pi 0.80.10 ran in isolation.
 
 ---
 
