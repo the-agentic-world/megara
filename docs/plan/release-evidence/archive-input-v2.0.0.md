@@ -47,10 +47,28 @@ Source or `Cargo.lock` changes after evidence generation invalidate the bundle.
 - Codex manual host receipt: [codex-manual-2.0.0.md](codex-manual-2.0.0.md);
 - Pi manual host receipt: [pi-manual-2.0.0.md](pi-manual-2.0.0.md).
 
-The baseline manifest is evidence input, not the final `VB-RELEASE` archive:
-the final tag workflow must regenerate it after the 2.0.0 version and release
-documents are integrated. The final RDR must record the plain-text v2.0.0
-approval, annotated tag object type, exact main target, tag workflow URL,
-artifact URL, artifact hash/manifest, and release asset checksums.
+The baseline manifest is evidence input, not the final `VB-RELEASE` archive.
+The immutable-tag recovery run regenerated the final archive from the exact
+v2.0.0 tag target. The final RDR records the plain-text v2.0.0 approval,
+annotated tag object type, exact target, initial failure and recovery workflow
+URLs, artifact URL, artifact and manifest hashes, and release asset checksums.
 Cryptographic tag/RDR signatures are explicitly not required for v2.0.0 only;
 this does not permit a lightweight or moved tag.
+
+## Verified v2.0.0 closeout
+
+- Initial tag workflow `30861879520`: `FAIL` because the checkout refspec put
+  the commit directly at `refs/tags/v2.0.0`; no build or publish was counted.
+- Recovery workflow `30863348608`: `PASS`; verify job fetched and compared
+  remote/local tag object `0151c363af61c27b9a2fc23724956cb7d2481a2b`, type
+  `tag`, peeled target `b9d8ffbce9198f5377ad249cca9c673660bb167d`, and full-history
+  ancestor relation against current `main`.
+- Artifact `8875222272`, named
+  `megara-planning-release-evidence-b9d8ffbce9198f5377ad249cca9c673660bb167d`,
+  was directly downloaded and verified: ZIP SHA-256
+  `83b1442cf462363462d770eee8e0af05e559a758cefd7497887d8449de39c3a8`, manifest
+  SHA-256 `33049db1a4c35bceb443fa281716a8bc685af1041fa2b0d1f748eda53c576145`,
+  16 commands, 55 files, 5 traces, all exit 0.
+- GitHub Release [v2.0.0](https://github.com/the-agentic-world/megara/releases/tag/v2.0.0)
+  contains install.sh, both platform archives, and verified checksum assets;
+  smoke-install, Homebrew update, and release pruning all passed.
