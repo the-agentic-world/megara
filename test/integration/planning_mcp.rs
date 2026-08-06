@@ -106,55 +106,77 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
     assert_eq!(names, expected_names);
     for tool in tools {
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        assert!(
+            !serde_json::to_string(&tool["inputSchema"])
+                .unwrap()
+                .contains("\"$ref\""),
+            "{} must expose a self-contained input schema",
+            tool["name"]
+        );
     }
     let evidence = tools
         .iter()
         .find(|tool| tool["name"] == "planning_evidence_refresh")
         .unwrap();
     assert_eq!(
-        evidence["inputSchema"]["properties"]["citations"]["items"]["$ref"],
-        "#/$defs/citation"
+        evidence["inputSchema"]["properties"]["citations"]["items"]["additionalProperties"],
+        false
     );
     assert_eq!(
-        evidence["inputSchema"]["$defs"]["citation"]["properties"]["ranges"]["items"]["$ref"],
-        "#/$defs/citation_range"
-    );
-    assert_eq!(
-        evidence["inputSchema"]["$defs"]["citation_range"]["properties"]["start_line"]["minimum"],
+        evidence["inputSchema"]["properties"]["citations"]["items"]["properties"]["ranges"]
+            ["items"]["properties"]["start_line"]["minimum"],
         1
     );
     assert_eq!(
-        evidence["inputSchema"]["$defs"]["citation_range"]["properties"]["end_line"]["minimum"],
+        evidence["inputSchema"]["properties"]["citations"]["items"]["properties"]["ranges"]
+            ["items"]["properties"]["end_line"]["minimum"],
         1
     );
     let audit = tools
         .iter()
         .find(|tool| tool["name"] == "planning_audit_apply")
         .unwrap();
+    let audit_description = audit["description"].as_str().unwrap();
+    assert!(audit_description.contains("next_question has no id or prompt field"));
+    assert!(audit_description.contains("result.host_adapter"));
     assert_eq!(
-        audit["inputSchema"]["properties"]["proposal"]["$ref"],
-        "#/$defs/audit_proposal"
+        audit["inputSchema"]["properties"]["proposal"]["properties"]["schema"]["const"],
+        "megara.audit-proposal/v1"
+    );
+    let initial_request_source = audit["inputSchema"]["properties"]["proposal"]["properties"]
+        ["next_question"]["anyOf"][0]["properties"]["source_refs"]["items"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["properties"]["kind"]["const"] == "initial_request")
+        .unwrap();
+    assert_eq!(
+        initial_request_source["properties"]["id"]["const"],
+        "request"
     );
     assert_eq!(
-        audit["inputSchema"]["$defs"]["audit_proposal"]["properties"]["next_question"]["anyOf"][0]
-            ["$ref"],
-        "#/$defs/question"
+        audit["inputSchema"]["properties"]["proposal"]["properties"]["next_question"]["anyOf"][0]
+            ["additionalProperties"],
+        false
     );
     assert_eq!(
-        audit["inputSchema"]["$defs"]["question"]["properties"]["answer"]["oneOf"]
+        audit["inputSchema"]["properties"]["proposal"]["properties"]["next_question"]["anyOf"][0]
+            ["properties"]["answer"]["oneOf"]
             .as_array()
             .unwrap()
             .len(),
         2
     );
     assert_eq!(
-        audit["inputSchema"]["$defs"]["entity_op"]["oneOf"]
+        audit["inputSchema"]["properties"]["proposal"]["properties"]["entity_ops"]["items"]
+            ["oneOf"]
             .as_array()
             .unwrap()
             .len(),
         13
     );
-    let revise = audit["inputSchema"]["$defs"]["entity_op"]["oneOf"]
+    let revise = audit["inputSchema"]["properties"]["proposal"]["properties"]["entity_ops"]
+        ["items"]["oneOf"]
         .as_array()
         .unwrap()
         .iter()
@@ -173,26 +195,12 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
     }
     for name in ["planning_spec_generate", "planning_plan_generate"] {
         let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
-        assert!(tool["inputSchema"]["properties"]["proposal"]["$ref"]
-            .as_str()
-            .unwrap()
-            .ends_with("_proposal"));
+        assert_eq!(
+            tool["inputSchema"]["properties"]["proposal"]["additionalProperties"],
+            false
+        );
     }
-    for name in [
-        "planning_start",
-        "planning_answer",
-        "planning_status",
-        "planning_current",
-        "planning_list",
-        "planning_spec_show",
-        "planning_spec_approve",
-        "planning_spec_revise",
-        "planning_plan_show",
-        "planning_plan_approve",
-        "planning_plan_revise",
-        "planning_export",
-        "planning_purge",
-    ] {
+    for name in expected_names {
         assert!(
             tools.iter().find(|tool| tool["name"] == name).unwrap()["inputSchema"]
                 .get("$defs")
@@ -200,14 +208,9 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
             "{name} must not carry proposal definitions"
         );
     }
-    assert_eq!(
-        evidence["inputSchema"]["$defs"].as_object().unwrap().len(),
-        2
-    );
-    assert_eq!(audit["inputSchema"]["$defs"].as_object().unwrap().len(), 9);
     assert!(
-        serde_json::to_vec(tools).unwrap().len() < 60 * 1024,
-        "tool catalog must not repeat proposal definitions"
+        serde_json::to_vec(tools).unwrap().len() < 256 * 1024,
+        "fully inlined tool catalog must remain bounded"
     );
     for name in [
         "planning_spec_approve",
@@ -293,6 +296,67 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
     assert_eq!(structured["ok"], true);
     assert_eq!(structured["result"]["operation"], "planning.start");
     assert_eq!(structured["result"]["state"]["title"], "MCP title");
+    let adapter = &structured["result"]["host_adapter"];
+    assert_eq!(adapter["schema"], "megara.codex-host-adapter/v1");
+    assert_eq!(adapter["operation"], "planning_audit_apply");
+    let template = adapter["arguments_template"].clone();
+    let work_item = &structured["result"]["state"]["required_model_action"];
+    assert_eq!(template["session_id"], structured["session_id"]);
+    assert_eq!(template["expected_revision"], structured["revision"]);
+    assert_eq!(
+        template["proposal"]["work_item_id"],
+        work_item["work_item_id"]
+    );
+    assert_eq!(
+        template["proposal"]["base_revision"],
+        work_item["base_revision"]
+    );
+    assert_eq!(
+        template["proposal"]["base_domain_revision"],
+        work_item["base_domain_revision"]
+    );
+    assert_eq!(template["proposal"]["input_hash"], work_item["input_hash"]);
+    let question = &template["proposal"]["next_question"];
+    assert!(question.get("id").is_none());
+    assert!(question.get("prompt").is_none());
+    assert_eq!(
+        question["source_refs"],
+        json!([{"kind":"initial_request","id":"request"}])
+    );
+    assert_eq!(question["answer"]["mode"], "choice");
+    assert!(question["answer"].get("recommendation").is_some());
+    assert!(question["answer"]["freeform_hint"].is_string());
+    assert!(question["answer"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|choice| choice["benefits"].is_array() && choice["tradeoffs"].is_array()));
+    let (audit_responses, audit_stderr, audit_status) = run_mcp(
+        project.path(),
+        &[
+            initialize(4),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
+            json!({
+                "jsonrpc":"2.0",
+                "id":5,
+                "method":"tools/call",
+                "params":{"name":"planning_audit_apply","arguments":template}
+            }),
+        ],
+    );
+    assert_eq!(audit_status, 0);
+    assert!(audit_stderr.is_empty(), "stderr={audit_stderr:?}");
+    assert_eq!(
+        audit_responses[1]["result"]["structuredContent"]["ok"],
+        true
+    );
+    assert_eq!(
+        audit_responses[1]["result"]["structuredContent"]["result"]["next_action"]["kind"],
+        "question"
+    );
+    assert!(audit_responses[1]["result"]["structuredContent"]["result"]
+        .get("host_adapter")
+        .is_none());
     let session = structured["session_id"].as_str().unwrap();
     let store = crate::planning::store::PlanningStore::open_project(project.path()).unwrap();
     let event = store.event_envelopes(session).unwrap().remove(0);

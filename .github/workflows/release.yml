@@ -289,7 +289,7 @@ jobs:
           cd "${project}"
           "${RUNNER_TEMP}/bin/megara" install --scope project --target pi --trust-project --no-interactive
           test -f .pi/extensions/megara.ts
-          test -f .pi/extensions/megara_process.ts
+          test -f .pi/megara_process.ts
           test -f .pi/agents/executor.md
           grep -q 'planning_start' .pi/extensions/megara.ts
           grep -q 'megara-purge' .pi/extensions/megara.ts
@@ -298,7 +298,7 @@ jobs:
           touch .megara/state/recovery.json
           "${RUNNER_TEMP}/bin/megara" uninstall --scope project --target pi
           test ! -e .pi/extensions/megara.ts
-          test ! -e .pi/extensions/megara_process.ts
+          test ! -e .pi/megara_process.ts
           test ! -e .agents/megara.toml
           test -f .megara/state/recovery.json
       - name: Install Codex harness from published release script

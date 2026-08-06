@@ -150,14 +150,7 @@ pub(crate) fn tool_value(spec: ToolSpec) -> Tool {
         .open_world(false);
     let mut tool = Tool::new(
         Cow::Borrowed(spec.name),
-        if spec.read_only {
-            format!("Run {} through PlanningService and use its returned state.", spec.operation)
-        } else {
-            format!(
-                "Run {} through PlanningService; supply a stable command_id and reuse it for retries.",
-                spec.operation
-            )
-        },
+        tool_description(spec),
         tool_schema(spec.operation),
     )
     .with_annotations(annotations);
@@ -167,6 +160,23 @@ pub(crate) fn tool_value(spec: ToolSpec) -> Tool {
         tool = tool.with_meta(MetaObject::from(meta));
     }
     tool
+}
+
+fn tool_description(spec: ToolSpec) -> String {
+    if spec.operation == "planning.audit.apply" {
+        return "Run planning.audit.apply through PlanningService. When the current MCP response exposes result.host_adapter for a delta audit, copy its arguments_template exactly and replace only the question prose and choice content. Preserve every binding, field, null, empty array, and source-ref shape; next_question has no id or prompt field. For other audit paths follow the exact input schema and returned work item. Supply a stable command_id and use a new one only when correcting a rejected proposal.".to_string();
+    }
+    if spec.read_only {
+        format!(
+            "Run {} through PlanningService and use its returned state.",
+            spec.operation
+        )
+    } else {
+        format!(
+            "Run {} through PlanningService; supply a stable command_id and reuse it for retries.",
+            spec.operation
+        )
+    }
 }
 
 fn tool_schema(operation: &str) -> JsonObject {
@@ -367,7 +377,60 @@ fn tool_schema(operation: &str) -> JsonObject {
             .expect("tool schema is an object")
             .insert("$defs".to_string(), Value::Object(definitions));
     }
-    schema.as_object_mut().cloned().unwrap_or_default()
+    inline_local_refs(schema)
+        .as_object_mut()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn inline_local_refs(schema: Value) -> Value {
+    let definitions = schema
+        .get("$defs")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    fn resolve(value: Value, definitions: &Map<String, Value>) -> Value {
+        match value {
+            Value::Array(items) => Value::Array(
+                items
+                    .into_iter()
+                    .map(|item| resolve(item, definitions))
+                    .collect(),
+            ),
+            Value::Object(mut object) => {
+                if let Some(reference) = object
+                    .remove("$ref")
+                    .and_then(|value| value.as_str().map(str::to_string))
+                {
+                    if let Some(name) = reference.strip_prefix("#/$defs/") {
+                        let mut resolved = definitions
+                            .get(name)
+                            .cloned()
+                            .map(|value| resolve(value, definitions))
+                            .expect("local schema reference exists");
+                        if let Some(resolved_object) = resolved.as_object_mut() {
+                            for (key, value) in object {
+                                resolved_object.insert(key, resolve(value, definitions));
+                            }
+                        }
+                        return resolved;
+                    }
+                    object.insert("$ref".to_string(), Value::String(reference));
+                }
+                object.remove("$defs");
+                Value::Object(
+                    object
+                        .into_iter()
+                        .map(|(key, value)| (key, resolve(value, definitions)))
+                        .collect(),
+                )
+            }
+            scalar => scalar,
+        }
+    }
+
+    resolve(schema, &definitions)
 }
 
 fn proposal_definitions(operation: &str) -> Option<Map<String, Value>> {
@@ -466,7 +529,7 @@ fn strict_object(properties: Value, required: &[&str]) -> Value {
 
 fn source_ref_schema() -> Value {
     json!({"oneOf": [
-        strict_object(json!({"kind":{"const":"initial_request"}, "id":{"type":"string"}}), &["kind", "id"]),
+        strict_object(json!({"kind":{"const":"initial_request"}, "id":{"const":"request"}}), &["kind", "id"]),
         strict_object(json!({"kind":{"const":"answer"}, "id":{"type":"string"}}), &["kind", "id"]),
         strict_object(json!({"kind":{"const":"evidence"}, "id":{"type":"string"}}), &["kind", "id"]),
         strict_object(json!({"kind":{"const":"entity"}, "id":{"type":"string"}, "revision":{"type":"integer","minimum":0}}), &["kind", "id", "revision"]),
