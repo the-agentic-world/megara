@@ -28,7 +28,8 @@ fn installs_global_scope_codex_harness() {
     assert!(home.path().join(".megara/bin/insane-search").exists());
     let wrapper = fs::read_to_string(home.path().join(".megara/bin/insane-search")).unwrap();
     assert!(wrapper.contains("state/tools/insane-search"));
-    assert!(wrapper.contains("python3 -m venv"));
+    assert!(wrapper.contains("Python 3.10 or newer"));
+    assert!(wrapper.contains("root_dir=$(CDPATH= cd \"$bin_dir/..\" && pwd -P)"));
     assert!(home
         .path()
         .join(".megara/tools/insane-search/TOOL.md")

@@ -146,6 +146,16 @@ impl InMemoryPlanningCore {
                 if current_id != command.candidate_id {
                     return Err(CoreError::CandidateNotFound(command.candidate_id));
                 }
+                state
+                    .transcript
+                    .revision_feedback
+                    .push(RevisionFeedbackRecord {
+                        created_event_seq: state.revision + 1,
+                        created_ordinal: 0,
+                        artifact: "spec".to_string(),
+                        candidate_id: current_id,
+                        text: command.text.clone(),
+                    });
                 state.phase = LifecyclePhase::Interview;
                 state.domain_revision += 1;
                 state.pending_question = None;
@@ -293,6 +303,16 @@ impl InMemoryPlanningCore {
                 if current_id != command.candidate_id {
                     return Err(CoreError::CandidateNotFound(command.candidate_id));
                 }
+                state
+                    .transcript
+                    .revision_feedback
+                    .push(RevisionFeedbackRecord {
+                        created_event_seq: state.revision + 1,
+                        created_ordinal: 0,
+                        artifact: "plan".to_string(),
+                        candidate_id: current_id,
+                        text: command.text.clone(),
+                    });
                 state.plan_revision += 1;
                 if let Some(candidate) = state.plan.current_candidate.as_mut() {
                     candidate.stale = true;

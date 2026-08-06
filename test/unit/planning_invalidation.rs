@@ -106,6 +106,38 @@ fn plan_only_invalidation_preserves_spec_approval() {
         revised.state.plan_revision,
         generated_plan.state.plan_revision + 1
     );
+    let work_item = revised.state.required_model_action.as_ref().unwrap();
+    assert_eq!(
+        work_item.context["revision_feedback"][0]["text"],
+        "검증 절차를 다시 쓴다."
+    );
+    assert_eq!(
+        work_item.input_hash,
+        crate::planning::engine::plan_input_hash(&revised.state)
+    );
+}
+
+#[test]
+fn spec_revision_feedback_is_retained_in_the_next_audit_work_item() {
+    let (mut core, generated) = generated_spec_core();
+    let revised = core
+        .revise_spec(RevisionRequestCommand {
+            session_id: generated.session_id.clone(),
+            expected_revision: generated.revision,
+            candidate_id: "cand_spec".to_string(),
+            text: "성공 기준을 더 명확히 한다.".to_string(),
+        })
+        .unwrap();
+    let work_item = revised.state.required_model_action.as_ref().unwrap();
+    assert_eq!(work_item.kind, ModelActionKind::DeltaAudit);
+    assert_eq!(
+        work_item.context["revision_feedback"][0]["text"],
+        "성공 기준을 더 명확히 한다."
+    );
+    assert_eq!(
+        revised.state.transcript.revision_feedback[0].candidate_id,
+        "cand_spec"
+    );
 }
 
 #[test]

@@ -107,6 +107,83 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
     for tool in tools {
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     }
+    let evidence = tools
+        .iter()
+        .find(|tool| tool["name"] == "planning_evidence_refresh")
+        .unwrap();
+    assert_eq!(
+        evidence["inputSchema"]["properties"]["citations"]["items"]["$ref"],
+        "#/$defs/citation"
+    );
+    assert_eq!(
+        evidence["inputSchema"]["$defs"]["citation"]["properties"]["ranges"]["items"]["$ref"],
+        "#/$defs/citation_range"
+    );
+    let audit = tools
+        .iter()
+        .find(|tool| tool["name"] == "planning_audit_apply")
+        .unwrap();
+    assert_eq!(
+        audit["inputSchema"]["properties"]["proposal"]["$ref"],
+        "#/$defs/audit_proposal"
+    );
+    assert_eq!(
+        audit["inputSchema"]["$defs"]["audit_proposal"]["properties"]["next_question"]["anyOf"][0]
+            ["$ref"],
+        "#/$defs/question"
+    );
+    assert_eq!(
+        audit["inputSchema"]["$defs"]["question"]["properties"]["answer"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        audit["inputSchema"]["$defs"]["entity_op"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        13
+    );
+    for name in ["planning_spec_generate", "planning_plan_generate"] {
+        let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
+        assert!(tool["inputSchema"]["properties"]["proposal"]["$ref"]
+            .as_str()
+            .unwrap()
+            .ends_with("_proposal"));
+    }
+    for name in [
+        "planning_start",
+        "planning_answer",
+        "planning_status",
+        "planning_current",
+        "planning_list",
+        "planning_spec_show",
+        "planning_spec_approve",
+        "planning_spec_revise",
+        "planning_plan_show",
+        "planning_plan_approve",
+        "planning_plan_revise",
+        "planning_export",
+        "planning_purge",
+    ] {
+        assert!(
+            tools.iter().find(|tool| tool["name"] == name).unwrap()["inputSchema"]
+                .get("$defs")
+                .is_none(),
+            "{name} must not carry proposal definitions"
+        );
+    }
+    assert_eq!(
+        evidence["inputSchema"]["$defs"].as_object().unwrap().len(),
+        2
+    );
+    assert_eq!(audit["inputSchema"]["$defs"].as_object().unwrap().len(), 9);
+    assert!(
+        serde_json::to_vec(tools).unwrap().len() < 60 * 1024,
+        "tool catalog must not repeat proposal definitions"
+    );
     for name in [
         "planning_spec_approve",
         "planning_plan_approve",

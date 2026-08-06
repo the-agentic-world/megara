@@ -257,8 +257,8 @@ pub(crate) fn runtime_support_files(
             root.join("bin").join("insane-search"),
             r#"#!/bin/sh
 set -eu
-bin_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
-root_dir="$bin_dir/.."
+bin_dir=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
+root_dir=$(CDPATH= cd "$bin_dir/.." && pwd -P)
 tool_dir="$bin_dir/../tools/insane-search"
 if [ "$(basename "$root_dir")" = ".agents" ]; then
   runtime_root="$root_dir/../.megara"
@@ -277,7 +277,19 @@ fi
 if [ ! -x "$python_bin" ]; then
   mkdir -p "$state_dir"
   echo "insane-search: bootstrapping Python dependencies into $venv_dir" >&2
-  python3 -m venv "$venv_dir"
+  bootstrap_python=""
+  for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" >/dev/null 2>&1 \
+      && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+      bootstrap_python=$(command -v "$candidate")
+      break
+    fi
+  done
+  if [ -z "$bootstrap_python" ]; then
+    echo "insane-search requires Python 3.10 or newer; install one and rerun." >&2
+    exit 2
+  fi
+  "$bootstrap_python" -m venv "$venv_dir"
 fi
 needs_install=0
 if [ ! -f "$requirements_stamp" ] || [ "$requirements" -nt "$requirements_stamp" ]; then

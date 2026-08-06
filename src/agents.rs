@@ -7,10 +7,11 @@ use toml::Value;
 use crate::{
     cli::{AgentsArgs, AgentsCommands, ConfigureAgentsArgs, ResetAgentsArgs, ShowAgentsArgs},
     installer::{strip_managed_marker, InstallAction, InstallOptions, Planner},
-    paths::{home_dir, InstallScope, TargetRuntime},
+    paths::{home_dir, InstallPaths, InstallScope, TargetRuntime},
     templates::TemplateRegistry,
     tui,
     ui::{self, Section},
+    writer::write_files,
 };
 
 const CONFIG_MARKER: &str =
@@ -112,8 +113,9 @@ fn configure_and_sync(args: ConfigureAgentsArgs, registry: &TemplateRegistry) ->
     {
         bail!("configure requires --model, --reasoning-effort, or --thinking-level");
     }
+    preflight_role_projections(scope, target, &roles, registry, args.force)?;
     configure(scope, target, &roles, policy, args.force)?;
-    reproject(scope, target, registry)?;
+    reproject(scope, target, &roles, registry)?;
     print_change("configured", scope, target, &roles, args.json)
 }
 
@@ -121,8 +123,9 @@ fn reset_and_sync(args: ResetAgentsArgs, registry: &TemplateRegistry) -> Result<
     let scope: InstallScope = args.scope.into();
     let target: TargetRuntime = args.target.into();
     let roles = selected_roles(&args.role, args.all, registry)?;
+    preflight_role_projections(scope, target, &roles, registry, args.force)?;
     reset(scope, target, &roles, args.force)?;
-    reproject(scope, target, registry)?;
+    reproject(scope, target, &roles, registry)?;
     print_change("reset", scope, target, &roles, args.json)
 }
 
@@ -168,8 +171,44 @@ fn show(args: ShowAgentsArgs, registry: &TemplateRegistry) -> Result<()> {
 fn reproject(
     scope: InstallScope,
     target: TargetRuntime,
+    roles: &[String],
     registry: &TemplateRegistry,
 ) -> Result<()> {
+    let files = planned_role_files(scope, target, roles, registry)?;
+    // The SSOT mutation above is explicit and validated. Only its corresponding
+    // role projections are authorized for forced regeneration; unrelated files
+    // retain ordinary sync protection.
+    write_files(&files, false, true)?;
+    Ok(())
+}
+
+fn preflight_role_projections(
+    scope: InstallScope,
+    target: TargetRuntime,
+    roles: &[String],
+    registry: &TemplateRegistry,
+    force: bool,
+) -> Result<()> {
+    if force {
+        return Ok(());
+    }
+    for file in planned_role_files(scope, target, roles, registry)? {
+        if file.path.exists() && fs::read_to_string(&file.path)? != file.content {
+            bail!(
+                "refusing to overwrite edited runtime role projection {}; rerun with --force",
+                file.path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn planned_role_files(
+    scope: InstallScope,
+    target: TargetRuntime,
+    roles: &[String],
+    registry: &TemplateRegistry,
+) -> Result<Vec<crate::installer::PlannedFile>> {
     let options = InstallOptions {
         action: InstallAction::Sync,
         scope,
@@ -180,11 +219,27 @@ fn reproject(
         trust_project: false,
         json: false,
     };
-    let result = Planner::new(registry, options).execute()?;
-    if !result.summary.conflicts.is_empty() {
-        bail!("agent policy changed but runtime projection has unmanaged file conflicts")
+    let plan = Planner::new(registry, options).plan_without_managed_edits()?;
+    let paths = InstallPaths::resolve(scope, target)?;
+    let role_paths = roles
+        .iter()
+        .map(|role| match target {
+            TargetRuntime::Codex => paths
+                .target_root
+                .join("agents")
+                .join(format!("{role}.toml")),
+            TargetRuntime::Pi => paths.target_root.join("agents").join(format!("{role}.md")),
+        })
+        .collect::<Vec<_>>();
+    let files = plan
+        .files
+        .into_iter()
+        .filter(|file| role_paths.contains(&file.path))
+        .collect::<Vec<_>>();
+    if files.len() != role_paths.len() {
+        bail!("agent policy changed but an expected runtime role projection is missing")
     }
-    Ok(())
+    Ok(files)
 }
 
 fn selected_roles(

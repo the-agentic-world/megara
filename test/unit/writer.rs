@@ -14,6 +14,18 @@ fn protects_unmanaged_files_without_force() {
 }
 
 #[test]
+fn protects_edited_managed_files_without_force() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("AGENTS.md");
+    fs::write(&path, "# MEGARA:MANAGED\nuser edit").unwrap();
+
+    let file = PlannedFile::new(path.clone(), "generated");
+    let summary = write_files(&[file], true, false).unwrap();
+
+    assert_eq!(summary.conflicts, vec![path]);
+}
+
+#[test]
 fn conflicts_do_not_partially_write() {
     let dir = tempdir().unwrap();
     let conflict = dir.path().join("AGENTS.md");

@@ -37,22 +37,15 @@ fn pi_project_install_projects_planning_adapter_and_supports_explicit_trust() {
         .path()
         .join(".agents/pi/extensions/megara.ts")
         .exists());
-    assert!(project
-        .path()
-        .join(".agents/pi/extensions/megara_process.ts")
-        .exists());
+    assert!(project.path().join(".agents/pi/megara_process.ts").exists());
     assert!(project.path().join(".pi/extensions/megara.ts").exists());
-    assert!(project
-        .path()
-        .join(".pi/extensions/megara_process.ts")
-        .exists());
+    assert!(project.path().join(".pi/megara_process.ts").exists());
     assert!(project.path().join(".pi/agents/executor.md").exists());
     assert!(project.path().join(".pi/settings.json").exists());
 
     let extension = fs::read_to_string(project.path().join(".pi/extensions/megara.ts")).unwrap();
-    let process_helper =
-        fs::read_to_string(project.path().join(".pi/extensions/megara_process.ts")).unwrap();
-    assert!(extension.contains("./megara_process.js"));
+    let process_helper = fs::read_to_string(project.path().join(".pi/megara_process.ts")).unwrap();
+    assert!(extension.contains("../megara_process.js"));
     assert!(extension.contains("planning rpc"));
     assert!(extension.contains("planning_start"));
     assert!(extension.contains("planning_answer"));
@@ -87,6 +80,56 @@ fn pi_project_install_projects_planning_adapter_and_supports_explicit_trust() {
         .exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn pi_install_checks_the_explicit_pi_bin_before_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = tempdir().unwrap();
+    let selected = project.path().join("selected-pi");
+    let path_bin = tempdir().unwrap();
+    let global = path_bin.path().join("pi");
+    fs::write(&selected, "#!/bin/sh\nprintf '0.80.10\\n'\n").unwrap();
+    fs::write(&global, "#!/bin/sh\nprintf '0.83.0\\n'\n").unwrap();
+    fs::set_permissions(&selected, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&global, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = megara()
+        .args([
+            "install",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--no-interactive",
+            "--json",
+        ])
+        .env("PI_BIN", &selected)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                path_bin.path().display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .current_dir(project.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        !report["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning
+                .as_str()
+                .is_some_and(|warning| warning.contains("unsupported"))),
+        "report={report}"
+    );
+}
+
 #[test]
 fn pi_global_install_uses_pi_agent_directory_without_project_trust() {
     let cwd = tempdir().unwrap();
@@ -116,20 +159,21 @@ fn pi_global_install_uses_pi_agent_directory_without_project_trust() {
 fn pi_projection_applies_explicit_role_model_override() {
     let project = tempdir().unwrap();
     install_pi(project.path(), true);
-    let config_path = project.path().join(".agents/megara.toml");
-    let config = fs::read_to_string(&config_path).unwrap().replace(
-        "[target.pi]\nenabled = true",
-        "[target.pi]\nenabled = true\n\n[target.pi.roles.executor]\nmodel = \"openai/gpt-5.6\"\nthinking_level = \"xhigh\"",
-    );
-    fs::write(&config_path, config).unwrap();
-
     let output = megara()
-        .arg("sync")
-        .arg("--scope")
-        .arg("project")
-        .arg("--target")
-        .arg("pi")
-        .arg("--no-interactive")
+        .args([
+            "agents",
+            "configure",
+            "--scope",
+            "project",
+            "--target",
+            "pi",
+            "--role",
+            "executor",
+            "--model",
+            "openai/gpt-5.6",
+            "--thinking-level",
+            "xhigh",
+        ])
         .current_dir(project.path())
         .output()
         .unwrap();

@@ -106,7 +106,7 @@ fn classify(path: &Path, desired: &str, force: bool) -> Result<WriteAction> {
     if current == desired {
         return Ok(WriteAction::Unchanged);
     }
-    if force || current.contains(MANAGED_MARKER) {
+    if force {
         return Ok(WriteAction::Update);
     }
     Ok(WriteAction::Conflict)

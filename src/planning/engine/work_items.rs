@@ -102,6 +102,7 @@ pub(crate) fn plan_input_hash(state: &PlanningState) -> String {
         })),
         "evidence_hash": state.repo_snapshot.as_ref().map(|snapshot| snapshot.evidence_hash.clone()),
         "plan_revision": state.plan_revision,
+        "revision_feedback": state.transcript.revision_feedback,
     });
     super::super::canonical::canonical_hash_with_aliases(&basis, Some(&aliases))
 }
@@ -147,6 +148,7 @@ fn work_item_context(
         "current_edges": current_edges,
         "blockers": blockers,
         "repo_snapshot": repo_snapshot,
+        "revision_feedback": state.transcript.revision_feedback,
     });
     if let Some(question_authoring) = question_authoring {
         context["question_authoring"] = json!(question_authoring);

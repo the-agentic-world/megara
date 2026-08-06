@@ -344,8 +344,8 @@ pub(super) const TEMPLATE_SPECS: &[TemplateSpec] = &[
     TemplateSpec {
         name: "pi-process-helper",
         kind: TemplateKind::ToolSupport,
-        relative_path: "pi/extensions/megara_process.ts",
+        relative_path: "pi/megara_process.ts",
         description: "Pi Planning process transport helper",
-        content: include_str!("../../harness/pi/extensions/megara_process.ts"),
+        content: include_str!("../../harness/pi/megara_process.ts"),
     },
 ];
