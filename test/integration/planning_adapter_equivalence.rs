@@ -186,12 +186,14 @@ fn mcp_arguments(request: &Value) -> Value {
 fn run_pi_journey(project: &Path) -> (String, Value) {
     let start = rpc(project, start_request("cmd-pi-start", "req-pi-start"));
     assert_eq!(start["ok"], true);
+    assert!(start["result"].get("host_adapter").is_none());
     let session_id = start["session_id"].as_str().unwrap().to_string();
     let evidence = rpc(
         project,
         evidence_request(&session_id, "cmd-pi-evidence", "req-pi-evidence"),
     );
     assert_eq!(evidence["ok"], true);
+    assert!(evidence["result"].get("host_adapter").is_none());
     let audit = rpc(
         project,
         audit_request(&evidence, &session_id, "cmd-pi-audit", "req-pi-audit"),
@@ -210,6 +212,10 @@ fn run_codex_journey(project: &Path) -> (String, Value) {
         json!({"request":"transport equivalence request","title":"same title","command_id":"cmd-codex-start"}),
     );
     assert_eq!(start["ok"], true);
+    assert_eq!(
+        start["result"]["host_adapter"]["operation"],
+        "planning_audit_apply"
+    );
     let session_id = start["session_id"].as_str().unwrap().to_string();
     let evidence_request =
         evidence_request(&session_id, "cmd-codex-evidence", "req-codex-evidence");
@@ -220,6 +226,10 @@ fn run_codex_journey(project: &Path) -> (String, Value) {
         mcp_arguments(&evidence_request),
     );
     assert_eq!(evidence["ok"], true);
+    assert_eq!(
+        evidence["result"]["host_adapter"]["operation"],
+        "planning_audit_apply"
+    );
     let audit_request = audit_request(&evidence, &session_id, "cmd-codex-audit", "req-codex-audit");
     let audit = mcp_tool(
         &mut client,
@@ -228,6 +238,7 @@ fn run_codex_journey(project: &Path) -> (String, Value) {
         mcp_arguments(&audit_request),
     );
     assert_eq!(audit["ok"], true);
+    assert!(audit["result"].get("host_adapter").is_none());
     client.finish();
     (session_id, audit)
 }
