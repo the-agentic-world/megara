@@ -279,18 +279,7 @@ where
         let selected = choose(
             "Megara Install",
             "Choose the user-facing response locale.",
-            &[
-                MenuOption::new("Korean (ko-KR)", "Recommended default for Korean teams."),
-                MenuOption::new("English (en-US)", "Use English for user-facing responses."),
-                MenuOption::new(
-                    "Japanese (ja-JP)",
-                    "Use Japanese for user-facing responses.",
-                ),
-                MenuOption::new(
-                    "Chinese (zh-CN)",
-                    "Use Simplified Chinese for user-facing responses.",
-                ),
-            ],
+            &locale_options(),
         )?;
         args.locale = match selected {
             Some(0) => Some("ko-KR".to_string()),
@@ -434,7 +423,7 @@ fn run_read_only(title: &str, footer: &str, lines: Vec<Line<'static>>) -> Result
     Ok(())
 }
 
-fn render_menu(
+pub(crate) fn render_menu(
     frame: &mut ratatui::Frame<'_>,
     title: &str,
     subtitle: &str,
@@ -442,6 +431,7 @@ fn render_menu(
     selected: usize,
 ) {
     let area = frame.area();
+    let compact = area.height < 18;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -450,7 +440,7 @@ fn render_menu(
 
     let mut lines = vec![
         Line::from(Span::styled(
-            subtitle.to_string(),
+            truncate_for_width(subtitle, area.width.saturating_sub(4) as usize),
             Style::default().fg(Color::Gray),
         )),
         Line::from(""),
@@ -468,11 +458,13 @@ fn render_menu(
             Span::raw(format!("{marker} ")),
             Span::styled(format!("{}. {}", index + 1, option.label), style),
         ]));
-        lines.push(Line::from(Span::styled(
-            format!("   {}", option.description),
-            Style::default().fg(Color::DarkGray),
-        )));
-        lines.push(Line::from(""));
+        if !compact {
+            lines.push(Line::from(Span::styled(
+                format!("   {}", option.description),
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines.push(Line::from(""));
+        }
     }
 
     let body = Paragraph::new(lines)
@@ -480,9 +472,24 @@ fn render_menu(
         .wrap(Wrap { trim: false });
     frame.render_widget(body, chunks[0]);
     frame.render_widget(
-        Paragraph::new("Up/Down or j/k to move, Enter to select, Esc/q to cancel."),
+        Paragraph::new(if compact {
+            "↑↓/jk move · Enter select · q cancel"
+        } else {
+            "Up/Down or j/k to move, Enter to select, Esc/q to cancel."
+        })
+        .wrap(Wrap { trim: true }),
         chunks[1],
     );
+}
+
+pub(crate) fn truncate_for_width(value: &str, width: usize) -> String {
+    if value.chars().count() <= width {
+        return value.to_string();
+    }
+    if width <= 1 {
+        return "…".to_string();
+    }
+    format!("{}…", value.chars().take(width - 1).collect::<String>())
 }
 
 fn read_menu_input() -> Result<TuiInput> {
@@ -571,9 +578,24 @@ fn update_scope_label(scope: UpdateScopeArg) -> &'static str {
     }
 }
 
-struct MenuOption {
+pub(crate) struct MenuOption {
     label: &'static str,
     description: &'static str,
+}
+
+pub(crate) fn locale_options() -> [MenuOption; 4] {
+    [
+        MenuOption::new("Korean (ko-KR)", "Recommended default for Korean teams."),
+        MenuOption::new("English (en-US)", "Use English for user-facing responses."),
+        MenuOption::new(
+            "Japanese (ja-JP)",
+            "Use Japanese for user-facing responses.",
+        ),
+        MenuOption::new(
+            "Chinese (zh-CN)",
+            "Use Simplified Chinese for user-facing responses.",
+        ),
+    ]
 }
 
 impl MenuOption {

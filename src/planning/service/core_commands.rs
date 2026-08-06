@@ -76,6 +76,12 @@ impl PlanningService {
             return Ok(mutation_response(&request, outcome, json!({})));
         }
         let current = self.store.current(session_id)?;
+        if current.revision != request.expected_revision.unwrap_or_default() {
+            return Err(ServiceError::revision_conflict(
+                request.expected_revision.unwrap_or_default(),
+                current.revision,
+            ));
+        }
         let based_on_revision = current
             .pending_question
             .as_ref()

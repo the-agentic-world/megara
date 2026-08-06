@@ -21,8 +21,7 @@ fn write_node_fixture(path: &Path, body: &str) {
 fn run_process_fixture(project: &Path, fake: &Path, label: &str, body: &str) -> Value {
     let pid_path = project.join(format!("child-{label}.pid"));
     let _ = fs::remove_file(&pid_path);
-    let helper =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("harness/pi/extensions/megara_process.ts");
+    let helper = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("harness/pi/megara_process.ts");
     let extension = project.join("process-extension.ts");
     fs::copy(&helper, project.join("megara_process.ts")).unwrap();
     let source = format!(

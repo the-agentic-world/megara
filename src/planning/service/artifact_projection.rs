@@ -93,6 +93,9 @@ pub(crate) fn inspect_candidate_projection(
         Ok(existing) if managed_digest.as_deref() == Some(&digest_bytes(&existing)) => {
             ProjectionStatus::Stale
         }
+        // A manifest binds this path to the canonical candidate, so an edited
+        // managed file is stale rather than an unrelated user-owned conflict.
+        Ok(_) if managed_digest.is_some() => ProjectionStatus::Stale,
         Ok(_) => ProjectionStatus::Conflict,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProjectionStatus::Missing,
         Err(_) => ProjectionStatus::IoError,
@@ -108,7 +111,9 @@ pub(crate) fn repair_candidate_projection(
     let Some(kind) = ArtifactKind::from_name(kind) else {
         return ProjectionStatus::IoError;
     };
-    write_projection(root, session_id, kind, candidate, false)
+    // Doctor repair is an explicit recovery action. Unlike ordinary generation,
+    // it must restore the canonical candidate over a known managed projection.
+    write_projection(root, session_id, kind, candidate, true)
 }
 
 pub(super) fn project_generated_candidate(

@@ -218,6 +218,59 @@ fn agents_configuration_protects_unmanaged_ssot_without_force() {
 }
 
 #[test]
+fn agents_configure_preserves_edited_selected_projection_without_force() {
+    let project = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(project.path(), codex_home.path());
+    let config = project.path().join(".agents/megara.toml");
+    let config_before = fs::read(&config).unwrap();
+    let executor = project.path().join(".codex/agents/executor.toml");
+    let original = fs::read(&executor).unwrap();
+    let edited = [original.as_slice(), b"\n# user projection edit\n"].concat();
+    fs::write(&executor, &edited).unwrap();
+
+    let command = |force: bool| {
+        let mut command = megara_with_codex_home(codex_home.path());
+        command
+            .args([
+                "agents",
+                "configure",
+                "--scope",
+                "project",
+                "--target",
+                "codex",
+                "--role",
+                "executor",
+                "--model",
+                "gpt-5.6-sol",
+                "--reasoning-effort",
+                "high",
+            ])
+            .current_dir(project.path());
+        if force {
+            command.arg("--force");
+        }
+        command.output().unwrap()
+    };
+
+    let blocked = command(false);
+    assert!(!blocked.status.success());
+    assert!(String::from_utf8_lossy(&blocked.stderr).contains("edited runtime role projection"));
+    assert_eq!(fs::read(&config).unwrap(), config_before);
+    assert_eq!(fs::read(&executor).unwrap(), edited);
+
+    let forced = command(true);
+    assert!(
+        forced.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&forced.stderr)
+    );
+    let regenerated = fs::read_to_string(&executor).unwrap();
+    assert!(!regenerated.contains("user projection edit"));
+    assert!(regenerated.contains("model = \"gpt-5.6-sol\""));
+}
+
+#[test]
 fn agents_configuration_reports_missing_noninteractive_inputs() {
     let project = tempdir().unwrap();
     let codex_home = tempdir().unwrap();

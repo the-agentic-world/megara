@@ -89,6 +89,40 @@ pub fn remove_managed_files(paths: &[PathBuf], dry_run: bool) -> Result<Vec<Path
     Ok(removed)
 }
 
+pub fn remove_obsolete_managed_files(
+    files: &[PlannedFile],
+    dry_run: bool,
+    force: bool,
+) -> Result<WriteSummary> {
+    let mut summary = WriteSummary::default();
+    for file in files {
+        if !file.path.exists() {
+            continue;
+        }
+        let current = fs::read_to_string(&file.path)
+            .with_context(|| format!("failed to read existing file {}", file.path.display()))?;
+        if current == file.content || (force && current.contains(MANAGED_MARKER)) {
+            summary.removed.push(file.path.clone());
+        } else if current.contains(MANAGED_MARKER) {
+            summary.conflicts.push(file.path.clone());
+        }
+    }
+    if !summary.conflicts.is_empty() && !dry_run {
+        bail!(
+            "refusing to remove {} edited managed file(s); rerun with --force",
+            summary.conflicts.len()
+        );
+    }
+    if !dry_run {
+        for path in &summary.removed {
+            fs::remove_file(path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+            remove_empty_parent_dirs(path);
+        }
+    }
+    Ok(summary)
+}
+
 enum WriteAction {
     Create,
     Update,
@@ -106,7 +140,7 @@ fn classify(path: &Path, desired: &str, force: bool) -> Result<WriteAction> {
     if current == desired {
         return Ok(WriteAction::Unchanged);
     }
-    if force || current.contains(MANAGED_MARKER) {
+    if force {
         return Ok(WriteAction::Update);
     }
     Ok(WriteAction::Conflict)

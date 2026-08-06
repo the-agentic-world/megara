@@ -21,6 +21,12 @@ fn pi_target_projects_settings_extension_and_role_agents() {
         .any(|path| path.ends_with(".pi/extensions/megara.ts")));
     assert!(paths
         .iter()
+        .any(|path| path.ends_with(".pi/megara_process.ts")));
+    assert!(!paths
+        .iter()
+        .any(|path| path.ends_with(".pi/extensions/megara_process.ts")));
+    assert!(paths
+        .iter()
         .any(|path| path.ends_with(".pi/agents/executor.md")));
 }
 

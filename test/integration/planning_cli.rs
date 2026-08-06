@@ -464,3 +464,61 @@ fn planning_cli_answer_success_preserves_raw_binding_and_replays_after_restart()
     assert_eq!(store.event_count(&session).unwrap(), event_count);
     assert_eq!(store.current(&session).unwrap().revision, first_revision);
 }
+
+#[test]
+fn planning_cli_answer_checks_revision_before_question_binding() {
+    let directory = tempdir().unwrap();
+    let project = directory.path();
+    let (session, question, revision) = prepare_pending(project);
+    let revision_text = revision.to_string();
+    let first = run(
+        project,
+        &[
+            "planning",
+            "answer",
+            "--project",
+            project.to_str().unwrap(),
+            "--session",
+            &session,
+            "--question",
+            &question,
+            "--expected-revision",
+            &revision_text,
+            "--text",
+            "first answer",
+            "--command-id",
+            "cmd-answer-revision-first",
+            "--json",
+        ],
+        None,
+    );
+    assert!(first.status.success());
+    let after = one_line(&first)["revision"].as_u64().unwrap();
+
+    let stale = run(
+        project,
+        &[
+            "planning",
+            "answer",
+            "--project",
+            project.to_str().unwrap(),
+            "--session",
+            &session,
+            "--question",
+            &question,
+            "--expected-revision",
+            &revision_text,
+            "--text",
+            "stale answer",
+            "--command-id",
+            "cmd-answer-revision-stale",
+            "--json",
+        ],
+        None,
+    );
+    assert_eq!(stale.status.code(), Some(3));
+    assert_eq!(one_line(&stale)["error"]["code"], "REVISION_CONFLICT");
+    let store = PlanningStore::open_project(project).unwrap();
+    assert_eq!(store.current(&session).unwrap().revision, after);
+    assert_eq!(store.event_count(&session).unwrap(), 4);
+}

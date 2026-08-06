@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import {
   runProcess,
   RPC_TIMEOUT_MS,
-} from "./megara_process.js";
+} from "../megara_process.js";
 
 type JsonObject = Record<string, unknown>;
 const PLANNING_MODEL_GUIDANCE =

@@ -55,7 +55,7 @@ fn uninstall_removes_pi_process_helper_and_preserves_planning_runtime() {
         "stderr={}",
         String::from_utf8_lossy(&install.stderr)
     );
-    let helper = dir.path().join(".pi/extensions/megara_process.ts");
+    let helper = dir.path().join(".pi/megara_process.ts");
     assert!(helper.exists());
     let planning_runtime = dir.path().join(".megara/planning/sentinel");
     fs::create_dir_all(planning_runtime.parent().unwrap()).unwrap();

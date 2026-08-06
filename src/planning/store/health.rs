@@ -101,22 +101,31 @@ impl PlanningStore {
 
         let tombstones = {
             let mut statement = self.conn.prepare(
-                "SELECT session_id, purge_command_id, cleanup_state, pending_backup_id, core_response_json FROM purged_sessions ORDER BY session_id",
+                "SELECT session_id, purge_schema_version, purge_command_id, cleanup_state, pending_backup_id, core_response_json FROM purged_sessions ORDER BY session_id",
             )?;
             let rows = statement
                 .query_map([], |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
+                        row.get::<_, u32>(1)?,
                         row.get::<_, String>(2)?,
-                        row.get::<_, Option<String>>(3)?,
-                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, String>(5)?,
                     ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             rows
         };
-        for (session_id, command_id, cleanup_state, pending_backup_id, response) in tombstones {
+        for (
+            session_id,
+            purge_schema_version,
+            command_id,
+            cleanup_state,
+            pending_backup_id,
+            response,
+        ) in tombstones
+        {
             let artifact_residue = artifact_residue(self.project_root(), &session_id);
             let backup_residue = pending_backup_id
                 .as_deref()
@@ -136,6 +145,16 @@ impl PlanningStore {
                 backup_residue,
             };
             inspection.tombstones.push(tombstone);
+
+            if i64::from(purge_schema_version) != super::STORE_SCHEMA_VERSION {
+                inspection.issues.push(PlanningHealthIssue {
+                    code: "TOMBSTONE_INVALID",
+                    message: format!(
+                        "unsupported purge tombstone schema for {session_id}: {purge_schema_version}"
+                    ),
+                    repairable: false,
+                });
+            }
 
             if !valid_component(&session_id) || !valid_component(&command_id) {
                 inspection.issues.push(PlanningHealthIssue {

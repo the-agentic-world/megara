@@ -116,13 +116,9 @@ fn update_refreshes_pi_process_helper_from_ssot() {
         .unwrap();
     assert!(install.status.success());
 
-    let projected_helper = dir.path().join(".pi/extensions/megara_process.ts");
+    let projected_helper = dir.path().join(".pi/megara_process.ts");
     let original_helper = fs::read_to_string(&projected_helper).unwrap();
-    fs::write(
-        &projected_helper,
-        format!("{original_helper}\n// PI HELPER UPDATE DRIFT\n"),
-    )
-    .unwrap();
+    fs::remove_file(&projected_helper).unwrap();
 
     let curl = fake_bin.path().join("curl");
     fs::write(

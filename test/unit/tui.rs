@@ -5,6 +5,7 @@ use crate::{
         use_update_tui_for, TuiInput,
     },
 };
+use ratatui::{backend::TestBackend, Terminal};
 
 fn install_args(scope: Option<ScopeArg>, target: Option<TargetArg>) -> InstallArgs {
     InstallArgs {
@@ -154,4 +155,51 @@ fn scripted_install_wizard_records_pi_project_trust() {
         .expect("wizard should confirm");
 
     assert!(result.trust_project);
+}
+
+#[test]
+fn narrow_menu_subtitles_are_truncated_without_losing_navigation_space() {
+    assert_eq!(
+        crate::tui::truncate_for_width("Choose the user-facing response locale.", 36),
+        "Choose the user-facing response loc…"
+    );
+    assert_eq!(crate::tui::truncate_for_width("abc", 1), "…");
+}
+
+#[test]
+fn narrow_locale_menu_renders_all_choices_selection_and_compact_navigation() {
+    let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::render_menu(
+                frame,
+                "Megara Install",
+                "Choose the user-facing response locale.",
+                &crate::tui::locale_options(),
+                2,
+            )
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let snapshot = buffer
+        .content
+        .chunks(buffer.area.width as usize)
+        .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for label in [
+        "1. Korean (ko-KR)",
+        "2. English (en-US)",
+        "3. Japanese (ja-JP)",
+        "4. Chinese (zh-CN)",
+    ] {
+        assert!(
+            snapshot.contains(label),
+            "missing {label:?} in:\n{snapshot}"
+        );
+    }
+    assert!(snapshot.contains("> 3. Japanese (ja-JP)"), "{snapshot}");
+    assert!(snapshot.contains("Enter select"), "{snapshot}");
+    assert!(snapshot.contains("q cancel"), "{snapshot}");
+    assert!(!snapshot.contains("Recommended default"), "{snapshot}");
 }

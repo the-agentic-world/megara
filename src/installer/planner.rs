@@ -7,7 +7,7 @@ use crate::{
     paths::{InstallPaths, InstallScope, TargetRuntime},
     targets::{codex, pi},
     templates::TemplateRegistry,
-    writer::{remove_managed_files, write_files},
+    writer::{remove_managed_files, remove_obsolete_managed_files, write_files},
 };
 
 use super::migration;
@@ -84,16 +84,22 @@ impl<'a> Planner<'a> {
                 &projection_registry,
             )?),
         };
-        let obsolete_files = match self.options.target {
-            TargetRuntime::Codex => codex::obsolete_projection_files(
-                paths.target_root.clone(),
-                self.options.scope,
-                &projection_registry,
+        let (obsolete_files, obsolete_managed_files) = match self.options.target {
+            TargetRuntime::Codex => (
+                codex::obsolete_projection_files(
+                    paths.target_root.clone(),
+                    self.options.scope,
+                    &projection_registry,
+                ),
+                Vec::new(),
             ),
-            TargetRuntime::Pi => pi::obsolete_projection_files(
-                paths.target_root.clone(),
-                self.options.scope,
-                &projection_registry,
+            TargetRuntime::Pi => (
+                Vec::new(),
+                pi::obsolete_projection_files(
+                    paths.target_root.clone(),
+                    self.options.scope,
+                    &projection_registry,
+                )?,
             ),
         };
 
@@ -106,12 +112,17 @@ impl<'a> Planner<'a> {
             files,
             managed_toml_edits,
             obsolete_files,
+            obsolete_managed_files,
         })
     }
 
     pub fn execute(&self) -> Result<InstallResult> {
         let plan = self.plan()?;
-        let preflight = write_files(&plan.files, true, self.options.force)?;
+        let mut preflight = write_files(&plan.files, true, self.options.force)?;
+        let obsolete_preflight =
+            remove_obsolete_managed_files(&plan.obsolete_managed_files, true, self.options.force)?;
+        preflight.conflicts.extend(obsolete_preflight.conflicts);
+        preflight.removed.extend(obsolete_preflight.removed);
         if !self.options.dry_run && !preflight.conflicts.is_empty() {
             bail!(
                 "refusing to overwrite {} unmanaged file(s); rerun with --force",
@@ -126,6 +137,16 @@ impl<'a> Planner<'a> {
             }
             write_files(&plan.files, false, self.options.force)?
         };
+        if !self.options.dry_run {
+            summary.removed.extend(
+                remove_obsolete_managed_files(
+                    &plan.obsolete_managed_files,
+                    false,
+                    self.options.force,
+                )?
+                .removed,
+            );
+        }
         summary.removed.extend(remove_managed_files(
             &plan.obsolete_files,
             self.options.dry_run,
@@ -257,8 +278,8 @@ pub(crate) fn runtime_support_files(
             root.join("bin").join("insane-search"),
             r#"#!/bin/sh
 set -eu
-bin_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
-root_dir="$bin_dir/.."
+bin_dir=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
+root_dir=$(CDPATH= cd "$bin_dir/.." && pwd -P)
 tool_dir="$bin_dir/../tools/insane-search"
 if [ "$(basename "$root_dir")" = ".agents" ]; then
   runtime_root="$root_dir/../.megara"
@@ -277,7 +298,19 @@ fi
 if [ ! -x "$python_bin" ]; then
   mkdir -p "$state_dir"
   echo "insane-search: bootstrapping Python dependencies into $venv_dir" >&2
-  python3 -m venv "$venv_dir"
+  bootstrap_python=""
+  for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" >/dev/null 2>&1 \
+      && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+      bootstrap_python=$(command -v "$candidate")
+      break
+    fi
+  done
+  if [ -z "$bootstrap_python" ]; then
+    echo "insane-search requires Python 3.10 or newer; install one and rerun." >&2
+    exit 2
+  fi
+  "$bootstrap_python" -m venv "$venv_dir"
 fi
 needs_install=0
 if [ ! -f "$requirements_stamp" ] || [ "$requirements" -nt "$requirements_stamp" ]; then

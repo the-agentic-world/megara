@@ -1,7 +1,7 @@
 use std::{fs, path::Path, process::Command};
 
 use crate::{
-    installer::{runtime_support_files, DoctorOptions, MANAGED_MARKER},
+    installer::{runtime_support_files, DoctorOptions, PlannedFile, MANAGED_MARKER},
     paths::{InstallPaths, TargetRuntime},
     planning::{
         service::{inspect_candidate_projection, repair_candidate_projection, ProjectionStatus},
@@ -10,9 +10,19 @@ use crate::{
     targets::{codex, pi},
     templates::TemplateRegistry,
     ui::{self, Section},
+    writer::write_files,
 };
 use anyhow::Result;
 use serde::Serialize;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DoctorIssue {
+    pub code: &'static str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    pub repairable: bool,
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct DoctorReport {
@@ -24,6 +34,7 @@ pub struct DoctorReport {
     pub stale: Vec<String>,
     pub warnings: Vec<String>,
     pub observations: Vec<String>,
+    pub issues: Vec<DoctorIssue>,
     #[serde(skip)]
     pub json: bool,
 }
@@ -35,21 +46,24 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
     let mut stale = Vec::new();
     let mut warnings = runtime_dependency_issues(options.target);
     let mut observations = Vec::new();
+    let mut issues = Vec::new();
 
-    missing.extend(
-        TemplateRegistry::missing_paths(&paths.ssot_root)
-            .into_iter()
-            .map(|path| path.display().to_string()),
-    );
+    for path in TemplateRegistry::missing_paths(&paths.ssot_root) {
+        let path = path.display().to_string();
+        missing.push(path.clone());
+        issues.push(projection_issue("PROJECTION_MISSING", path, false));
+    }
 
     if missing.is_empty() {
         for file in runtime_support_files(paths.ssot_root.clone(), paths.runtime_root.clone())? {
             inspect_managed_file(
-                &file.path,
-                &file.content,
+                &file,
                 &mut missing,
                 &mut unmanaged,
                 &mut stale,
+                &mut issues,
+                options.repair,
+                &mut observations,
             )?;
             if file
                 .path
@@ -73,11 +87,13 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
 
         for file in projection_files {
             inspect_managed_file(
-                &file.path,
-                &file.content,
+                &file,
                 &mut missing,
                 &mut unmanaged,
                 &mut stale,
+                &mut issues,
+                options.repair,
+                &mut observations,
             )?;
         }
         if options.target == TargetRuntime::Pi
@@ -101,17 +117,23 @@ pub fn run(_registry: &TemplateRegistry, options: DoctorOptions) -> Result<Docto
         options.repair,
         &mut warnings,
         &mut observations,
+        &mut issues,
     )?;
 
     Ok(DoctorReport {
         scope: options.scope.to_string(),
         target: options.target.to_string(),
-        ok: missing.is_empty() && unmanaged.is_empty() && stale.is_empty() && warnings.is_empty(),
+        ok: missing.is_empty()
+            && unmanaged.is_empty()
+            && stale.is_empty()
+            && warnings.is_empty()
+            && issues.is_empty(),
         missing,
         unmanaged,
         stale,
         warnings,
         observations,
+        issues,
         json: options.json,
     })
 }
@@ -122,6 +144,7 @@ fn inspect_planning_health(
     repair: bool,
     warnings: &mut Vec<String>,
     observations: &mut Vec<String>,
+    issues: &mut Vec<DoctorIssue>,
 ) -> Result<()> {
     if scope != crate::paths::InstallScope::Project {
         return Ok(());
@@ -129,25 +152,63 @@ fn inspect_planning_health(
     let Some(project_root) = runtime_root.parent() else {
         return Ok(());
     };
-    let mut store = if repair {
-        PlanningStore::open_existing_project_for_repair(project_root)?
+    let opened = if repair {
+        PlanningStore::open_existing_project_for_repair(project_root)
     } else {
-        PlanningStore::open_existing_project(project_root)?
+        PlanningStore::open_existing_project(project_root)
+    };
+    let mut store = match opened {
+        Ok(store) => store,
+        Err(error) => {
+            let message = format!("Planning DB_CORRUPT: {error}");
+            warnings.push(message.clone());
+            issues.push(DoctorIssue {
+                code: "DB_CORRUPT",
+                message,
+                path: Some(
+                    project_root
+                        .join(".megara/planning/planning.db")
+                        .display()
+                        .to_string(),
+                ),
+                repairable: false,
+            });
+            return Ok(());
+        }
     };
     let Some(mut store) = store.take() else {
         return Ok(());
     };
     let pending_before = store.pending_cleanup_count()?;
     if pending_before > 0 && !repair {
-        warnings.push(format!(
+        let message = format!(
             "pending Planning purge cleanup: {pending_before}; run `megara doctor --repair`"
-        ));
+        );
+        warnings.push(message.clone());
+        issues.push(DoctorIssue {
+            code: "PURGE_RESIDUE",
+            message,
+            path: None,
+            repairable: true,
+        });
     }
 
     let inspection = match store.inspect_health() {
         Ok(inspection) => inspection,
         Err(error) => {
-            warnings.push(format!("Planning DB_CORRUPT: {error}"));
+            let message = format!("Planning DB_CORRUPT: {error}");
+            warnings.push(message.clone());
+            issues.push(DoctorIssue {
+                code: "DB_CORRUPT",
+                message,
+                path: Some(
+                    project_root
+                        .join(".megara/planning/planning.db")
+                        .display()
+                        .to_string(),
+                ),
+                repairable: false,
+            });
             return Ok(());
         }
     };
@@ -168,6 +229,12 @@ fn inspect_planning_health(
                 ""
             }
         ));
+        issues.push(DoctorIssue {
+            code: issue.code,
+            message: issue.message.clone(),
+            path: None,
+            repairable: issue.repairable,
+        });
     }
     if !inspection.tombstones.is_empty() {
         let pending_tombstones = inspection
@@ -216,7 +283,7 @@ fn inspect_planning_health(
     }
 
     for state in &inspection.replayed_states {
-        inspect_projections(project_root, state, repair, warnings, observations);
+        inspect_projections(project_root, state, repair, warnings, observations, issues);
     }
 
     if repair {
@@ -238,10 +305,16 @@ fn inspect_planning_health(
             }
         };
         for issue in post_repair.issues {
-            if !issue.repairable || (issue.code == "PURGE_RESIDUE" && pending_after > 0) {
+            if !issue.repairable {
                 continue;
             }
             warnings.push(format!("Planning {}: {}", issue.code, issue.message));
+            issues.push(DoctorIssue {
+                code: issue.code,
+                message: issue.message,
+                path: None,
+                repairable: true,
+            });
         }
     }
     Ok(())
@@ -253,6 +326,7 @@ fn inspect_projections(
     repair: bool,
     warnings: &mut Vec<String>,
     observations: &mut Vec<String>,
+    issues: &mut Vec<DoctorIssue>,
 ) {
     inspect_one_projection(
         project_root,
@@ -262,6 +336,7 @@ fn inspect_projections(
         repair,
         warnings,
         observations,
+        issues,
     );
     inspect_one_projection(
         project_root,
@@ -271,9 +346,11 @@ fn inspect_projections(
         repair,
         warnings,
         observations,
+        issues,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn inspect_one_projection<T: serde::Serialize>(
     project_root: &Path,
     session_id: &str,
@@ -282,6 +359,7 @@ fn inspect_one_projection<T: serde::Serialize>(
     repair: bool,
     warnings: &mut Vec<String>,
     observations: &mut Vec<String>,
+    issues: &mut Vec<DoctorIssue>,
 ) {
     let Some(candidate) = candidate else {
         return;
@@ -292,6 +370,12 @@ fn inspect_one_projection<T: serde::Serialize>(
             warnings.push(format!(
                 "Planning PROJECTION_IO: cannot encode {kind} candidate for {session_id}: {error}"
             ));
+            issues.push(DoctorIssue {
+                code: "PROJECTION_IO",
+                message: format!("cannot encode {kind} candidate for {session_id}: {error}"),
+                path: None,
+                repairable: false,
+            });
             return;
         }
     };
@@ -310,22 +394,45 @@ fn inspect_one_projection<T: serde::Serialize>(
                     repaired_status.as_str()
                 ));
             } else {
-                warnings.push(format!(
+                let message = format!(
                     "Planning PROJECTION_{}: session={session_id}, kind={kind}, repair_status={}",
                     repaired_status.as_str().to_ascii_uppercase(),
                     repaired_status.as_str()
-                ));
+                );
+                warnings.push(message.clone());
+                issues.push(DoctorIssue {
+                    code: projection_code(repaired_status),
+                    message,
+                    path: None,
+                    repairable: false,
+                });
             }
         }
-        ProjectionStatus::Missing | ProjectionStatus::Stale => warnings.push(format!(
-            "Planning PROJECTION_{}: session={session_id}, kind={kind}; run `megara doctor --repair`",
-            status.as_str().to_ascii_uppercase(),
-        )),
+        ProjectionStatus::Missing | ProjectionStatus::Stale => {
+            let message = format!(
+                "Planning PROJECTION_{}: session={session_id}, kind={kind}; run `megara doctor --repair`",
+                status.as_str().to_ascii_uppercase(),
+            );
+            warnings.push(message.clone());
+            issues.push(DoctorIssue {
+                code: projection_code(status),
+                message,
+                path: None,
+                repairable: true,
+            });
+        }
         ProjectionStatus::Conflict | ProjectionStatus::IoError | ProjectionStatus::Written => {
-            warnings.push(format!(
+            let message = format!(
                 "Planning PROJECTION_{}: session={session_id}, kind={kind}",
                 status.as_str().to_ascii_uppercase(),
-            ));
+            );
+            warnings.push(message.clone());
+            issues.push(DoctorIssue {
+                code: projection_code(status),
+                message,
+                path: None,
+                repairable: false,
+            });
         }
     }
 }
@@ -375,24 +482,70 @@ fn push_group(sections: &mut Vec<Section>, label: &str, paths: &[String]) {
 }
 
 fn inspect_managed_file(
-    path: &Path,
-    desired: &str,
+    file: &PlannedFile,
     missing: &mut Vec<String>,
     unmanaged: &mut Vec<String>,
     stale: &mut Vec<String>,
+    issues: &mut Vec<DoctorIssue>,
+    repair: bool,
+    observations: &mut Vec<String>,
 ) -> Result<()> {
+    let path = &file.path;
+    let desired = &file.content;
     if !path.exists() {
-        missing.push(path.display().to_string());
+        if repair {
+            repair_managed_file(file, observations)?;
+            return Ok(());
+        }
+        let path = path.display().to_string();
+        missing.push(path.clone());
+        issues.push(projection_issue("PROJECTION_MISSING", path, true));
         return Ok(());
     }
 
     let current = fs::read_to_string(path)?;
     if !current.contains(MANAGED_MARKER) {
-        unmanaged.push(path.display().to_string());
-    } else if current != desired {
-        stale.push(path.display().to_string());
+        let path = path.display().to_string();
+        unmanaged.push(path.clone());
+        issues.push(projection_issue("PROJECTION_DIVERGED", path, false));
+    } else if current != desired.as_str() {
+        if repair {
+            repair_managed_file(file, observations)?;
+            return Ok(());
+        }
+        let path = path.display().to_string();
+        stale.push(path.clone());
+        issues.push(projection_issue("PROJECTION_STALE", path, true));
     }
     Ok(())
+}
+
+fn repair_managed_file(file: &PlannedFile, observations: &mut Vec<String>) -> Result<()> {
+    write_files(std::slice::from_ref(file), false, true)?;
+    observations.push(format!(
+        "Managed projection repair: {}",
+        file.path.display()
+    ));
+    Ok(())
+}
+
+fn projection_issue(code: &'static str, path: String, repairable: bool) -> DoctorIssue {
+    DoctorIssue {
+        code,
+        message: format!("managed projection requires attention: {path}"),
+        path: Some(path),
+        repairable,
+    }
+}
+
+fn projection_code(status: ProjectionStatus) -> &'static str {
+    match status {
+        ProjectionStatus::Missing => "PROJECTION_MISSING",
+        ProjectionStatus::Stale => "PROJECTION_STALE",
+        ProjectionStatus::Conflict => "PROJECTION_DIVERGED",
+        ProjectionStatus::IoError => "PROJECTION_IO",
+        ProjectionStatus::Written | ProjectionStatus::Unchanged => "PROJECTION_STALE",
+    }
 }
 
 fn inspect_wrapper_invocation(path: &Path, warnings: &mut Vec<String>) {

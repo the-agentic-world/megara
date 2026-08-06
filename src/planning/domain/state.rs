@@ -27,11 +27,23 @@ pub struct AnswerRecord {
     pub selected_choice_ids: Vec<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RevisionFeedbackRecord {
+    pub created_event_seq: u64,
+    pub created_ordinal: u32,
+    pub artifact: String,
+    pub candidate_id: CandidateId,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TranscriptIndex {
     pub initial_request: String,
     pub answers: Vec<AnswerRecord>,
+    #[serde(default)]
+    pub revision_feedback: Vec<RevisionFeedbackRecord>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -251,6 +263,7 @@ impl PlanningState {
             transcript: TranscriptIndex {
                 initial_request,
                 answers: Vec::new(),
+                revision_feedback: Vec::new(),
             },
             repo_snapshot: None,
             full_audit: None,

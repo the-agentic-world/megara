@@ -55,6 +55,14 @@ fn doctor_warning(report: &serde_json::Value, code: &str) -> bool {
         .any(|warning| warning.contains(code))
 }
 
+fn doctor_issue(report: &serde_json::Value, code: &str) -> bool {
+    report["issues"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|issue| issue["code"] == code)
+}
+
 #[test]
 fn doctor_reports_missing_then_ok() {
     let dir = tempdir().unwrap();
@@ -102,6 +110,10 @@ fn doctor_reports_missing_then_ok() {
     let stale_stdout = String::from_utf8_lossy(&stale.stdout);
     assert!(stale_stdout.contains("\"ok\": false"));
     assert!(stale_stdout.contains(".codex/AGENTS.md"));
+    assert!(doctor_issue(
+        &serde_json::from_str(&stale_stdout).unwrap(),
+        "PROJECTION_STALE"
+    ));
 
     let sync = megara_with_codex_home(codex_home.path())
         .arg("sync")
@@ -109,6 +121,7 @@ fn doctor_reports_missing_then_ok() {
         .arg("project")
         .arg("--target")
         .arg("codex")
+        .arg("--force")
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -142,6 +155,54 @@ fn doctor_reports_missing_then_ok() {
     let human_stdout = String::from_utf8_lossy(&human.stdout);
     assert!(human_stdout.contains("Megara / Doctor"));
     assert!(human_stdout.contains("megara doctor: scope=project, target=codex, ok=true"));
+}
+
+#[test]
+fn doctor_repair_restores_stale_runtime_projection_without_touching_planning_db() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let (_session_id, database_path, _event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-runtime-projection");
+    let planner = dir.path().join(".codex/agents/planner.toml");
+    let canonical = fs::read(&planner).unwrap();
+    let database_before = fs::read(&database_path).unwrap();
+    fs::write(
+        &planner,
+        [canonical.as_slice(), b"\n# UAT doctor drift sentinel\n"].concat(),
+    )
+    .unwrap();
+
+    let read_only = doctor_json(dir.path(), false);
+    assert!(doctor_issue(&read_only, "PROJECTION_STALE"));
+    assert!(fs::read(&planner)
+        .unwrap()
+        .ends_with(b"# UAT doctor drift sentinel\n"));
+    assert_eq!(fs::read(&database_path).unwrap(), database_before);
+
+    let repaired = doctor_json(dir.path(), true);
+    assert_eq!(repaired["ok"], true, "report={repaired}");
+    assert_eq!(fs::read(&planner).unwrap(), canonical);
+    assert_eq!(fs::read(&database_path).unwrap(), database_before);
+    assert!(repaired["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| {
+            item.as_str()
+                .is_some_and(|item| item.contains("Managed projection repair"))
+        }));
+
+    let second = doctor_json(dir.path(), true);
+    assert_eq!(second["ok"], true, "report={second}");
+    assert!(second["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| !item
+            .as_str()
+            .is_some_and(|item| item.contains("Managed projection repair"))));
+    assert_eq!(fs::read(&database_path).unwrap(), database_before);
 }
 
 #[test]
@@ -256,6 +317,7 @@ fn doctor_repairs_missing_projection_without_new_event() {
     let read_only = doctor_json(dir.path(), false);
     assert_eq!(read_only["ok"], false);
     assert!(doctor_warning(&read_only, "PROJECTION_MISSING"));
+    assert!(doctor_issue(&read_only, "PROJECTION_MISSING"));
     assert!(!projection.exists());
 
     let repaired = doctor_json(dir.path(), true);
@@ -278,6 +340,35 @@ fn doctor_repairs_missing_projection_without_new_event() {
         .map(|event| event.state_hash_after)
         .collect::<Vec<_>>();
     assert_eq!(repaired_event_hashes, event_hashes);
+}
+
+#[test]
+fn doctor_repair_overwrites_stale_managed_projection() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+    let (session_id, _database_path, _event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-stale-projection");
+    super::planning_cli_artifact_support::prepare_complete(dir.path(), &session_id);
+    let projection = dir
+        .path()
+        .join(".megara/planning/artifacts")
+        .join(&session_id)
+        .join("spec.md");
+    let original = fs::read(&projection).unwrap();
+    fs::write(
+        &projection,
+        [original.as_slice(), b"\nUAT drift\n"].concat(),
+    )
+    .unwrap();
+
+    let read_only = doctor_json(dir.path(), false);
+    assert!(doctor_issue(&read_only, "PROJECTION_STALE"));
+    let repaired = doctor_json(dir.path(), true);
+    assert_eq!(repaired["warnings"], serde_json::json!([]));
+    assert_eq!(fs::read(&projection).unwrap(), original);
 }
 
 #[test]
@@ -310,6 +401,7 @@ fn doctor_repairs_clean_tombstone_artifact_residue_without_warning() {
     let read_only = doctor_json(dir.path(), false);
     assert_eq!(read_only["ok"], false);
     assert!(doctor_warning(&read_only, "PURGE_RESIDUE"));
+    assert!(doctor_issue(&read_only, "PURGE_RESIDUE"));
     assert!(residue.exists());
 
     let repaired = doctor_json(dir.path(), true);
@@ -360,6 +452,7 @@ fn doctor_reports_invalid_tombstone_without_rewriting_it() {
     let read_only = doctor_json(dir.path(), false);
     assert_eq!(read_only["ok"], false);
     assert!(doctor_warning(&read_only, "TOMBSTONE_INVALID"));
+    assert!(doctor_issue(&read_only, "TOMBSTONE_INVALID"));
 
     let repaired = doctor_json(dir.path(), true);
     assert_eq!(repaired["ok"], false);
@@ -373,6 +466,81 @@ fn doctor_reports_invalid_tombstone_without_rewriting_it() {
         )
         .unwrap();
     assert_eq!(stored_response, invalid_response);
+}
+
+#[test]
+fn doctor_reports_unsupported_tombstone_schema_without_rewriting_it() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let (session_id, database_path, _event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-unsupported-tombstone");
+    let mut store = super::planning::store::PlanningStore::open_project(dir.path()).unwrap();
+    store
+        .purge(
+            &session_id,
+            "cmd-doctor-unsupported-tombstone-purge",
+            "sha256:doctor-unsupported-tombstone-purge",
+            1,
+            &session_id,
+        )
+        .unwrap();
+    drop(store);
+    let connection = rusqlite::Connection::open(&database_path).unwrap();
+    connection
+        .execute(
+            "UPDATE purged_sessions SET purge_schema_version=999 WHERE session_id=?1",
+            [&session_id],
+        )
+        .unwrap();
+    drop(connection);
+
+    let read_only = doctor_json(dir.path(), false);
+    assert!(doctor_issue(&read_only, "TOMBSTONE_INVALID"));
+    let repaired = doctor_json(dir.path(), true);
+    assert!(doctor_issue(&repaired, "TOMBSTONE_INVALID"));
+    let version: i64 = rusqlite::Connection::open(&database_path)
+        .unwrap()
+        .query_row(
+            "SELECT purge_schema_version FROM purged_sessions WHERE session_id=?1",
+            [&session_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(version, 999);
+}
+
+#[test]
+fn doctor_json_reports_corrupt_planning_database_without_resetting_it() {
+    let dir = tempdir().unwrap();
+    let codex_home = tempdir().unwrap();
+    install_project_harness(dir.path(), codex_home.path());
+    let (_session_id, database_path, _event_hashes) =
+        start_doctor_session(dir.path(), "cmd-doctor-corrupt-db");
+    let corrupt = b"not a sqlite database";
+    fs::write(&database_path, corrupt).unwrap();
+
+    for repair in [false, true] {
+        let mut command = megara();
+        command
+            .args([
+                "doctor", "--scope", "project", "--target", "codex", "--json",
+            ])
+            .current_dir(dir.path());
+        if repair {
+            command.arg("--repair");
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["ok"], false);
+        assert!(doctor_issue(&report, "DB_CORRUPT"));
+        assert_eq!(fs::read(&database_path).unwrap(), corrupt);
+    }
 }
 
 #[cfg(unix)]
@@ -425,6 +593,16 @@ fn doctor_repair_retries_pending_planning_purge_cleanup() {
     let read_only_stdout = String::from_utf8_lossy(&read_only.stdout);
     assert!(read_only_stdout.contains("\"ok\": false"));
     assert!(read_only_stdout.contains("pending Planning purge cleanup"));
+    assert!(backup_root
+        .symlink_metadata()
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    let unresolved = doctor_json(dir.path(), true);
+    assert_eq!(unresolved["ok"], false, "report={unresolved}");
+    assert!(doctor_issue(&unresolved, "PURGE_RESIDUE"));
+    assert!(doctor_warning(&unresolved, "PURGE_RESIDUE"));
     assert!(backup_root
         .symlink_metadata()
         .unwrap()

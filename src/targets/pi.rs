@@ -48,8 +48,11 @@ pub fn projection_files(
     let mut files = vec![
         PlannedFile::new(root.join("settings.json"), pi_settings()),
         PlannedFile::new(root.join("extensions/megara.ts"), extension.content.clone()),
+        // Pi auto-discovers every module below `extensions/` as an extension.
+        // Keep the import-only process helper beside that directory so it is not
+        // loaded as a second extension.
         PlannedFile::new(
-            root.join("extensions/megara_process.ts"),
+            root.join("megara_process.ts"),
             process_helper.content.clone(),
         ),
     ];
@@ -76,15 +79,22 @@ pub fn projection_files(
 }
 
 pub fn obsolete_projection_files(
-    _root: PathBuf,
+    root: PathBuf,
     _scope: InstallScope,
-    _registry: &TemplateRegistry,
-) -> Vec<PathBuf> {
-    Vec::new()
+    registry: &TemplateRegistry,
+) -> Result<Vec<PlannedFile>> {
+    let process_helper = registry
+        .find("pi-process-helper")
+        .context("bundled Pi process helper template is missing")?;
+    Ok(vec![PlannedFile::new(
+        root.join("extensions/megara_process.ts"),
+        process_helper.content.clone(),
+    )])
 }
 
 pub fn runtime_dependency_issues() -> Vec<String> {
-    let output = match Command::new("pi").arg("--version").output() {
+    let executable = std::env::var_os("PI_BIN").unwrap_or_else(|| "pi".into());
+    let output = match Command::new(&executable).arg("--version").output() {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
             return vec![format!(
