@@ -135,6 +135,16 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
         audit["inputSchema"]["properties"]["proposal"]["$ref"],
         "#/$defs/audit_proposal"
     );
+    let initial_request_source = audit["inputSchema"]["$defs"]["source_ref"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["properties"]["kind"]["const"] == "initial_request")
+        .unwrap();
+    assert_eq!(
+        initial_request_source["properties"]["id"]["const"],
+        "request"
+    );
     assert_eq!(
         audit["inputSchema"]["$defs"]["audit_proposal"]["properties"]["next_question"]["anyOf"][0]
             ["$ref"],

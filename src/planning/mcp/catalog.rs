@@ -466,7 +466,7 @@ fn strict_object(properties: Value, required: &[&str]) -> Value {
 
 fn source_ref_schema() -> Value {
     json!({"oneOf": [
-        strict_object(json!({"kind":{"const":"initial_request"}, "id":{"type":"string"}}), &["kind", "id"]),
+        strict_object(json!({"kind":{"const":"initial_request"}, "id":{"const":"request"}}), &["kind", "id"]),
         strict_object(json!({"kind":{"const":"answer"}, "id":{"type":"string"}}), &["kind", "id"]),
         strict_object(json!({"kind":{"const":"evidence"}, "id":{"type":"string"}}), &["kind", "id"]),
         strict_object(json!({"kind":{"const":"entity"}, "id":{"type":"string"}, "revision":{"type":"integer","minimum":0}}), &["kind", "id", "revision"]),
