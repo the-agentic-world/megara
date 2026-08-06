@@ -116,3 +116,19 @@ fn removes_only_managed_files() {
     assert!(!managed.exists());
     assert!(unmanaged.exists());
 }
+
+#[test]
+fn protects_edited_obsolete_managed_files_without_force() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("obsolete.ts");
+    let file = PlannedFile::new(path.clone(), "export const helper = true;\n");
+    fs::write(&path, format!("{}// user edit\n", file.content)).unwrap();
+
+    let summary = remove_obsolete_managed_files(std::slice::from_ref(&file), true, false).unwrap();
+    assert_eq!(summary.conflicts, vec![path.clone()]);
+    assert!(path.exists());
+
+    let forced = remove_obsolete_managed_files(&[file], false, true).unwrap();
+    assert_eq!(forced.removed, vec![path.clone()]);
+    assert!(!path.exists());
+}

@@ -188,6 +188,8 @@ pub struct InstallPlan {
     pub files: Vec<PlannedFile>,
     pub managed_toml_edits: Vec<super::managed_edit::ManagedTomlEdit>,
     pub obsolete_files: Vec<PathBuf>,
+    #[serde(skip)]
+    pub obsolete_managed_files: Vec<PlannedFile>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]

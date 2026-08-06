@@ -119,6 +119,14 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
         evidence["inputSchema"]["$defs"]["citation"]["properties"]["ranges"]["items"]["$ref"],
         "#/$defs/citation_range"
     );
+    assert_eq!(
+        evidence["inputSchema"]["$defs"]["citation_range"]["properties"]["start_line"]["minimum"],
+        1
+    );
+    assert_eq!(
+        evidence["inputSchema"]["$defs"]["citation_range"]["properties"]["end_line"]["minimum"],
+        1
+    );
     let audit = tools
         .iter()
         .find(|tool| tool["name"] == "planning_audit_apply")
@@ -146,6 +154,23 @@ fn rmcp_stdio_negotiates_lists_tools_and_calls_planning_service() {
             .len(),
         13
     );
+    let revise = audit["inputSchema"]["$defs"]["entity_op"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["properties"]["op"]["const"] == "revise")
+        .unwrap();
+    assert_eq!(
+        revise["properties"]["body"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    for body in revise["properties"]["body"]["oneOf"].as_array().unwrap() {
+        assert_eq!(body["additionalProperties"], false);
+        assert!(body["properties"].get("kind").is_none());
+    }
     for name in ["planning_spec_generate", "planning_plan_generate"] {
         let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
         assert!(tool["inputSchema"]["properties"]["proposal"]["$ref"]

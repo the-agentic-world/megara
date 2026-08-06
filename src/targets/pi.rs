@@ -81,9 +81,15 @@ pub fn projection_files(
 pub fn obsolete_projection_files(
     root: PathBuf,
     _scope: InstallScope,
-    _registry: &TemplateRegistry,
-) -> Vec<PathBuf> {
-    vec![root.join("extensions/megara_process.ts")]
+    registry: &TemplateRegistry,
+) -> Result<Vec<PlannedFile>> {
+    let process_helper = registry
+        .find("pi-process-helper")
+        .context("bundled Pi process helper template is missing")?;
+    Ok(vec![PlannedFile::new(
+        root.join("extensions/megara_process.ts"),
+        process_helper.content.clone(),
+    )])
 }
 
 pub fn runtime_dependency_issues() -> Vec<String> {

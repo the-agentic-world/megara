@@ -305,10 +305,16 @@ fn inspect_planning_health(
             }
         };
         for issue in post_repair.issues {
-            if !issue.repairable || (issue.code == "PURGE_RESIDUE" && pending_after > 0) {
+            if !issue.repairable {
                 continue;
             }
             warnings.push(format!("Planning {}: {}", issue.code, issue.message));
+            issues.push(DoctorIssue {
+                code: issue.code,
+                message: issue.message,
+                path: None,
+                repairable: true,
+            });
         }
     }
     Ok(())

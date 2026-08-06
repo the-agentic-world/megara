@@ -599,6 +599,16 @@ fn doctor_repair_retries_pending_planning_purge_cleanup() {
         .file_type()
         .is_symlink());
 
+    let unresolved = doctor_json(dir.path(), true);
+    assert_eq!(unresolved["ok"], false, "report={unresolved}");
+    assert!(doctor_issue(&unresolved, "PURGE_RESIDUE"));
+    assert!(doctor_warning(&unresolved, "PURGE_RESIDUE"));
+    assert!(backup_root
+        .symlink_metadata()
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
     fs::remove_file(&backup_root).unwrap();
     fs::rename(&held_root, &backup_root).unwrap();
 

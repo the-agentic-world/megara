@@ -80,6 +80,60 @@ fn pi_project_install_projects_planning_adapter_and_supports_explicit_trust() {
         .exists());
 }
 
+#[test]
+fn pi_sync_protects_an_edited_obsolete_process_helper_without_force() {
+    let project = tempdir().unwrap();
+    install_pi(project.path(), false);
+    let current_helper = project.path().join(".pi/megara_process.ts");
+    let obsolete_helper = project.path().join(".pi/extensions/megara_process.ts");
+    let extension = project.path().join(".pi/extensions/megara.ts");
+    let extension_before = fs::read(&extension).unwrap();
+    let helper_before = fs::read(&current_helper).unwrap();
+    fs::write(&obsolete_helper, &helper_before).unwrap();
+
+    let clean_sync = megara()
+        .args(["sync", "--scope", "project", "--target", "pi"])
+        .current_dir(project.path())
+        .output()
+        .unwrap();
+    assert!(
+        clean_sync.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&clean_sync.stderr)
+    );
+    assert!(!obsolete_helper.exists());
+
+    fs::write(
+        &obsolete_helper,
+        [helper_before.as_slice(), b"// user sentinel\n"].concat(),
+    )
+    .unwrap();
+    let obsolete_before = fs::read(&obsolete_helper).unwrap();
+
+    let sync = megara()
+        .args(["sync", "--scope", "project", "--target", "pi"])
+        .current_dir(project.path())
+        .output()
+        .unwrap();
+    assert!(!sync.status.success());
+    assert!(String::from_utf8_lossy(&sync.stderr).contains("rerun with --force"));
+    assert_eq!(fs::read(&extension).unwrap(), extension_before);
+    assert_eq!(fs::read(&current_helper).unwrap(), helper_before);
+    assert_eq!(fs::read(&obsolete_helper).unwrap(), obsolete_before);
+
+    let forced = megara()
+        .args(["sync", "--scope", "project", "--target", "pi", "--force"])
+        .current_dir(project.path())
+        .output()
+        .unwrap();
+    assert!(
+        forced.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&forced.stderr)
+    );
+    assert!(!obsolete_helper.exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn pi_install_checks_the_explicit_pi_bin_before_path() {

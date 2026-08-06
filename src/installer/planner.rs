@@ -7,7 +7,7 @@ use crate::{
     paths::{InstallPaths, InstallScope, TargetRuntime},
     targets::{codex, pi},
     templates::TemplateRegistry,
-    writer::{remove_managed_files, write_files},
+    writer::{remove_managed_files, remove_obsolete_managed_files, write_files},
 };
 
 use super::migration;
@@ -84,16 +84,22 @@ impl<'a> Planner<'a> {
                 &projection_registry,
             )?),
         };
-        let obsolete_files = match self.options.target {
-            TargetRuntime::Codex => codex::obsolete_projection_files(
-                paths.target_root.clone(),
-                self.options.scope,
-                &projection_registry,
+        let (obsolete_files, obsolete_managed_files) = match self.options.target {
+            TargetRuntime::Codex => (
+                codex::obsolete_projection_files(
+                    paths.target_root.clone(),
+                    self.options.scope,
+                    &projection_registry,
+                ),
+                Vec::new(),
             ),
-            TargetRuntime::Pi => pi::obsolete_projection_files(
-                paths.target_root.clone(),
-                self.options.scope,
-                &projection_registry,
+            TargetRuntime::Pi => (
+                Vec::new(),
+                pi::obsolete_projection_files(
+                    paths.target_root.clone(),
+                    self.options.scope,
+                    &projection_registry,
+                )?,
             ),
         };
 
@@ -106,12 +112,17 @@ impl<'a> Planner<'a> {
             files,
             managed_toml_edits,
             obsolete_files,
+            obsolete_managed_files,
         })
     }
 
     pub fn execute(&self) -> Result<InstallResult> {
         let plan = self.plan()?;
-        let preflight = write_files(&plan.files, true, self.options.force)?;
+        let mut preflight = write_files(&plan.files, true, self.options.force)?;
+        let obsolete_preflight =
+            remove_obsolete_managed_files(&plan.obsolete_managed_files, true, self.options.force)?;
+        preflight.conflicts.extend(obsolete_preflight.conflicts);
+        preflight.removed.extend(obsolete_preflight.removed);
         if !self.options.dry_run && !preflight.conflicts.is_empty() {
             bail!(
                 "refusing to overwrite {} unmanaged file(s); rerun with --force",
@@ -126,6 +137,16 @@ impl<'a> Planner<'a> {
             }
             write_files(&plan.files, false, self.options.force)?
         };
+        if !self.options.dry_run {
+            summary.removed.extend(
+                remove_obsolete_managed_files(
+                    &plan.obsolete_managed_files,
+                    false,
+                    self.options.force,
+                )?
+                .removed,
+            );
+        }
         summary.removed.extend(remove_managed_files(
             &plan.obsolete_files,
             self.options.dry_run,

@@ -400,8 +400,8 @@ fn proposal_definitions(operation: &str) -> Option<Map<String, Value>> {
         "citation_range".to_string(),
         strict_object(
             json!({
-                "start_line": {"type": "integer", "minimum": 0},
-                "end_line": {"type": "integer", "minimum": 0},
+                "start_line": {"type": "integer", "minimum": 1},
+                "end_line": {"type": "integer", "minimum": 1},
             }),
             &["start_line", "end_line"],
         ),
@@ -586,10 +586,22 @@ fn entity_op_schema() -> Value {
             &["op", "temp_ref", "kind", "body", "source_refs"],
         ));
     }
-    let flexible_body = json!({"type":"object"});
-    creates.push(strict_object(json!({"op":{"const":"revise"},"entity_id":{"type":"string"},"base_entity_revision":{"type":"integer","minimum":0},"body":flexible_body,"source_refs":{"type":"array","items":{"$ref":"#/$defs/source_ref"}}}), &["op","entity_id","base_entity_revision","body","source_refs"]));
+    creates.push(strict_object(json!({"op":{"const":"revise"},"entity_id":{"type":"string"},"base_entity_revision":{"type":"integer","minimum":0},"body":audit_entity_body_schema(),"source_refs":{"type":"array","items":{"$ref":"#/$defs/source_ref"}}}), &["op","entity_id","base_entity_revision","body","source_refs"]));
     creates.push(strict_object(json!({"op":{"const":"reject"},"entity_id":{"type":"string"},"base_entity_revision":{"type":"integer","minimum":0},"reason":{"type":"string"},"source_refs":{"type":"array","items":{"$ref":"#/$defs/source_ref"}}}), &["op","entity_id","base_entity_revision","reason","source_refs"]));
     json!({"oneOf": creates})
+}
+
+fn audit_entity_body_schema() -> Value {
+    json!({"oneOf": [
+        strict_object(json!({"statement":{"type":"string"}}), &["statement"]),
+        strict_object(json!({"statement":{"type":"string"},"observable_result":{"type":"string"}}), &["statement","observable_result"]),
+        strict_object(json!({"statement":{"type":"string"},"evidence_refs":{"type":"array","items":{"type":"string"}}}), &["statement","evidence_refs"]),
+        strict_object(json!({"statement":{"type":"string"},"selected_option":{"type":"string"}}), &["statement","selected_option"]),
+        strict_object(json!({"autonomous_scope":{"type":"array","items":{"type":"string"}},"requires_user_approval":{"type":"array","items":{"type":"string"}}}), &["autonomous_scope","requires_user_approval"]),
+        strict_object(json!({"statement":{"type":"string"},"priority":{"enum":["must","should","could"]}}), &["statement","priority"]),
+        strict_object(json!({"statement":{"type":"string"},"validation_status":{"enum":["unverified","confirmed","rejected"]}}), &["statement","validation_status"]),
+        strict_object(json!({"statement":{"type":"string"},"impact":{"enum":["low","medium","high","critical"]},"mitigation":{"type":"string"}}), &["statement","impact","mitigation"]),
+    ]})
 }
 
 fn audit_endpoint_schema() -> Value {
